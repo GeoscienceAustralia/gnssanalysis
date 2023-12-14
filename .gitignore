@@ -1,0 +1,12 @@
+# Compiled Python bytecode
+*.py[cod]
+
+# gn_lib pip installation files
+*.egg-info/
+build/
+
+# pycache
+__pycache__
+
+# IDE specific details
+.vscode
