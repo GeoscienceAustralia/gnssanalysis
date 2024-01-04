@@ -434,7 +434,9 @@ def sisre(
     sisre : DataFrame or Series depending in the output_mode selection
         output_mode = 'rms'  : Series of RMS SISRE values, value per GNSS.
         output_mode = 'gnss' : DataFrame of epoch-wise RMS SISRE values per GNSS.
-        output_mode = 'sv'   : DataFrame of epoch-wise SISRE values per SV.
+        output_mode = 'sv'   : DataFrame of epoch-wise SISRE values per SV. NOTE: SV here refers to Satellite 
+                               Vehicle ID (1-1 mappable to Pseudo-Random Noise identifier i.e. PRN). It does NOT
+                               refer to Satellite Vehicle Number (which is permanent).
     """
     if output_mode not in ["rms", "sv", "gnss"]:
         raise ValueError("incorrect output_mode given: %s" % output_mode)
@@ -473,7 +475,20 @@ def sisre(
         common_epochs_RAC_T = rac_unstack.index.intersection(
             clk_diff.index.values
         )  # RAC epochs not present in clk_diff
-        common_svs = rac_unstack.columns.levels[1].intersection(clk_diff.columns)  # RAC SVs not present in clk_diff
+        
+        # Check that the index doesn't contain more SVs than the actual data does (as a result of mismatched 
+        # sets of SVs between input files). Warn and remove unused ones from the index if necessary.
+        # NOTE: SV here refers to Satellite Vehicle ID, not to be confused with the *permanent* Satellite
+        # Vehicle Number.
+        svs_in_data = rac_unstack.columns.get_level_values(1).unique() # SVs in actual data, E.g.: G01, G02, G03, ...
+        svs_in_index = rac_unstack.columns.levels[1] # Vs in index pulled from the baseline file, in sp3.diff_sp3_rac()
+        svs_differing = svs_in_data.symmetric_difference(svs_in_index)
+        if len(svs_differing) > 0:
+            _logging.warning(f"mismatched set of SVs between baseline and test files. SVs differing: {svs_differing}")
+            common_svs = rac_unstack.columns.remove_unused_levels().levels[1].intersection(clk_diff.columns)  # RAC SVs not present in clk_diff
+        else:
+            common_svs = rac_unstack.columns.levels[1].intersection(clk_diff.columns)  # RAC SVs not present in clk_diff
+
         # common_epochs_RAC_T here might be not required. TODO
         clk_diff = clk_diff.loc[common_epochs_RAC_T][common_svs]
         rac_unstack = rac_unstack.loc[common_epochs_RAC_T].loc(axis=1)[:, common_svs]
