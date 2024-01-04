@@ -475,19 +475,12 @@ def sisre(
         common_epochs_RAC_T = rac_unstack.index.intersection(
             clk_diff.index.values
         )  # RAC epochs not present in clk_diff
-        
-        # Check that the index doesn't contain more SVs than the actual data does (as a result of mismatched 
-        # sets of SVs between input files). Warn and remove unused ones from the index if necessary.
+    
         # NOTE: SV here refers to Satellite Vehicle ID, not to be confused with the *permanent* Satellite
         # Vehicle Number.
-        svs_in_data = rac_unstack.columns.get_level_values(1).unique() # SVs in actual data, E.g.: G01, G02, G03, ...
-        svs_in_index = rac_unstack.columns.levels[1] # Vs in index pulled from the baseline file, in sp3.diff_sp3_rac()
-        svs_differing = svs_in_data.symmetric_difference(svs_in_index)
-        if len(svs_differing) > 0:
-            _logging.warning(f"mismatched set of SVs between baseline and test files. SVs differing: {svs_differing}")
-            common_svs = rac_unstack.columns.remove_unused_levels().levels[1].intersection(clk_diff.columns)  # RAC SVs not present in clk_diff
-        else:
-            common_svs = rac_unstack.columns.levels[1].intersection(clk_diff.columns)  # RAC SVs not present in clk_diff
+        # The columns here have been cleared of unused levels in sp3.diff_sp3_rac(). If this were not done, we would
+        # see failures here when baseline and test SP3 files have different SVs present.
+        common_svs = rac_unstack.columns.levels[1].intersection(clk_diff.columns)  # RAC SVs not present in clk_diff
 
         # common_epochs_RAC_T here might be not required. TODO
         clk_diff = clk_diff.loc[common_epochs_RAC_T][common_svs]

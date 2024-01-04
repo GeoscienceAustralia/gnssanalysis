@@ -440,9 +440,17 @@ def diff_sp3_rac(
     nd_rac = diff_eci.values[:, _np.newaxis] @ _gn_transform.eci2rac_rot(sp3_baseline_eci_vel)
     df_rac = _pd.DataFrame(
         nd_rac.reshape(-1, 3),
-        index=sp3_baseline.index,
+        index=sp3_baseline.index, # Note that if the test and baseline have different SVs, this index will refer to
+                                  # data which is missing in the 'test' dataframe (and so is likely to be missing in
+                                  # the diff too).
         columns=[["EST_RAC"] * 3, ["Radial", "Along-track", "Cross-track"]],
     )
+
+    # As our index (headers) were based on the baseline input, we now clear the them of all identifiers not present in
+    # the generated diffs.
+    # This leaves us with the intersection of test and baseline; the common set of epochs and SVs between those two
+    # files.
+    df_rac.index = df_rac.index.remove_unused_levels()
 
     df_rac.attrs["sp3_baseline"] = _os.path.basename(sp3_baseline.attrs["path"])
     df_rac.attrs["sp3_test"] = _os.path.basename(sp3_test.attrs["path"])
