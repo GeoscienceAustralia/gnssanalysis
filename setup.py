@@ -1,5 +1,4 @@
 import setuptools
-import versioneer
 from pathlib import Path
 
 # Read the contents of README file
@@ -9,8 +8,7 @@ readme_text = (this_directory / "README.md").read_text()
 setuptools.setup(
     include_package_data=True,
     name="gnssanalysis",
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
+    version="{{VERSION_PLACEHOLDER}}",
     description="basic python module for gnss analysis",
     author="Geoscience Australia",
     author_email="GNSSAnalysis@ga.gov.au",
