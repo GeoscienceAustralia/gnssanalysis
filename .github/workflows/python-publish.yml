@@ -9,9 +9,8 @@
 name: Publish Python distributions to PyPI
 
 on:
-  push:
-    tags:
-     - '*'
+  release:
+    types: [published]
 
 permissions:
   contents: read
