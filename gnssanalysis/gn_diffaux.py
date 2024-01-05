@@ -434,7 +434,9 @@ def sisre(
     sisre : DataFrame or Series depending in the output_mode selection
         output_mode = 'rms'  : Series of RMS SISRE values, value per GNSS.
         output_mode = 'gnss' : DataFrame of epoch-wise RMS SISRE values per GNSS.
-        output_mode = 'sv'   : DataFrame of epoch-wise SISRE values per SV.
+        output_mode = 'sv'   : DataFrame of epoch-wise SISRE values per SV. NOTE: SV here refers to Satellite 
+                               Vehicle ID (1-1 mappable to Pseudo-Random Noise identifier i.e. PRN). It does NOT
+                               refer to Satellite Vehicle Number (which is permanent).
     """
     if output_mode not in ["rms", "sv", "gnss"]:
         raise ValueError("incorrect output_mode given: %s" % output_mode)
@@ -473,7 +475,13 @@ def sisre(
         common_epochs_RAC_T = rac_unstack.index.intersection(
             clk_diff.index.values
         )  # RAC epochs not present in clk_diff
+    
+        # NOTE: SV here refers to Satellite Vehicle ID, not to be confused with the *permanent* Satellite
+        # Vehicle Number.
+        # The columns here have been cleared of unused levels in sp3.diff_sp3_rac(). If this were not done, we would
+        # see failures here when baseline and test SP3 files have different SVs present.
         common_svs = rac_unstack.columns.levels[1].intersection(clk_diff.columns)  # RAC SVs not present in clk_diff
+
         # common_epochs_RAC_T here might be not required. TODO
         clk_diff = clk_diff.loc[common_epochs_RAC_T][common_svs]
         rac_unstack = rac_unstack.loc[common_epochs_RAC_T].loc(axis=1)[:, common_svs]
