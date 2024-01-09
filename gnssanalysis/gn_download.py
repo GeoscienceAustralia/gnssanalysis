@@ -14,6 +14,7 @@ import threading
 import time as _time
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
+from typing import Optional as _Optional
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError
 
@@ -103,7 +104,7 @@ def upload_with_chunksize_and_meta(
     # return transfer_callback.thread_info
 
 
-def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum") -> str:
+def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum") -> _Optional[str]:
     """requests md5checksum metadata over https (AWS S3 bucket)
     Returns None if file not found (404) or if md5checksum metadata key does not exist"""
     logging.info(f'requesting checksum for "{url}"')
@@ -125,6 +126,8 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
             if retry >= max_retries:
                 logging.error(f"Maximum number of retries reached: {max_retries}")
                 raise (err)
+    logging.error("Maximum retries exceeded in request_metadata with no clear outcome, returning None")
+    return None
 
 
 def download_url(url: str, destfile: str, max_retries: int = 5):
