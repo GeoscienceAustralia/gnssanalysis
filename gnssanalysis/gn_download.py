@@ -155,7 +155,7 @@ def download_url(url: str, destfile: _Union[str, _os.PathLike], max_retries: int
     return None
 
 
-def gen_uncomp_filename(comp_filename):
+def gen_uncomp_filename(comp_filename: str) -> str:
     """Name of uncompressed filename given the compressed name"""
     if comp_filename.endswith(".crx.gz"):
         return comp_filename[:-6] + "rnx"
