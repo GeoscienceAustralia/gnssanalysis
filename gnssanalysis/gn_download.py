@@ -234,7 +234,7 @@ def dates_type_convert(dates):
     return dt_list
 
 
-def check_file_present(comp_filename, dwndir):
+def check_file_present(comp_filename: str, dwndir: str) -> bool:
     """Check if file comp_filename already present in directory dwndir"""
 
     if dwndir[-1] != "/":
