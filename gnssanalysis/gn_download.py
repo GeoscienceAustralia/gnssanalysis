@@ -7,6 +7,7 @@ rnx (including transformation from crx to rnx)
 """
 import datetime as _datetime
 import logging
+import os as _os
 import shutil
 import subprocess as _subprocess
 import sys as _sys
@@ -14,7 +15,7 @@ import threading
 import time as _time
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Optional as _Optional
+from typing import Optional as _Optional, Union as _Union
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError
 
@@ -130,7 +131,7 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
     return None
 
 
-def download_url(url: str, destfile: str, max_retries: int = 5):
+def download_url(url: str, destfile: _Union[str, _os.PathLike], max_retries: int = 5) -> _Optional[_Path]:
     logging.info(f'requesting "{url}"')
     for retry in range(1, max_retries + 1):
         try:
@@ -139,7 +140,7 @@ def download_url(url: str, destfile: str, max_retries: int = 5):
                     logging.info(f"downloading from {url} to {destfile}")
                     with open(destfile, "wb") as out_file:
                         shutil.copyfileobj(response, out_file)
-            return 0
+            return _Path(destfile)
         except _HTTPError as err:
             logging.error(f" HTTP Error {err.code}: {err.reason}")
             if err.code == 404:
@@ -150,9 +151,11 @@ def download_url(url: str, destfile: str, max_retries: int = 5):
             if retry >= max_retries:
                 logging.error(f"Maximum number of retries reached: {max_retries}. File not downloaded")
                 return None
+    logging.error("Maximum retries exceeded in download_url with no clear outcome, returning None")
+    return None
 
 
-def gen_uncomp_filename(comp_filename):
+def gen_uncomp_filename(comp_filename: str) -> str:
     """Name of uncompressed filename given the compressed name"""
     if comp_filename.endswith(".crx.gz"):
         return comp_filename[:-6] + "rnx"
@@ -231,7 +234,7 @@ def dates_type_convert(dates):
     return dt_list
 
 
-def check_file_present(comp_filename, dwndir):
+def check_file_present(comp_filename: str, dwndir: str) -> bool:
     """Check if file comp_filename already present in directory dwndir"""
 
     if dwndir[-1] != "/":
