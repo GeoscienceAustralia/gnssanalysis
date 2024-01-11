@@ -23,5 +23,5 @@ jobs:
 
     - name: Send Discord Notification
       run: |
-        echo '{"content": "New pull request created: ${{ github.event.pull_request.html_url }}"}' > message.json
+        echo '{"content": "New gnssanalysis PR created: ${{ github.event.pull_request.html_url }}"}' > message.json
         curl -H "Content-Type: application/json" -d @message.json ${{ secrets.DISCORD_WEBHOOK }}
