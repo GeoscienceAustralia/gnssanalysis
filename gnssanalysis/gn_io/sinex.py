@@ -551,11 +551,9 @@ def _get_snx_vector(
     BLK_TYPE = _np.repeat(list(stypes_rows.keys()), list(stypes_rows.values()))
 
     try:
-        vector_raw = _pd.read_csv(
+        vector_raw = _pd.read_fwf(
             snx_buffer,
-            delim_whitespace=True,
             header=0,
-            usecols=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             names=["INDEX", "TYPE", "CODE", "PT", "SOLN", "REF_EPOCH", "UNIT", "CONSTR", "VAL", "STD"],
             dtype={
                 "INDEX": int,  # TODO might need to switch to _pd.Int64Dtype() so NaNs on unstack do not make it fallback to float
@@ -578,7 +576,14 @@ def _get_snx_vector(
         else:
             raise _e
 
-    vector_raw["CODE_PT"] = vector_raw.CODE.values + "_" + vector_raw.PT.values
+    if vector_raw.PT.hasnans:
+        _logging.warning("Missing values in Sinex PT (point) column. Will default to 'A'")
+        
+    # Merge CODE and PT columns, filling missing values in PT column with 'A'. Reasoning:
+    # - PT (point) column specifies the mount point identifier on a given monument(? receiver / station).
+    # - Points are named starting with 'A'. If no point is specified, we assume this monument(?) only has a single
+    #   point, so we default its identifier to 'A'.
+    vector_raw["CODE_PT"] = vector_raw.CODE.values + "_" + vector_raw.PT.fillna('A').values
     vector_raw.drop(["CODE", "PT"], axis="columns", inplace=True)
     vector_raw.REF_EPOCH = _gn_datetime.yydoysec2datetime(vector_raw.REF_EPOCH, recenter=recenter_epochs, as_j2000=True)
     vector_raw.SOLN = snx_soln_str_to_int(vector_raw.SOLN)
