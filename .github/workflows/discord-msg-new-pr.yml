@@ -1,0 +1,27 @@
+name: Discord Notification on Pull Request Creation
+
+on:
+  pull_request:
+    types:
+      - opened
+
+jobs:
+  notify-on-pull-request:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '14'
+
+    - name: Install Dependencies
+      run: npm install axios
+
+    - name: Send Discord Notification
+      run: |
+        echo '{"content": "New pull request created: ${{ github.event.pull_request.html_url }}"}' > message.json
+        curl -H "Content-Type: application/json" -d @message.json ${{ secrets.DISCORD_WEBHOOK }}
