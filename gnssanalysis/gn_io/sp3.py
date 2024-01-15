@@ -1,3 +1,5 @@
+import logging
+
 """Ephemeris functions"""
 import io as _io
 import os as _os
@@ -12,6 +14,10 @@ from .. import gn_aux as _gn_aux
 from .. import gn_datetime as _gn_datetime
 from .. import gn_io as _gn_io
 from .. import gn_transform as _gn_transform
+
+from .. import gn_const
+
+logger = logging.getLogger(__name__)
 
 _RE_SP3 = _re.compile(rb"^\*(.+)\n((?:[^\*]+)+)", _re.MULTILINE)
 
@@ -141,6 +147,18 @@ def read_sp3(sp3_path, pOnly=True):
 
     sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
     sp3_df.attrs["path"] = sp3_path
+
+    # Check for duplicate epochs, dedupe and log warning
+    duplicated_indexes = sp3_df.index.duplicated() # Typically sub ms time. Marks all but first instance as duped.
+    if duplicated_indexes.sum() > 0: # We have dupes
+        first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
+        logging.warning(
+            f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
+            f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + gn_const.J2000_ORIGIN} "
+            f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
+        )
+        sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")] # Now dedupe them, keeping the first of any clashes
+
     return sp3_df
 
 
