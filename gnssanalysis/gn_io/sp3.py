@@ -149,11 +149,11 @@ def read_sp3(sp3_path, pOnly=True):
     sp3_df.attrs["path"] = sp3_path
 
     # Check for duplicate epochs, dedupe and log warning
-    duplicated_indexes = sp3_df.index.duplicated()
+    duplicated_indexes = sp3_df.index.duplicated() # Typically sub ms time. Marks all but first instance as duped.
     if duplicated_indexes.sum() > 0: # We have dupes
         first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
         logging.warning(
-            f"Duplicate epoch(s) found in SP3! "
+            f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
             f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + gn_const.J2000_ORIGIN} "
             f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
         )
