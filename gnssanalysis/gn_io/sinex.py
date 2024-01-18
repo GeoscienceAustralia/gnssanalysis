@@ -551,9 +551,15 @@ def _get_snx_vector(
     BLK_TYPE = _np.repeat(list(stypes_rows.keys()), list(stypes_rows.values()))
 
     try:
+        # NOTE: we use a fixed width reader rather than a CSV reader, as missing values show as whitespace. This
+        # whitespace causes column mis-alignment when read with read_csv(), as it is also the column delimeter when
+        # reading as CSV.
         vector_raw = _pd.read_fwf(
             snx_buffer,
             header=0,
+            # NOTE: 'names' below, is for the *output* DataFrame. These are NOT used to identify input data, and don't
+            # have to match the 'header' (which is actually just an optional Sinex comment beginning with '*') above
+            # the data.
             names=["INDEX", "TYPE", "CODE", "PT", "SOLN", "REF_EPOCH", "UNIT", "CONSTR", "VAL", "STD"],
             dtype={
                 "INDEX": int,  # TODO might need to switch to _pd.Int64Dtype() so NaNs on unstack do not make it fallback to float
@@ -567,6 +573,10 @@ def _get_snx_vector(
                 "VAL": float,
                 "STD": float,
             },
+            # NOTE: the Pandas docs don't clearly state what engine is used for parsing if you don't specify.
+            # It may NOT be the Python based on. If you are getting vague exceptions, try explicitly setting
+            # engine='python', as this may produce more informative errors (it *may* also change how things are
+            # parsed though, and slow things down).
         )
 
     except ValueError as _e:
