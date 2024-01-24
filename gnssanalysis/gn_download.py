@@ -285,7 +285,6 @@ def check_n_download(comp_filename, dwndir, ftps, uncomp=True, remove_crx=False,
         dwndir += "/"
 
     if no_check or (not check_file_present(comp_filename, dwndir)):
-
         logging.debug(f"Downloading {comp_filename}")
 
         with open(comp_file, "wb") as local_f:
@@ -569,9 +568,7 @@ def download_prod(
 
     for dt in dt_list:
         for f_typ in f_types:
-
             if dwn_src == "cddis":
-
                 if repro3:
                     f, gpswk = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ, repro3=True)
                 elif (ac == "igs") and (f_typ == "erp"):
@@ -788,7 +785,6 @@ def download_rinex3(dates, stations, dest, dwn_src="cddis", ftps=False, f_dict=F
 
             for dt in dt_list:
                 for station in stations:
-
                     f_pref = f"{station}_R_"
                     f_suff_crx = f"0000_01D_30S_MO.crx.gz"
                     f = f_pref + dt.strftime("%Y%j") + f_suff_crx
