@@ -5,14 +5,19 @@ erp
 clk
 rnx (including transformation from crx to rnx)
 """
+import concurrent as _concurrent
+from contextlib import contextmanager as _contextmanager
 import datetime as _datetime
+from itertools import repeat as _repeat
 import logging
 import os as _os
+import random as _random
 import shutil
 import subprocess as _subprocess
 import sys as _sys
 import threading
 import time as _time
+import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
 from typing import Optional as _Optional, Union as _Union
@@ -27,6 +32,8 @@ from boto3.s3.transfer import TransferConfig
 from .gn_datetime import dt2gpswk, gpsweekD, gpswkD2dt
 
 MB = 1024 * 1024
+
+CDDIS_FTP = "gdc.cddis.eosdis.nasa.gov"
 
 # s3client = boto3.client('s3', region_name='eu-central-1')
 
@@ -339,6 +346,7 @@ def get_install_crx2rnx(override=False, verbose=False):
             logging.info(f"crx2rnx already present in {_sys.path[0]}")
 
 
+# TODO: Deprecate in favour of the contextmanager?
 def connect_cddis(verbose=False):
     """
     Output an FTP_TLS object connected to the cddis server root
@@ -354,6 +362,25 @@ def connect_cddis(verbose=False):
         logging.info("Connected.")
 
     return ftps
+
+
+@_contextmanager
+def ftp_tls(url: str, **kwargs) -> None:
+    kwargs.setdefault("timeout", 30)
+    with _FTP_TLS(url, **kwargs) as ftps:
+        ftps.login()
+        ftps.prot_p()
+        yield ftps
+        ftps.quit()
+
+
+@_contextmanager
+def ftp_tls_cddis(connection=None, **kwargs) -> None:
+    if connection is None:
+        with ftp_tls(CDDIS_FTP, **kwargs) as ftps:
+            yield ftps
+    else:
+        yield connection
 
 
 def select_mr_file(mr_files, f_typ, ac):
@@ -445,6 +472,44 @@ def download_most_recent(
             return ret_vars
 
 
+def download_file_from_cddis(
+    filename: str,
+    ftp_folder: str,
+    output_folder: _Path,
+    ftps: _Optional[_FTP_TLS] = None,
+    max_retries: int = 3,
+    uncomp: bool = True,
+) -> None:
+    with ftp_tls_cddis(ftps) as ftps:
+        ftps.cwd(ftp_folder)
+        retries = 0
+        download_done = False
+        while not download_done and retries <= max_retries:
+            try:
+                logging.info(f"Attempting Download of: {filename}")
+                check_n_download(filename, str(output_folder) + "/", ftps, uncomp=uncomp)
+                download_done = True
+                logging.info(f"Downloaded {filename}")
+            except _ftplib.all_errors as e:
+                retries += 1
+                if retries > max_retries:
+                    logging.warning(f"Failed to download {filename} and reached maximum retry count ({max_retries}).")
+                    if (output_folder / filename).is_file():
+                        (output_folder / filename).unlink()
+                    raise e
+
+                logging.debug(f"Received an error ({e}) while try to download {filename}, retrying({retries}).")
+                # Add some backoff time (exponential random as it appears to be contention based?)
+                _time.sleep(_random.uniform(0.0, 2.0**retries))
+
+
+def download_multiple_files_from_cddis(files: list, ftp_folder: str, output_folder: _Path) -> None:
+    with _concurrent.futures.ThreadPoolExecutor() as executor:
+        # Wrap this in a list to force iteration of results and so get the first exception if any were raised
+        list(executor.map(download_file_from_cddis, files, _repeat(ftp_folder), _repeat(output_folder)))
+
+
+# TODO: Deprecate? Only supports legacy filenames
 def download_prod(
     dates,
     dest,
