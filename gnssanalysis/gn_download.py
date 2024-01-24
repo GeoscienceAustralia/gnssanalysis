@@ -71,7 +71,12 @@ class TransferCallback:
 
 
 def upload_with_chunksize_and_meta(
-    local_file_path: _Path, bucket_name: str, object_key: str, public_read=False, metadata=None, verbose=True
+    local_file_path: _Path,
+    bucket_name: str,
+    object_key: str,
+    public_read=False,
+    metadata=None,
+    verbose=True,
 ):
     """
     Upload a file from a local folder to an Amazon S3 bucket, setting a
@@ -98,16 +103,23 @@ def upload_with_chunksize_and_meta(
         extra_args["ACL"] = "public-read"
 
     s3.Bucket(bucket_name).upload_file(
-        str(local_file_path), object_key, Config=config, ExtraArgs=extra_args, Callback=transfer_callback
+        str(local_file_path),
+        object_key,
+        Config=config,
+        ExtraArgs=extra_args,
+        Callback=transfer_callback,
     )
     if verbose:
         _sys.stdout.write("\n")
     # return transfer_callback.thread_info
 
 
-def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum") -> _Optional[str]:
+def request_metadata(
+    url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum"
+) -> _Optional[str]:
     """requests md5checksum metadata over https (AWS S3 bucket)
-    Returns None if file not found (404) or if md5checksum metadata key does not exist"""
+    Returns None if file not found (404) or if md5checksum metadata key does not exist
+    """
     logging.info(f'requesting checksum for "{url}"')
     for retry in range(1, max_retries + 1):
         try:
@@ -116,9 +128,13 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
                     logging.info(msg="server says OK")
                     url_metadata = response.getheader(metadata_header)
                     logging.info(f'Got "{url_metadata}"')
-                    return url_metadata  # md5_checksum is None if no md5 metadata present
+                    return (
+                        url_metadata  # md5_checksum is None if no md5 metadata present
+                    )
         except _HTTPError as err:
-            logging.error(f" HTTP Error {err.code} for {url}: {err.reason}: Returning 'None' as checksum")
+            logging.error(
+                f" HTTP Error {err.code} for {url}: {err.reason}: Returning 'None' as checksum"
+            )
             if err.code == 404:
                 return None  # File Not Found on the server so no checksum exists
             t_seconds = 2**retry
@@ -127,11 +143,15 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
             if retry >= max_retries:
                 logging.error(f"Maximum number of retries reached: {max_retries}")
                 raise (err)
-    logging.error("Maximum retries exceeded in request_metadata with no clear outcome, returning None")
+    logging.error(
+        "Maximum retries exceeded in request_metadata with no clear outcome, returning None"
+    )
     return None
 
 
-def download_url(url: str, destfile: _Union[str, _os.PathLike], max_retries: int = 5) -> _Optional[_Path]:
+def download_url(
+    url: str, destfile: _Union[str, _os.PathLike], max_retries: int = 5
+) -> _Optional[_Path]:
     logging.info(f'requesting "{url}"')
     for retry in range(1, max_retries + 1):
         try:
@@ -149,9 +169,13 @@ def download_url(url: str, destfile: _Union[str, _os.PathLike], max_retries: int
             logging.error(f"Retry No. {retry} in {t_seconds} seconds")
             _time.sleep(t_seconds)
             if retry >= max_retries:
-                logging.error(f"Maximum number of retries reached: {max_retries}. File not downloaded")
+                logging.error(
+                    f"Maximum number of retries reached: {max_retries}. File not downloaded"
+                )
                 return None
-    logging.error("Maximum retries exceeded in download_url with no clear outcome, returning None")
+    logging.error(
+        "Maximum retries exceeded in download_url with no clear outcome, returning None"
+    )
     return None
 
 
@@ -252,7 +276,7 @@ def check_file_present(comp_filename: str, dwndir: str) -> bool:
     return present
 
 
-def check_n_download_url(url, dwndir, filename=False):
+def check_n_download_url(url, dwndir, filename=False, uncomp=False):
     """
     Download single file given URL to download from.
     Optionally provide filename if different from url name
@@ -268,8 +292,13 @@ def check_n_download_url(url, dwndir, filename=False):
         out_f = _Path(dwndir) / filename
         download_url(url, out_f)
 
+    if uncomp:
+        _subprocess.run(["uncompress", f"{out_f}"])
 
-def check_n_download(comp_filename, dwndir, ftps, uncomp=True, remove_crx=False, no_check=False):
+
+def check_n_download(
+    comp_filename, dwndir, ftps, uncomp=True, remove_crx=False, no_check=False
+):
     """Download compressed file to dwndir if not already present and optionally uncompress"""
 
     comp_file = _Path(dwndir + comp_filename)
@@ -278,7 +307,6 @@ def check_n_download(comp_filename, dwndir, ftps, uncomp=True, remove_crx=False,
         dwndir += "/"
 
     if no_check or (not check_file_present(comp_filename, dwndir)):
-
         logging.debug(f"Downloading {comp_filename}")
 
         with open(comp_file, "wb") as local_f:
@@ -330,7 +358,15 @@ def get_install_crx2rnx(override=False, verbose=False):
         _request.urlretrieve(url, out_f)
 
         _subprocess.run(["tar", "-xvf", "tmp/RNXCMP_4.0.8_src.tar.gz", "-C", "tmp"])
-        cp = ["gcc", "-ansi", "-O2", "-static", "tmp/RNXCMP_4.0.8_src/source/crx2rnx.c", "-o", "crx2rnx"]
+        cp = [
+            "gcc",
+            "-ansi",
+            "-O2",
+            "-static",
+            "tmp/RNXCMP_4.0.8_src/source/crx2rnx.c",
+            "-o",
+            "crx2rnx",
+        ]
         _subprocess.run(cp)
         _subprocess.run(["rm", "-r", "tmp"])
         _subprocess.run(["mv", "crx2rnx", _sys.path[0]])
@@ -366,7 +402,11 @@ def select_mr_file(mr_files, f_typ, ac):
     else:
         search_str_end = f".{f_typ}.Z"
         search_str_sta = f"{ac}"
-        mr_typ_files = [f for f in mr_files if ((f.startswith(search_str_sta)) & (f.endswith(search_str_end)))]
+        mr_typ_files = [
+            f
+            for f in mr_files
+            if ((f.startswith(search_str_sta)) & (f.endswith(search_str_end)))
+        ]
 
     return mr_typ_files
 
@@ -393,7 +433,14 @@ def find_mr_file(dt, f_typ, ac, ftps):
 
 
 def download_most_recent(
-    dest, f_type, ftps=None, ac="any", dwn_src="cddis", f_dict_out=False, gpswkD_out=False, ftps_out=False
+    dest,
+    f_type,
+    ftps=None,
+    ac="any",
+    dwn_src="cddis",
+    f_dict_out=False,
+    gpswkD_out=False,
+    ftps_out=False,
 ):
     """
     Download the most recent version of a product file
@@ -504,18 +551,22 @@ def download_prod(
 
     for dt in dt_list:
         for f_typ in f_types:
-
             if dwn_src == "cddis":
-
                 if repro3:
-                    f, gpswk = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ, repro3=True)
+                    f, gpswk = gen_prod_filename(
+                        dt, pref=ac, suff=suff, f_type=f_typ, repro3=True
+                    )
                 elif (ac == "igs") and (f_typ == "erp"):
-                    f, gpswk = gen_prod_filename(dt, pref=ac, suff="7", f_type=f_typ, wkly_file=True)
+                    f, gpswk = gen_prod_filename(
+                        dt, pref=ac, suff="7", f_type=f_typ, wkly_file=True
+                    )
                 elif f_typ == "snx":
                     mr_file, ftps, gpswk = find_mr_file(dt, f_typ, ac, ftps)
                     f = mr_file
                 elif wkly_file:
-                    f, gpswk = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ, wkly_file=True)
+                    f, gpswk = gen_prod_filename(
+                        dt, pref=ac, suff=suff, f_type=f_typ, wkly_file=True
+                    )
                 else:
                     f, gpswk = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ)
 
@@ -531,13 +582,23 @@ def download_prod(
                         ftps.cwd("/")
                         ftps.cwd(f"gnss/data/daily/{dt.year}/brdc")
                         success = check_n_download(
-                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
+                            f,
+                            dwndir=dest,
+                            ftps=ftps,
+                            uncomp=True,
+                            remove_crx=True,
+                            no_check=True,
                         )
                         ftps.cwd("/")
                         ftps.cwd(f"gnss/products/{gpswk}")
                     else:
                         success = check_n_download(
-                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
+                            f,
+                            dwndir=dest,
+                            ftps=ftps,
+                            uncomp=True,
+                            remove_crx=True,
+                            no_check=True,
                         )
                     p_gpswk = gpswk
                 else:
@@ -552,7 +613,12 @@ def download_prod(
                     for f_typ in f_types:
                         f = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ)
                         success = check_n_download(
-                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
+                            f,
+                            dwndir=dest,
+                            ftps=ftps,
+                            uncomp=True,
+                            remove_crx=True,
+                            no_check=True,
                         )
                         if f_dict and success:
                             f_uncomp = gen_uncomp_filename(f)
@@ -582,12 +648,24 @@ def download_pea_prods(
 
     if most_recent:
         snx_vars_out = download_most_recent(
-            dest=dest, f_type="snx", ac=snx_typ, dwn_src="cddis", f_dict_out=True, gpswkD_out=True, ftps_out=True
+            dest=dest,
+            f_type="snx",
+            ac=snx_typ,
+            dwn_src="cddis",
+            f_dict_out=True,
+            gpswkD_out=True,
+            ftps_out=True,
         )
         f_dict, gpswkD_out, ftps = snx_vars_out
 
         clk_vars_out = download_most_recent(
-            dest=dest, f_type=clk_sel, ac=ac, dwn_src="cddis", f_dict_out=True, gpswkD_out=True, ftps_out=True
+            dest=dest,
+            f_type=clk_sel,
+            ac=ac,
+            dwn_src="cddis",
+            f_dict_out=True,
+            gpswkD_out=True,
+            ftps_out=True,
         )
         f_dict_update, gpswkD_out, ftps = clk_vars_out
         f_dict.update(f_dict_update)
@@ -614,7 +692,11 @@ def download_pea_prods(
     dest_pth = _Path(dest)
     # Output dict for the files that are downloaded
     if not out_dict:
-        out_dict = {"dates": dt_list, "atxfiles": ["igs14.atx"], "blqfiles": ["OLOAD_GO.BLQ"]}
+        out_dict = {
+            "dates": dt_list,
+            "atxfiles": ["igs14.atx"],
+            "blqfiles": ["OLOAD_GO.BLQ"],
+        }
 
     # Get the ATX file if not present already:
     if not (dest_pth / "igs14.atx").is_file():
@@ -639,7 +721,12 @@ def download_pea_prods(
             begin_url = f"https://vmf.geo.tuwien.ac.at/trop_products/GRID/5x5/VMF3/VMF3_OP/{year}/"
             f_begin = "VMF3_" + dt.strftime("%Y%m%d") + ".H"
             urls = [begin_url + f_begin + en for en in ["00", "06", "12", "18"]]
-            urls.append(begin_url + "VMF3_" + (dt + _datetime.timedelta(days=1)).strftime("%Y%m%d") + ".H00")
+            urls.append(
+                begin_url
+                + "VMF3_"
+                + (dt + _datetime.timedelta(days=1)).strftime("%Y%m%d")
+                + ".H00"
+            )
             # Run through model files, downloading if they are not in directory
             for url in urls:
                 if not (dest_pth / f"grid5/{url[-17:]}").is_file():
@@ -666,15 +753,32 @@ def download_pea_prods(
     for ac in ac_typ_dict:
         if most_recent:
             f_dict_update = download_prod(
-                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True, ftps=ftps
+                dates=dt_list,
+                dest=dest,
+                ac=ac,
+                f_type=ac_typ_dict[ac],
+                dwn_src="cddis",
+                f_dict=True,
+                ftps=ftps,
             )
         elif repro3:
             f_dict_update = download_prod(
-                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True, repro3=True
+                dates=dt_list,
+                dest=dest,
+                ac=ac,
+                f_type=ac_typ_dict[ac],
+                dwn_src="cddis",
+                f_dict=True,
+                repro3=True,
             )
         else:
             f_dict_update = download_prod(
-                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True
+                dates=dt_list,
+                dest=dest,
+                ac=ac,
+                f_type=ac_typ_dict[ac],
+                dwn_src="cddis",
+                f_dict=True,
             )
         f_dict.update(f_dict_update)
 
@@ -723,7 +827,6 @@ def download_rinex3(dates, stations, dest, dwn_src="cddis", ftps=False, f_dict=F
 
             for dt in dt_list:
                 for station in stations:
-
                     f_pref = f"{station}_R_"
                     f_suff_crx = f"0000_01D_30S_MO.crx.gz"
                     f = f_pref + dt.strftime("%Y%j") + f_suff_crx
@@ -732,20 +835,34 @@ def download_rinex3(dates, stations, dest, dwn_src="cddis", ftps=False, f_dict=F
                         if p_date == dt:
                             try:
                                 success = check_n_download(
-                                    f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
+                                    f,
+                                    dwndir=dest,
+                                    ftps=ftps,
+                                    uncomp=True,
+                                    remove_crx=True,
+                                    no_check=True,
                                 )
                             except:
-                                logging.error(f"Download of {f} failed - file not found")
+                                logging.error(
+                                    f"Download of {f} failed - file not found"
+                                )
                                 success = False
                         else:
                             ftps.cwd("/")
                             ftps.cwd(f"gnss/data/daily{dt.strftime('/%Y/%j/%yd/')}")
                             try:
                                 success = check_n_download(
-                                    f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
+                                    f,
+                                    dwndir=dest,
+                                    ftps=ftps,
+                                    uncomp=True,
+                                    remove_crx=True,
+                                    no_check=True,
                                 )
                             except:
-                                logging.error(f"Download of {f} failed - file not found")
+                                logging.error(
+                                    f"Download of {f} failed - file not found"
+                                )
                                 success = False
                             p_date = dt
                     else:
@@ -759,7 +876,14 @@ def download_rinex3(dates, stations, dest, dwn_src="cddis", ftps=False, f_dict=F
                 f_suff_crx = f"0000_01D_30S_MO.crx.gz"
                 f = f_pref + dt.strftime("%Y%j") + f_suff_crx
                 if not check_file_present(comp_filename=f, dwndir=dest):
-                    success = check_n_download(f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True)
+                    success = check_n_download(
+                        f,
+                        dwndir=dest,
+                        ftps=ftps,
+                        uncomp=True,
+                        remove_crx=True,
+                        no_check=True,
+                    )
                 else:
                     success = True
                 if f_dict and success:
@@ -776,5 +900,7 @@ def get_vars_from_file(path):
     tags = module_from_spec(spec)
     spec.loader.exec_module(tags)
 
-    tags_dict = {item: getattr(tags, item) for item in dir(tags) if not item.startswith("__")}
+    tags_dict = {
+        item: getattr(tags, item) for item in dir(tags) if not item.startswith("__")
+    }
     return tags_dict
