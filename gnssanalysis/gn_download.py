@@ -365,6 +365,10 @@ def connect_cddis(verbose=False):
 
 @_contextmanager
 def ftp_tls(url: str, **kwargs) -> None:
+    """Opens a connect to specified ftp server over tls.
+
+    :param: url: Remote ftp url
+    """
     kwargs.setdefault("timeout", 30)
     with _FTP_TLS(url, **kwargs) as ftps:
         ftps.login()
@@ -374,7 +378,11 @@ def ftp_tls(url: str, **kwargs) -> None:
 
 
 @_contextmanager
-def ftp_tls_cddis(connection=None, **kwargs) -> None:
+def ftp_tls_cddis(connection: _FTP_TLS = None, **kwargs) -> None:
+    """Establish an ftp tls connection to CDDIS. Opens a new connection if one does not already exist.
+
+    :param connection: Active connection which is passed through to allow reuse
+    """
     if connection is None:
         with ftp_tls(CDDIS_FTP, **kwargs) as ftps:
             yield ftps
@@ -479,6 +487,15 @@ def download_file_from_cddis(
     max_retries: int = 3,
     uncomp: bool = True,
 ) -> None:
+    """Downloads a single file from the cddis ftp server.
+
+    :param filename: Name of the file to download
+    :ftp_folder: Folder where the file is stored on the remote
+    :output_folder: Folder to store the output file
+    :ftps: Optional active connection object which is reused
+    :max_retries: Number of retries before raising error
+    :uncomp: If true, uncompress files on download
+    """
     with ftp_tls_cddis(ftps) as ftps:
         ftps.cwd(ftp_folder)
         retries = 0
@@ -502,7 +519,13 @@ def download_file_from_cddis(
                 _time.sleep(_random.uniform(0.0, 2.0**retries))
 
 
-def download_multiple_files_from_cddis(files: list, ftp_folder: str, output_folder: _Path) -> None:
+def download_multiple_files_from_cddis(files: [str], ftp_folder: str, output_folder: _Path) -> None:
+    """Downloads multiple files in a single folder from cddis in a thread pool.
+
+    :param files: List of str filenames
+    :ftp_folder: Folder where the file is stored on the remote
+    :output_folder: Folder to store the output files
+    """
     with _concurrent.futures.ThreadPoolExecutor() as executor:
         # Wrap this in a list to force iteration of results and so get the first exception if any were raised
         list(executor.map(download_file_from_cddis, files, _repeat(ftp_folder), _repeat(output_folder)))
