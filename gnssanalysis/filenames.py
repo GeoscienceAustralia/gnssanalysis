@@ -306,9 +306,12 @@ def nominal_span_string(span_seconds: float) -> str:
             unit = "W"
             span_unit_counts = int(span_seconds // gn_const.SEC_IN_WEEK)
     elif span_seconds >= gn_const.SEC_IN_WEEK:
-        if (span_seconds % gn_const.SEC_IN_WEEK) < gn_const.SEC_IN_DAY:
+        num_weeks = int(span_seconds // gn_const.SEC_IN_WEEK)
+        # IGS uses 07D to represent a week
+        # TODO: Handle JPL - uses 01W for a week
+        if (span_seconds % gn_const.SEC_IN_WEEK) < gn_const.SEC_IN_DAY and num_weeks > 1:
             unit = "W"
-            span_unit_counts = int(span_seconds // gn_const.SEC_IN_WEEK)
+            span_unit_counts = num_weeks
         else:
             unit = "D"
             span_unit_counts = int(span_seconds // gn_const.SEC_IN_DAY)
