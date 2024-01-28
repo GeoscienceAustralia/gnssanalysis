@@ -251,11 +251,11 @@ def generate_IGS_long_filename(
 
     if isinstance(timespan, str):
         timespan_str = timespan
-    else: 
+    else:
         if end_epoch is None:
             if timespan is None:
                 raise ValueError("Either end_epoch or timespan must be supplied")
-        else :
+        else:
             timespan = end_epoch - start_epoch
         timespan_str = nominal_span_string(timespan.total_seconds())
 
@@ -306,9 +306,12 @@ def nominal_span_string(span_seconds: float) -> str:
             unit = "W"
             span_unit_counts = int(span_seconds // gn_const.SEC_IN_WEEK)
     elif span_seconds >= gn_const.SEC_IN_WEEK:
-        if (span_seconds % gn_const.SEC_IN_WEEK) < gn_const.SEC_IN_DAY:
+        num_weeks = int(span_seconds // gn_const.SEC_IN_WEEK)
+        # IGS uses 07D to represent a week
+        # TODO: Handle JPL - uses 01W for a week
+        if (span_seconds % gn_const.SEC_IN_WEEK) < gn_const.SEC_IN_DAY and num_weeks > 1:
             unit = "W"
-            span_unit_counts = int(span_seconds // gn_const.SEC_IN_WEEK)
+            span_unit_counts = num_weeks
         else:
             unit = "D"
             span_unit_counts = int(span_seconds // gn_const.SEC_IN_DAY)
@@ -403,7 +406,7 @@ def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         #     clk_df.reset_index("J2000").groupby(level="CODE")["J2000"].diff().groupby(level="CODE").median().median()
         # )
         # The pandas stubs seem to assume .index returns an Index (not MultiIndex), so we need to ignore the typing for now
-        sampling_rate = np.median(np.diff(clk_df.index.levels[1])) #type: ignore
+        sampling_rate = np.median(np.diff(clk_df.index.levels[1]))  # type: ignore
         # Alternatively:
         sampling_rate = np.median(np.diff(clk_df.index.get_level_values("J2000").unique()))
         end_epoch = gn_datetime.j2000_to_pydatetime(end_j2000sec + sampling_rate)
@@ -606,7 +609,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         #     sp3_df.reset_index(0, names="Epoch").groupby(level=0)["Epoch"].diff().groupby(level=0).median().median()
         # )
         # The pandas stubs seem to assume .index returns an Index (not MultiIndex), so we need to ignore the typing for now
-        sampling_rate = np.median(np.diff(sp3_df.index.levels[0])) # type: ignore
+        sampling_rate = np.median(np.diff(sp3_df.index.levels[0]))  # type: ignore
         # Alternatively:
         # sampling_rate = np.median(np.diff(sp3_df.index.get_level_values(0).unique()))
         name_props["start_epoch"] = start_epoch
