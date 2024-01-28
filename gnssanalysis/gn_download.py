@@ -13,6 +13,8 @@ import subprocess as _subprocess
 import sys as _sys
 import threading
 import time as _time
+import gzip as _gzip
+import tarfile as _tarfile
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
 from typing import Optional as _Optional, Union as _Union
@@ -71,12 +73,7 @@ class TransferCallback:
 
 
 def upload_with_chunksize_and_meta(
-    local_file_path: _Path,
-    bucket_name: str,
-    object_key: str,
-    public_read=False,
-    metadata=None,
-    verbose=True,
+    local_file_path: _Path, bucket_name: str, object_key: str, public_read=False, metadata=None, verbose=True
 ):
     """
     Upload a file from a local folder to an Amazon S3 bucket, setting a
@@ -103,11 +100,7 @@ def upload_with_chunksize_and_meta(
         extra_args["ACL"] = "public-read"
 
     s3.Bucket(bucket_name).upload_file(
-        str(local_file_path),
-        object_key,
-        Config=config,
-        ExtraArgs=extra_args,
-        Callback=transfer_callback,
+        str(local_file_path), object_key, Config=config, ExtraArgs=extra_args, Callback=transfer_callback
     )
     if verbose:
         _sys.stdout.write("\n")
@@ -116,8 +109,7 @@ def upload_with_chunksize_and_meta(
 
 def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum") -> _Optional[str]:
     """requests md5checksum metadata over https (AWS S3 bucket)
-    Returns None if file not found (404) or if md5checksum metadata key does not exist
-    """
+    Returns None if file not found (404) or if md5checksum metadata key does not exist"""
     logging.info(f'requesting checksum for "{url}"')
     for retry in range(1, max_retries + 1):
         try:
@@ -262,7 +254,56 @@ def check_file_present(comp_filename: str, dwndir: str) -> bool:
     return present
 
 
-def check_n_download_url(url, dwndir, filename=False, uncomp=False):
+def decompress_file(input_filepath: _Path, delete_after_decompression: bool = False) -> _Path:
+    """
+    Given the file path to a compressed CDDIS file, decompress it in-place
+    Assumption is that filename of final file is the stem of the compressed filename
+    Option to delete original compressed file after decompression (Default: False)
+    """
+    # Get absolulte path
+    input_file = input_filepath.resolve()
+    # Determine extension
+    extension = input_file.suffix
+    # Check if file is a .tar.gz file (if so, assign new extension)
+    if extension == ".gz" and input_file.stem[-4:] == ".tar":
+        extension = ".tar.gz"
+    if extension not in [".gz", ".tar", ".tar.gz"]:
+        logging.info(f"Input file extension [{extension}] not supported - must be .gz, .tar.gz or .tar to decompress")
+        return None
+    if extension == ".gz":
+        # Output file definition:
+        output_file = input_file.with_suffix("")
+        # Open the input gzip file and the output file
+        with _gzip.open(input_file, "rb") as f_in, output_file.open("wb") as f_out:
+            # Copy the decompressed content from input to output
+            f_out.write(f_in.read())
+            logging.info(f"Decompression of {input_file.name} to {output_file.name} in {output_file.parent} complete")
+        if delete_after_decompression:
+            logging.info(f"Deleting {input_file.name}")
+            input_file.unlink()
+        return output_file
+    elif extension == ".tar" or extension == ".tar.gz":
+        # Open the input tar file and the output file
+        with _tarfile.open(input_file, "r") as tar:
+            # Get name of file inside tar.gz file (assuming only one file)
+            filename = tar.getmembers()[0].name
+            output_file = input_file.parent / filename
+            # Extract contents
+            tar.extractall(input_file.parent)
+            logging.info(f"Decompression of {input_file.name} to {output_file.name} in {output_file.parent} complete")
+        if delete_after_decompression:
+            logging.info(f"Deleting {input_file.name}")
+            input_file.unlink()
+        return output_file
+    # elif extension == ".Z":
+    #     # TODO Introduce this option - the code below doesn't currently work as expected
+    #     with input_file.open("rb") as f_in, output_file.open("wb") as f_out:
+    #         decompressed_data = _zlib.decompress(f_in.read(), wbits=_zlib.MAX_WBITS | 16)
+    #         f_out.write(decompressed_data)
+    #         logging.debug(f"Decompression of {input_file.name} to {output_file.name} in {output_file.parent} complete")
+
+
+def check_n_download_url(url, dwndir, filename=False):
     """
     Download single file given URL to download from.
     Optionally provide filename if different from url name
@@ -277,9 +318,6 @@ def check_n_download_url(url, dwndir, filename=False, uncomp=False):
         logging.debug(f"Downloading {_Path(url).name}")
         out_f = _Path(dwndir) / filename
         download_url(url, out_f)
-
-    if uncomp:
-        _subprocess.run(["uncompress", f"{out_f}"])
 
 
 def check_n_download(comp_filename, dwndir, ftps, uncomp=True, remove_crx=False, no_check=False):
@@ -342,15 +380,7 @@ def get_install_crx2rnx(override=False, verbose=False):
         _request.urlretrieve(url, out_f)
 
         _subprocess.run(["tar", "-xvf", "tmp/RNXCMP_4.0.8_src.tar.gz", "-C", "tmp"])
-        cp = [
-            "gcc",
-            "-ansi",
-            "-O2",
-            "-static",
-            "tmp/RNXCMP_4.0.8_src/source/crx2rnx.c",
-            "-o",
-            "crx2rnx",
-        ]
+        cp = ["gcc", "-ansi", "-O2", "-static", "tmp/RNXCMP_4.0.8_src/source/crx2rnx.c", "-o", "crx2rnx"]
         _subprocess.run(cp)
         _subprocess.run(["rm", "-r", "tmp"])
         _subprocess.run(["mv", "crx2rnx", _sys.path[0]])
@@ -413,14 +443,7 @@ def find_mr_file(dt, f_typ, ac, ftps):
 
 
 def download_most_recent(
-    dest,
-    f_type,
-    ftps=None,
-    ac="any",
-    dwn_src="cddis",
-    f_dict_out=False,
-    gpswkD_out=False,
-    ftps_out=False,
+    dest, f_type, ftps=None, ac="any", dwn_src="cddis", f_dict_out=False, gpswkD_out=False, ftps_out=False
 ):
     """
     Download the most recent version of a product file
@@ -556,23 +579,13 @@ def download_prod(
                         ftps.cwd("/")
                         ftps.cwd(f"gnss/data/daily/{dt.year}/brdc")
                         success = check_n_download(
-                            f,
-                            dwndir=dest,
-                            ftps=ftps,
-                            uncomp=True,
-                            remove_crx=True,
-                            no_check=True,
+                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
                         )
                         ftps.cwd("/")
                         ftps.cwd(f"gnss/products/{gpswk}")
                     else:
                         success = check_n_download(
-                            f,
-                            dwndir=dest,
-                            ftps=ftps,
-                            uncomp=True,
-                            remove_crx=True,
-                            no_check=True,
+                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
                         )
                     p_gpswk = gpswk
                 else:
@@ -587,12 +600,7 @@ def download_prod(
                     for f_typ in f_types:
                         f = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ)
                         success = check_n_download(
-                            f,
-                            dwndir=dest,
-                            ftps=ftps,
-                            uncomp=True,
-                            remove_crx=True,
-                            no_check=True,
+                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
                         )
                         if f_dict and success:
                             f_uncomp = gen_uncomp_filename(f)
@@ -622,24 +630,12 @@ def download_pea_prods(
 
     if most_recent:
         snx_vars_out = download_most_recent(
-            dest=dest,
-            f_type="snx",
-            ac=snx_typ,
-            dwn_src="cddis",
-            f_dict_out=True,
-            gpswkD_out=True,
-            ftps_out=True,
+            dest=dest, f_type="snx", ac=snx_typ, dwn_src="cddis", f_dict_out=True, gpswkD_out=True, ftps_out=True
         )
         f_dict, gpswkD_out, ftps = snx_vars_out
 
         clk_vars_out = download_most_recent(
-            dest=dest,
-            f_type=clk_sel,
-            ac=ac,
-            dwn_src="cddis",
-            f_dict_out=True,
-            gpswkD_out=True,
-            ftps_out=True,
+            dest=dest, f_type=clk_sel, ac=ac, dwn_src="cddis", f_dict_out=True, gpswkD_out=True, ftps_out=True
         )
         f_dict_update, gpswkD_out, ftps = clk_vars_out
         f_dict.update(f_dict_update)
@@ -666,11 +662,7 @@ def download_pea_prods(
     dest_pth = _Path(dest)
     # Output dict for the files that are downloaded
     if not out_dict:
-        out_dict = {
-            "dates": dt_list,
-            "atxfiles": ["igs14.atx"],
-            "blqfiles": ["OLOAD_GO.BLQ"],
-        }
+        out_dict = {"dates": dt_list, "atxfiles": ["igs14.atx"], "blqfiles": ["OLOAD_GO.BLQ"]}
 
     # Get the ATX file if not present already:
     if not (dest_pth / "igs14.atx").is_file():
@@ -722,32 +714,15 @@ def download_pea_prods(
     for ac in ac_typ_dict:
         if most_recent:
             f_dict_update = download_prod(
-                dates=dt_list,
-                dest=dest,
-                ac=ac,
-                f_type=ac_typ_dict[ac],
-                dwn_src="cddis",
-                f_dict=True,
-                ftps=ftps,
+                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True, ftps=ftps
             )
         elif repro3:
             f_dict_update = download_prod(
-                dates=dt_list,
-                dest=dest,
-                ac=ac,
-                f_type=ac_typ_dict[ac],
-                dwn_src="cddis",
-                f_dict=True,
-                repro3=True,
+                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True, repro3=True
             )
         else:
             f_dict_update = download_prod(
-                dates=dt_list,
-                dest=dest,
-                ac=ac,
-                f_type=ac_typ_dict[ac],
-                dwn_src="cddis",
-                f_dict=True,
+                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True
             )
         f_dict.update(f_dict_update)
 
@@ -804,12 +779,7 @@ def download_rinex3(dates, stations, dest, dwn_src="cddis", ftps=False, f_dict=F
                         if p_date == dt:
                             try:
                                 success = check_n_download(
-                                    f,
-                                    dwndir=dest,
-                                    ftps=ftps,
-                                    uncomp=True,
-                                    remove_crx=True,
-                                    no_check=True,
+                                    f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
                                 )
                             except:
                                 logging.error(f"Download of {f} failed - file not found")
@@ -819,12 +789,7 @@ def download_rinex3(dates, stations, dest, dwn_src="cddis", ftps=False, f_dict=F
                             ftps.cwd(f"gnss/data/daily{dt.strftime('/%Y/%j/%yd/')}")
                             try:
                                 success = check_n_download(
-                                    f,
-                                    dwndir=dest,
-                                    ftps=ftps,
-                                    uncomp=True,
-                                    remove_crx=True,
-                                    no_check=True,
+                                    f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
                                 )
                             except:
                                 logging.error(f"Download of {f} failed - file not found")
@@ -841,14 +806,7 @@ def download_rinex3(dates, stations, dest, dwn_src="cddis", ftps=False, f_dict=F
                 f_suff_crx = f"0000_01D_30S_MO.crx.gz"
                 f = f_pref + dt.strftime("%Y%j") + f_suff_crx
                 if not check_file_present(comp_filename=f, dwndir=dest):
-                    success = check_n_download(
-                        f,
-                        dwndir=dest,
-                        ftps=ftps,
-                        uncomp=True,
-                        remove_crx=True,
-                        no_check=True,
-                    )
+                    success = check_n_download(f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True)
                 else:
                     success = True
                 if f_dict and success:
