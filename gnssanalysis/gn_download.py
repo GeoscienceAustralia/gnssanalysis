@@ -17,6 +17,9 @@ import subprocess as _subprocess
 import sys as _sys
 import threading
 import time as _time
+import gzip as _gzip
+import tarfile as _tarfile
+import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
@@ -257,6 +260,61 @@ def check_file_present(comp_filename: str, dwndir: str) -> bool:
         present = False
 
     return present
+
+
+def decompress_file(input_filepath: _Path, delete_after_decompression: bool = False) -> _Path:
+    """
+    Given the file path to a compressed file, decompress it in-place
+    Assumption is that filename of final file is the stem of the compressed filename for .gz files
+    Option to delete original compressed file after decompression (Default: False)
+    """
+    # Get absolulte path
+    input_file = input_filepath.resolve()
+    # Determine extension
+    extension = input_file.suffix
+    # Check if file is a .tar.gz file (if so, assign new extension)
+    if extension == ".gz" and input_file.stem[-4:] == ".tar":
+        extension = ".tar.gz"
+    if extension not in [".gz", ".tar", ".tar.gz", ".Z"]:
+        logging.info(f"Input file extension [{extension}] not supported - must be .gz, .tar.gz or .tar to decompress")
+        return None
+    if extension == ".gz":
+        # Special case for the extraction of RNX / CRX files (uses hatanaka module)
+        if input_file.stem[-4:] in [".rnx", ".crx"]:
+            output_file = _hatanaka.decompress_on_disk(path=input_file, delete=delete_after_decompression).resolve()
+            return output_file
+        # Output file definition:
+        output_file = input_file.with_suffix("")
+        # Open the input gzip file and the output file
+        with _gzip.open(input_file, "rb") as f_in, output_file.open("wb") as f_out:
+            # Copy the decompressed content from input to output
+            f_out.write(f_in.read())
+            logging.info(f"Decompression of {input_file.name} to {output_file.name} in {output_file.parent} complete")
+        if delete_after_decompression:
+            logging.info(f"Deleting {input_file.name}")
+            input_file.unlink()
+        return output_file
+    elif extension == ".tar" or extension == ".tar.gz":
+        # Open the input tar file and the output file
+        with _tarfile.open(input_file, "r") as tar:
+            # Get name of file inside tar.gz file (assuming only one file)
+            filename = tar.getmembers()[0].name
+            output_file = input_file.parent / filename
+            # Extract contents
+            tar.extractall(input_file.parent)
+            logging.info(f"Decompression of {input_file.name} to {output_file.name} in {output_file.parent} complete")
+        if delete_after_decompression:
+            logging.info(f"Deleting {input_file.name}")
+            input_file.unlink()
+        return output_file
+    elif extension == ".Z":
+        # At the moment, we assume that the .Z file is from RINEX
+        if input_file.stem[-1] not in ["d", "n"]:  # RINEX 2 files: "d" observation data, "n" broadcast ephemerides
+            logging.info(f"Only decompression of RINEX files currently supported for .Z decompression")
+            return None
+        output_file = _hatanaka.decompress_on_disk(path=input_file, delete=delete_after_decompression).resolve()
+        logging.debug(f"Decompression of {input_file.name} to {output_file.name} in {output_file.parent} complete")
+        return output_file
 
 
 def check_n_download_url(url, dwndir, filename=False):
