@@ -38,6 +38,13 @@ _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
 def nanflags2nans(sp3_df):
     """Converts 999999 or 999999.999999 to NaNs"""
+
+
+def sp3_clock_nodata_to_nan(sp3_df):
+    """
+    Converts the SP3 Clock column's nodata value (999999 or 999999.999999 - the fractional component optional) to NaNs.
+    See https://files.igs.org/pub/data/format/sp3_docu.txt
+    """
     nan_mask = sp3_df.iloc[:, 1:5].values >= 999999
     nans = nan_mask.astype(float)
     nans[nan_mask] = _np.NAN
@@ -134,7 +141,7 @@ def read_sp3(sp3_path, pOnly=True):
         ]
         sp3_df.STD = base_xyzc**sp3_df.STD.values
 
-    nanflags2nans(sp3_df)  # 999999* None value flag to None
+    sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         pMask = series.astype("S1") == b"P"
         sp3_df = sp3_df[pMask].set_index([dt_index[pMask], series.str[1:4].values[pMask].astype(str).astype(object)])
@@ -288,6 +295,10 @@ def gen_sp3_header(sp3_df):
 def gen_sp3_content(
     sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Union[None, _io.TextIOBase] = None
 ):
+    """
+    Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
+     it otherwise.
+    """
     out_buf = buf if buf is not None else _io.StringIO()
     if sort_outputs:
         # If we need to do particular sorting/ordering of satellites and constellations we can use some of the
@@ -301,6 +312,8 @@ def gen_sp3_content(
         pos_base = 1.25
         clk_base = 1.025
 
+        # Pos and Clk log helpers. Returns column nodata value if NaN, and caps returned value at 99, 999 respectively.
+        # TODO check my interpretation is correct, and use the nodata constant rather than a value, to improve clarity.
         def pos_log(x):
             return _np.minimum(_np.nan_to_num(_np.rint(_np.log(x) / _np.log(pos_base)), nan=-100), 99).astype(int)
 
@@ -317,21 +330,28 @@ def gen_sp3_content(
     def prn_formatter(x):
         return f"P{x}"
 
+    # TODO NOTE
     # This is technically incorrect but convenient. The SP3 standard doesn't include a space between the X, Y, Z, and
     # CLK values but pandas .to_string() put a space between every field. In practice most entries have spaces between
     # the X, Y, Z, and CLK values because the values are small enough that a 14.6f format specification gets padded
     # with spaces. So for now we will use a 13.6f specification and a space between entries, which will be equivalent
     # up until an entry of -100000.000000, which is greater than the radius of current GNSS orbits but not moon orbit.
     # Longer term we should maybe reimplement this again, maybe just processing groups line by line to format them?
+
     def pos_formatter(x):
-        if not _np.isfinite(x):
-            return "      0.000000"
-        return format(x, "13.6f")
+        if isinstance(x, str): # Presume an inf/NaN value, already formatted as nodata string. Pass through.
+            return x # Expected value "      0.000000"
+        return format(x, "13.6f") # Numeric value, format as usual
 
     def clk_formatter(x):
-        if not _np.isfinite(x):
-            return " 999999.999999"
-        return format(x, "13.6f")
+        # If this value (nominally a numpy float64) is actually a string, moreover containing the mandated part of the
+        # clock nodata value (per the SP3 spec), we deduce nodata formatting has already been done, and return as is.
+        if isinstance(x, str) and x.strip(' ').beginswith("999999."): # TODO performance: could do just type check
+            return x
+        return format(x, "13.6f") # Not infinite or NaN: proceed with normal formatting
+
+    # NOTE: the following formatters are fine, as the nodata value is actually a *numeric value*,
+    # so DataFrame.to_string() will invoke them for those values.
 
     def pos_std_formatter(x):
         # We use -100 as our integer NaN/"missing" marker
@@ -347,14 +367,14 @@ def gen_sp3_content(
 
     formatters = {
         "PRN": prn_formatter,
-        "X": pos_formatter,
+        "X": pos_formatter,   # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
         "Y": pos_formatter,
         "Z": pos_formatter,
-        "CLK": clk_formatter,
-        "STDX": pos_std_formatter,
+        "CLK": clk_formatter, # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
+        "STDX": pos_std_formatter,   # Nodata is represented as an integer, so can be handled here.
         "STDY": pos_std_formatter,
         "STDZ": pos_std_formatter,
-        "STDCLK": clk_std_formatter,
+        "STDCLK": clk_std_formatter, # ditto above
     }
     for epoch, epoch_vals in out_df.reset_index("PRN").groupby(axis=0, level="J2000"):
         # Format and write out the epoch in the SP3 format
@@ -365,7 +385,40 @@ def gen_sp3_content(
             f" {epoch_datetime.hour:2} {epoch_datetime.minute:2} {frac_seconds:11.8f}"
         )
         out_buf.write("\n")
+
         # Format this epoch's values in the SP3 format and write to buffer
+
+        # First, we fill NaN and infinity values with the standardised nodata value for each column.
+        # NOTE: DataFrame.to_string() as called below, takes formatter functions per column. It does not, however
+        # invoke them on NaN values!! As such, trying to handle NaNs in the formatter is a fool's errand.
+        # Instead, we do it here, and get the formatters to recognise and skip over the already processed nodata values
+        
+        # POS nodata formatting
+        pos_nodata_value = "      0.000000"
+        # Fill +/- infinity values with SP3 nodata value for POS columns
+        epoch_vals['X'].replace(to_replace=[_np.inf, _np.ninf], value=pos_nodata_value, inplace=True)
+        epoch_vals['Y'].replace(to_replace=[_np.inf, _np.ninf], value=pos_nodata_value, inplace=True)
+        epoch_vals['Z'].replace(to_replace=[_np.inf, _np.ninf], value=pos_nodata_value, inplace=True)
+        # Now do the same for NaNs
+        epoch_vals['X'].fillna(value=pos_nodata_value, inplace=True)
+        epoch_vals['Y'].fillna(value=pos_nodata_value, inplace=True)
+        epoch_vals['Z'].fillna(value=pos_nodata_value, inplace=True)
+        # NOTE: we could use replace() for all this, though fillna() might be faster in some
+        # cases: https://stackoverflow.com/a/76225227
+        # replace() will also handle other types of nodata constants: https://stackoverflow.com/a/54738894
+    
+
+        # CLK nodata formatting
+        clock_nodata_value = " 999999.999999"
+        # Throw both +/- infinity, and NaN values to the SP3 clock nodata value.
+        # See https://stackoverflow.com/a/17478495
+        epoch_vals['CLK'].replace(to_replace=[_np.inf, _np.ninf], value=clock_nodata_value, inplace=True)
+        epoch_vals['CLK'].fillna(value=clock_nodata_value, inplace=True)
+
+        # Now invoke DataFrame to_string() to write out the values, leveraging our formatting functions for the
+        # relevant columns.
+        # NOTE: NaN and infinity values do NOT invoke the formatter, though you can put a string in a primarily numeric
+        # column, so we format the nodata values ahead of time, above.
         epoch_vals.to_string(
             buf=out_buf,
             index=False,
