@@ -356,7 +356,7 @@ def gen_sp3_content(
     def clk_formatter(x):
         # If this value (nominally a numpy float64) is actually a string, moreover containing the mandated part of the
         # clock nodata value (per the SP3 spec), we deduce nodata formatting has already been done, and return as is.
-        if isinstance(x, str) and x.strip(' ').beginswith("999999."): # TODO performance: could do just type check
+        if isinstance(x, str) and x.strip(' ').startswith("999999."): # TODO performance: could do just type check
             return x
         return format(x, "13.6f") # Not infinite or NaN: proceed with normal formatting
 
@@ -405,9 +405,9 @@ def gen_sp3_content(
         
         # POS nodata formatting
         # Fill +/- infinity values with SP3 nodata value for POS columns
-        epoch_vals['X'].replace(to_replace=[_np.inf, _np.ninf], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals['Y'].replace(to_replace=[_np.inf, _np.ninf], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals['Z'].replace(to_replace=[_np.inf, _np.ninf], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals['X'].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals['Y'].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals['Z'].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
         # Now do the same for NaNs
         epoch_vals['X'].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
         epoch_vals['Y'].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
@@ -420,7 +420,7 @@ def gen_sp3_content(
         # CLK nodata formatting
         # Throw both +/- infinity, and NaN values to the SP3 clock nodata value.
         # See https://stackoverflow.com/a/17478495
-        epoch_vals['CLK'].replace(to_replace=[_np.inf, _np.ninf], value=SP3_CLOCK_NODATA_STRING, inplace=True)
+        epoch_vals['CLK'].replace(to_replace=[_np.inf, _np.NINF], value=SP3_CLOCK_NODATA_STRING, inplace=True)
         epoch_vals['CLK'].fillna(value=SP3_CLOCK_NODATA_STRING, inplace=True)
 
         # Now invoke DataFrame to_string() to write out the values, leveraging our formatting functions for the
