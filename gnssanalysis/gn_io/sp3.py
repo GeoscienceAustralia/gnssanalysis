@@ -35,9 +35,12 @@ _RE_SP3_ACC = _re.compile(rb"^\+{2}[ ]+([\d\s]{50}\d)\W", _re.MULTILINE)
 # File descriptor and clock
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
-
-def nanflags2nans(sp3_df):
-    """Converts 999999 or 999999.999999 to NaNs"""
+# Nodata ie NaN constants for SP3 format
+SP3_CLOCK_NODATA_STRING  = " 999999.999999" # Not used for reading, as fractional components are optional
+SP3_CLOCK_NODATA_NUMERIC = 999999
+SP3_POS_NODATA_STRING    = "      0.000000"
+SP3_CLOCK_STD_NODATA     = -1000
+SP3_POS_STD_NODATA       = -100
 
 
 def sp3_clock_nodata_to_nan(sp3_df):
@@ -45,7 +48,7 @@ def sp3_clock_nodata_to_nan(sp3_df):
     Converts the SP3 Clock column's nodata value (999999 or 999999.999999 - the fractional component optional) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
     """
-    nan_mask = sp3_df.iloc[:, 1:5].values >= 999999
+    nan_mask = sp3_df.iloc[:, 1:5].values >= SP3_CLOCK_NODATA_NUMERIC
     nans = nan_mask.astype(float)
     nans[nan_mask] = _np.NAN
     sp3_df.iloc[:, 1:5] = sp3_df.iloc[:, 1:5].values + nans
@@ -312,13 +315,20 @@ def gen_sp3_content(
         pos_base = 1.25
         clk_base = 1.025
 
-        # Pos and Clk log helpers. Returns column nodata value if NaN, and caps returned value at 99, 999 respectively.
-        # TODO check my interpretation is correct, and use the nodata constant rather than a value, to improve clarity.
         def pos_log(x):
-            return _np.minimum(_np.nan_to_num(_np.rint(_np.log(x) / _np.log(pos_base)), nan=-100), 99).astype(int)
+            return _np.minimum( # Cap value at 99
+                        _np.nan_to_num( # If there is data, use the following formula. Else return NODATA value.
+                            _np.rint(_np.log(x) / _np.log(pos_base)), # Rounded to nearest int
+                            nan=SP3_POS_STD_NODATA
+                        ),
+                       99
+                   ).astype(int)
 
         def clk_log(x):
-            return _np.minimum(_np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=-1000), 999).astype(int)
+            return _np.minimum(
+                       _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA),
+                       999 # Cap at 999
+                  ).astype(int)
 
         std_df = (
             sp3_df["STD"]
@@ -355,13 +365,13 @@ def gen_sp3_content(
 
     def pos_std_formatter(x):
         # We use -100 as our integer NaN/"missing" marker
-        if x <= -100:
+        if x <= SP3_POS_STD_NODATA:
             return "  "
         return format(x, "2d")
 
     def clk_std_formatter(x):
         # We use -1000 as our integer NaN/"missing" marker
-        if x <= -1000:
+        if x <= SP3_CLOCK_STD_NODATA:
             return "   "
         return format(x, "3d")
 
@@ -394,26 +404,24 @@ def gen_sp3_content(
         # Instead, we do it here, and get the formatters to recognise and skip over the already processed nodata values
         
         # POS nodata formatting
-        pos_nodata_value = "      0.000000"
         # Fill +/- infinity values with SP3 nodata value for POS columns
-        epoch_vals['X'].replace(to_replace=[_np.inf, _np.ninf], value=pos_nodata_value, inplace=True)
-        epoch_vals['Y'].replace(to_replace=[_np.inf, _np.ninf], value=pos_nodata_value, inplace=True)
-        epoch_vals['Z'].replace(to_replace=[_np.inf, _np.ninf], value=pos_nodata_value, inplace=True)
+        epoch_vals['X'].replace(to_replace=[_np.inf, _np.ninf], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals['Y'].replace(to_replace=[_np.inf, _np.ninf], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals['Z'].replace(to_replace=[_np.inf, _np.ninf], value=SP3_POS_NODATA_STRING, inplace=True)
         # Now do the same for NaNs
-        epoch_vals['X'].fillna(value=pos_nodata_value, inplace=True)
-        epoch_vals['Y'].fillna(value=pos_nodata_value, inplace=True)
-        epoch_vals['Z'].fillna(value=pos_nodata_value, inplace=True)
+        epoch_vals['X'].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals['Y'].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals['Z'].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
         # NOTE: we could use replace() for all this, though fillna() might be faster in some
         # cases: https://stackoverflow.com/a/76225227
         # replace() will also handle other types of nodata constants: https://stackoverflow.com/a/54738894
     
 
         # CLK nodata formatting
-        clock_nodata_value = " 999999.999999"
         # Throw both +/- infinity, and NaN values to the SP3 clock nodata value.
         # See https://stackoverflow.com/a/17478495
-        epoch_vals['CLK'].replace(to_replace=[_np.inf, _np.ninf], value=clock_nodata_value, inplace=True)
-        epoch_vals['CLK'].fillna(value=clock_nodata_value, inplace=True)
+        epoch_vals['CLK'].replace(to_replace=[_np.inf, _np.ninf], value=SP3_CLOCK_NODATA_STRING, inplace=True)
+        epoch_vals['CLK'].fillna(value=SP3_CLOCK_NODATA_STRING, inplace=True)
 
         # Now invoke DataFrame to_string() to write out the values, leveraging our formatting functions for the
         # relevant columns.
