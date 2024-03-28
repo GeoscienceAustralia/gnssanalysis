@@ -287,9 +287,9 @@ def generate_long_filename(
     analysis_center: str,  # AAA
     content_type: str,  # CNT
     format_type: str,  # FMT
-    start_epoch: _datetime.datetime,
+    start_epoch: _datetime.datetime,  # YYYYDDDHHMM
     end_epoch: _datetime.datetime = None,
-    timespan: _datetime.timedelta = None,
+    timespan: _datetime.timedelta = None,  # LEN
     solution_type: str = "",  # TTT
     sampling_rate: str = "15M",  # SMP
     version: str = "0",  # V
@@ -324,10 +324,11 @@ def generate_long_filename(
 
 
 def long_filename_cddis_cutoff(epoch: _datetime.datetime) -> bool:
+    """Simple function that determines whether long filenames should be expected on the CDDIS server
+
+    :param _datetime.datetime epoch: Start epoch of data in file
+    :return bool: Boolean of whether file would follow long filename convention on CDDIS
     """
-    Simple function that determines whether long filenames should be expected on the CDDIS server
-    """
-    # Long filename cut-off:
     long_filename_cutoff = _datetime.datetime(2022, 11, 27)
     if epoch >= long_filename_cutoff:
         return True
