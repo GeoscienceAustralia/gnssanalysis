@@ -211,11 +211,17 @@ def gen_prod_filename(dt, pref, suff, f_type, wkly_file=False, repro3=False):
         f = f"{pref}{gpswkD}{suff}.{f_type}.Z"
     return f, gpswk
 
-
-def generate_uncompressed_filename(filename: str) -> str:
     """
     Name of uncompressed filename given the [assumed compressed] filename (filename).
     If not one of the recognized compression format types, return original filename -
+    """
+
+
+def generate_uncompressed_filename(filename: str) -> str:
+    """Returns a string of the uncompressed filename given the [assumed compressed] filename
+
+    :param str filename: Original filename of compressed file
+    :return str: Returns the filename of what the uncompressed file
     """
     if filename.endswith(".tar.gz") or filename.endswith(".tar"):
         with _tarfile.open(filename, "r") as tar:
@@ -235,9 +241,11 @@ def generate_uncompressed_filename(filename: str) -> str:
 
 
 def generate_content_type(file_ext: str, analysis_center: str) -> str:
-    """
-    IGS files following the long filename convention require a content specifier
-    Given the file extension, generate the content specifier
+    """Given the file extension, generate the content specifier following the IGS long filename convention
+
+    :param str file_ext: 3-char file extension to generate the content specifier for
+    :param str analysis_center: 3-char Analysis centre that produced the file
+    :return str: 3-char content specifier string
     """
     file_ext = file_ext.upper()
     file_ext_dict = {
@@ -254,11 +262,18 @@ def generate_content_type(file_ext: str, analysis_center: str) -> str:
     if isinstance(content_type, dict):
         content_type = content_type.get(analysis_center, content_type.get(None))
     return content_type
-
-
-def generate_nominal_span(start_epoch: datetime, end_epoch: datetime) -> str:
     """
-    Generate the 3 character LEN for IGS filename based on the start and end epochs passed in
+    Generate the 3-char LEN for IGS filename based on the start and end epochs passed in
+    """
+
+
+def generate_nominal_span(start_epoch: _datetime.datetime, end_epoch: _datetime.datetime) -> str:
+    """Generate the 3-char LEN or span following the IGS long filename convention given the start and end epochs
+
+    :param _datetime.datetime start_epoch: Start epoch of data in file
+    :param _datetime.datetime end_epoch: End epoch of data in file
+    :raises NotImplementedError: Raise error if range cannot be generated
+    :return str: Returns the 3-char string corresponding to the LEN or span of the data for IGS long filename
     """
     span = (end_epoch - start_epoch).total_seconds()
     if span % 86400 == 0.0:
