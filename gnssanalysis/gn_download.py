@@ -211,11 +211,6 @@ def gen_prod_filename(dt, pref, suff, f_type, wkly_file=False, repro3=False):
         f = f"{pref}{gpswkD}{suff}.{f_type}.Z"
     return f, gpswk
 
-    """
-    Name of uncompressed filename given the [assumed compressed] filename (filename).
-    If not one of the recognized compression format types, return original filename -
-    """
-
 
 def generate_uncompressed_filename(filename: str) -> str:
     """Returns a string of the uncompressed filename given the [assumed compressed] filename
@@ -262,9 +257,6 @@ def generate_content_type(file_ext: str, analysis_center: str) -> str:
     if isinstance(content_type, dict):
         content_type = content_type.get(analysis_center, content_type.get(None))
     return content_type
-    """
-    Generate the 3-char LEN for IGS filename based on the start and end epochs passed in
-    """
 
 
 def generate_nominal_span(start_epoch: _datetime.datetime, end_epoch: _datetime.datetime) -> str:
@@ -303,11 +295,19 @@ def generate_long_filename(
     version: str = "0",  # V
     project: str = "EXP",  # PPP, e.g. EXP, OPS
 ) -> str:
-    """
-    Function to generate filename with IGS Long Product Filename convention (v1.0) as outlined in
-    http://acc.igs.org/repro3/Long_Product_Filenames_v1.0.pdf
+    """Generate filename following the IGS Long Product Filename convention: AAAVPPPTTT_YYYYDDDHHMM_LEN_SMP_CNT.FMT[.gz]
 
-    AAAVPPPTTT_YYYYDDDHHMM_LEN_SMP_CNT.FMT[.gz]
+    :param str analysis_center: 3-char string identifier for Analysis Center
+    :param str content_type: 3-char string identifier for Content Type of the file
+    :param str format_type: 3-char string identifier for Format Type of the file
+    :param _datetime.datetime start_epoch: Start epoch of data
+    :param _datetime.datetime end_epoch: End epoch of data [Optional: can be determined from timespan], defaults to None
+    :param _datetime.timedelta timespan: Timespan of data in file (Start to End epoch), defaults to None
+    :param str solution_type: 3-char string identifier for Solution Type of file, defaults to ""
+    :param str sampling_rate: 3-char string identifier for Sampling Rate of the file, defaults to "15M"
+    :param str version: 3-char string identifier for Version of the file
+    :param str project: 3-char string identifier for Project Type of the file
+    :return str: The IGS long filename given all inputs
     """
     initial_epoch = start_epoch.strftime("%Y%j%H%M")
     if end_epoch == None:
