@@ -626,12 +626,13 @@ def rac_df_to_rms_df(rac_df):
     RMS of dX, dY, dZ and R (Radial), A (Along-track), C (Cross-track) per satellite (PRN).
     Additionally, a 1D mean difference, (dX + dY + dZ)/3, and 3D difference, sqrt(R^2 + A^2 + C^2), are computed for each PRN.
     """
-
     merged_data = rac_df.join(rac_df.attrs["diff_eci"])
     rms_df = merged_data.pow(2).groupby("PRN").mean().pow(0.5)
+    std_df = merged_data.groupby("PRN").std(ddof=0)
 
     rms_df["EST", "MEAN"] = rms_df.EST.mean(axis=1).groupby("PRN").mean()
     rms_df["EST", "AVG"] = rac_df.attrs["diff_eci"].EST.mean(axis=1).groupby("PRN").mean()
+    std_df["EST", "3D_RMS"] = rac_df.attrs["diff_eci"].EST.pow(2).sum(axis=1).pow(0.5).groupby("PRN").std(ddof=0)
     rms_df["EST", "3D_RMS"] = rac_df.attrs["diff_eci"].EST.pow(2).sum(axis=1).groupby("PRN").mean().pow(0.5)
     rms_df = rms_df.droplevel(0, axis=1).rename(
         columns={
@@ -643,10 +644,19 @@ def rac_df_to_rms_df(rac_df):
             "Z": "dZ_RMS",
         }
     )
-
+    std_df = std_df.droplevel(0, axis=1).rename(
+        columns={
+            "Radial": "R_RMS",
+            "Along-track": "A_RMS",
+            "Cross-track": "C_RMS",
+            "X": "dX_RMS",
+            "Y": "dY_RMS",
+            "Z": "dZ_RMS",
+        }
+    )
     # summarising over all SVs
     summary_df = _pd.DataFrame(
-        [rms_df.mean(axis=0), rms_df.std(axis=0), rms_df.pow(2).mean(axis=0).pow(0.5)], index=["AVG", "STD", "RMS"]
+        [rms_df.mean(axis=0), std_df.mean(axis=0), rms_df.pow(2).mean(axis=0).pow(0.5)], index=["AVG", "STD", "RMS"]
     )
 
     rms_df.attrs["summary"] = summary_df
