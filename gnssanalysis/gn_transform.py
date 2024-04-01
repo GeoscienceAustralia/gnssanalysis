@@ -36,7 +36,7 @@ def get_helmert7(pt1:_np.ndarray, pt2:_np.ndarray, scale_in_ppm:bool = True):
     """inversion of 7 Helmert parameters between 2 sets of points. pt1@hlm -> pt2"""
     A, rhs = gen_helm_aux(pt1, pt2)
     sol = list(_np.linalg.lstsq(A, rhs, rcond=-1))  # parameters
-    sol[0] = sol[0].flatten()  # flattening the HLM params arr to [Tx, Ty, Tz, Rx, Ry, Rz, Scale/mu]
+    sol[0] = sol[0].flatten()*-1.0  # flattening the HLM params arr to [Tx, Ty, Tz, Rx, Ry, Rz, Scale/mu]
     if scale_in_ppm:
         sol[0][-1] *= 1e6 # scale in ppm
     res = rhs - A @ sol[0]  # computing residuals for pt2
