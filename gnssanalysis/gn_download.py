@@ -341,7 +341,7 @@ def generate_product_filename(
     file_ext: str,
     shift: int = 0,
     long_filename: bool = False,
-    AC: str = "IGS",
+    analysis_center: str = "IGS",
     timespan: _datetime.timedelta = _datetime.timedelta(days=1),
     solution_type: str = "ULT",
     sampling_rate: str = "15M",
@@ -349,9 +349,20 @@ def generate_product_filename(
     project: str = "OPS",
     content_type: str = None,
 ) -> _Tuple[str, GPSDate, _datetime.datetime]:
-    """
-    Generate filename, GPSDate obj from datetime
-    Optionally, move reference_start forward by "shift" hours
+    """Given a reference datetime and extention of file, generate the IGS filename and GPSDate obj for use in download
+
+    :param _datetime.datetime reference_start: Datetime of the start period of interest
+    :param str file_ext: Extention of the file (e.g. SP3, SNX, ERP, etc)
+    :param int shift: Shift the reference time by "shift" hours (in filename and GPSDate output), defaults to 0
+    :param bool long_filename: Use the IGS long filename convention, defaults to False
+    :param str analysis_center: Desired analysis center for filename output, defaults to "IGS"
+    :param _datetime.timedelta timespan: Span of the file as datetime obj, defaults to _datetime.timedelta(days=1)
+    :param str solution_type: Solution type for the filename, defaults to "ULT"
+    :param str sampling_rate: Sampling rate of data for the filename, defaults to "15M"
+    :param str version: Version of the file, defaults to "0"
+    :param str project: IGS project descriptor, defaults to "OPS"
+    :param str content_type: IGS content specifier - if None set automatically based on file_ext, defaults to None
+    :return _Tuple[str, GPSDate, _datetime.datetime]: Tuple of filename str, GPSDate and datetime obj (based on shift)
     """
     reference_start += _datetime.timedelta(hours=shift)
     if type(reference_start == _datetime.date):
@@ -361,10 +372,10 @@ def generate_product_filename(
 
     if long_filename:
         if content_type == None:
-            content_type = generate_content_type(file_ext, analysis_center=AC)
+            content_type = generate_content_type(file_ext, analysis_center=analysis_center)
         product_filename = (
             generate_long_filename(
-                analysis_center=AC,
+                analysis_center=analysis_center,
                 content_type=content_type,
                 format_type=file_ext,
                 start_epoch=reference_start,
