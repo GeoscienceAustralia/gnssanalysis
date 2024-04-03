@@ -33,7 +33,7 @@ import numpy as _np
 import pandas as _pd
 from boto3.s3.transfer import TransferConfig
 
-from .gn_datetime import GPSDate, dt2gpswk, gpsweekD, gpswkD2dt
+from .gn_datetime import GPSDate, dt2gpswk, gpswkD2dt
 
 MB = 1024 * 1024
 
@@ -627,7 +627,6 @@ def check_n_download(comp_filename, dwndir, ftps, uncomp=True, remove_comp_file=
     """Download compressed file to dwndir if not already present and optionally uncompress"""
 
     success = False
-
     comp_file = _Path(dwndir + comp_filename)
 
     if dwndir[-1] != "/":
@@ -643,12 +642,9 @@ def check_n_download(comp_filename, dwndir, ftps, uncomp=True, remove_comp_file=
             logging.debug(f"Downloaded and uncompressed {comp_filename}")
         else:
             logging.debug(f"Downloaded {comp_filename}")
-
         success = True
-
     else:
         success = True
-
     return success
 
 
