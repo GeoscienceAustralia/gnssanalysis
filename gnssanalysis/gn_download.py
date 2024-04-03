@@ -216,7 +216,7 @@ def generate_uncompressed_filename(filename: str) -> str:
     """Returns a string of the uncompressed filename given the [assumed compressed] filename
 
     :param str filename: Original filename of compressed file
-    :return str: Returns the filename of what the uncompressed file
+    :return str: The uncompressed filename based on input (returns input filename if compression not recognised)
     """
     if filename.endswith(".tar.gz") or filename.endswith(".tar"):
         with _tarfile.open(filename, "r") as tar:
@@ -265,7 +265,7 @@ def generate_nominal_span(start_epoch: _datetime.datetime, end_epoch: _datetime.
     :param _datetime.datetime start_epoch: Start epoch of data in file
     :param _datetime.datetime end_epoch: End epoch of data in file
     :raises NotImplementedError: Raise error if range cannot be generated
-    :return str: Returns the 3-char string corresponding to the LEN or span of the data for IGS long filename
+    :return str: The 3-char string corresponding to the LEN or span of the data for IGS long filename
     """
     span = (end_epoch - start_epoch).total_seconds()
     if span % 86400 == 0.0:
