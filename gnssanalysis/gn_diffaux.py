@@ -500,7 +500,7 @@ def sisre(
     alpha, beta = _np.vsplit(coeffs_df.values, indices_or_sections=2)
 
     sisre = _pd.DataFrame(
-        data=_np.sqrt((alpha * radial + clk_diff) ** 2 + (along**2 + cross**2) / beta),
+        data=_np.sqrt((alpha * radial - _gn_const.C_LIGHT * clk_diff) ** 2 + (along**2 + cross**2) / beta),
         index=rac_unstack.index,
         columns=rac_unstack.Radial.columns,
     )
