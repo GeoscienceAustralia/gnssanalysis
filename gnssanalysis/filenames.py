@@ -7,7 +7,7 @@ import traceback
 
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections import Iterable
-from typing import Iterable
+from typing import Iterable, Mapping
 from typing import Any, Dict, Optional, Tuple, Union, overload
 
 import click
@@ -99,7 +99,10 @@ def determine_file_name_main(
             logging.warning(f"Skipping {f.name} as {f.suffix} files are not yet supported.")
 
 
-def determine_file_name(file_path: pathlib.Path, defaults: Dict[str, Any], overrides: Dict[str, Any]) -> str:
+def determine_file_name(file_path: pathlib.Path,
+                        defaults: Optional[Mapping[str, Any]] = None,
+                        overrides: Optional[Mapping[str, Any]] = None
+) -> str:
     """Determine the IGS long filename of a file based on its contents
 
     This function determines what it thinks the filename of a GNSS file should be given the IGS long
@@ -126,12 +129,18 @@ def determine_file_name(file_path: pathlib.Path, defaults: Dict[str, Any], overr
     :param Dict[str, Any] overrides: Name properties that should override anything detected in the file
     :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
     :return str: Proposed IGS long filename
-    """     
+    """
+    if defaults is None:
+        defaults = {}
+    if overrides is None:
+        overrides = {}
     name_properties = determine_file_properties(file_path, defaults, overrides)
     return generate_IGS_long_filename(**name_properties)
 
 
-def determine_file_properties(file_path: pathlib.Path, defaults: Dict[str, Any], overrides: Dict[str, Any]
+def determine_file_properties(file_path: pathlib.Path,
+                              defaults: Optional[Mapping[str, Any]] = None,
+                              overrides: Optional[Mapping[str, Any]] = None
 ) -> Dict[str, Any]:
     """Determine the properties of a file based on its contents
 
@@ -159,6 +168,10 @@ def determine_file_properties(file_path: pathlib.Path, defaults: Dict[str, Any],
     :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
     :return str: Dictionary of file properties
     """
+    if defaults is None:
+        defaults = {}
+    if overrides is None:
+        overrides = {}
     logging.debug(f"determine_file_props for {file_path}")
     file_ext = file_path.suffix.lower()
     logging.debug(f"Matching file extension: {file_ext}")
@@ -759,7 +772,7 @@ def check_for_expected_filename(input_file: pathlib.Path) -> bool:
     :param Path input_file: Path to the file to be checked
     :return bool: True if the file contents seems to reflect the filename, False if not.
     """
-    expected_file_name = determine_file_name(input_file, defaults={}, overrides={})
+    expected_file_name = determine_file_name(input_file)
     if input_file.name != expected_file_name:
         logging.error(
             f"File name: '{input_file.name}' "
@@ -778,9 +791,7 @@ def check_file_timespan_matches_name(input_file: pathlib.Path) -> bool:
     :return bool: True if the timespan of data in the file matches the filename, False if it does not.
     """
     try:
-        actual_timespan: datetime.timedelta = determine_file_properties(
-            file_path=input_file, defaults={}, overrides={}
-        )["timespan"]
+        actual_timespan: datetime.timedelta = determine_file_properties(input_file)["timespan"]
     except NotImplementedError as e:
         logging.warning(
             "Couldn't validate that file timespan matches filename. "
