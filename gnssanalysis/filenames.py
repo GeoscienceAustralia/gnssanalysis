@@ -756,7 +756,7 @@ def determine_name_properties_from_filename(filename: str) -> Dict[str, Any]:
 def check_for_expected_filename(input_file: pathlib.Path) -> bool:
     expected_file_name = determine_file_name(input_file, defaults={}, overrides={})
     if input_file.name != expected_file_name:
-        logging.warning(
+        logging.error(
             f"File name: '{input_file.name}' "
             f"didn't match expected: '{expected_file_name}'. "
             "Contents may be incorrect and lead to failures."
@@ -779,7 +779,7 @@ def check_file_timespan_matches_name(input_file: pathlib.Path) -> bool:
     claimed_timespan: datetime.timedelta = determine_name_properties_from_filename(input_file.name)["timespan"]
 
     if claimed_timespan != actual_timespan:
-        logging.warning(
+        logging.error(
             f"Claimed vs actual timespan differs in file '{input_file.name}'. "
             f"Claimed: {claimed_timespan}. Actual: {actual_timespan}."
         )
