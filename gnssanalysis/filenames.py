@@ -756,30 +756,33 @@ def determine_name_properties_from_filename(filename: str) -> Dict[str, Any]:
 def check_for_expected_filename(input_file: pathlib.Path) -> bool:
     expected_file_name = determine_file_name(input_file, defaults={}, overrides={})
     if input_file.name != expected_file_name:
-        logging.warning(f"File name: '{input_file.name}' "
-                       f"didn't match expected: '{expected_file_name}'. "
-                       "Contents may be incorrect and lead to failures."
-                       )
+        logging.warning(
+            f"File name: '{input_file.name}' "
+            f"didn't match expected: '{expected_file_name}'. "
+            "Contents may be incorrect and lead to failures."
+        )
         return False
-    return True # Filename as expected
+    return True  # Filename as expected
 
 
 def check_file_timespan_matches_name(input_file: pathlib.Path) -> bool:
     try:
-        actual_timespan:datetime.timedelta = determine_file_properties(
-                                                                 file_path=input_file, defaults={}, overrides={}
-                                                                 )["timespan"]
+        actual_timespan: datetime.timedelta = determine_file_properties(
+            file_path=input_file, defaults={}, overrides={}
+        )["timespan"]
     except NotImplementedError as e:
-        logging.warning("Couldn't validate that file timespan matches filename. "
-                        "Format not yet supported by determine_file_properties(): " + str(e)
-                        )
-        return False # Assume it's bad, as we can't verify it's good.
-    claimed_timespan:datetime.timedelta = determine_name_properties_from_filename(input_file.name)["timespan"]
-    
+        logging.warning(
+            "Couldn't validate that file timespan matches filename. "
+            "Format not yet supported by determine_file_properties(): " + str(e)
+        )
+        return False  # Assume it's bad, as we can't verify it's good.
+    claimed_timespan: datetime.timedelta = determine_name_properties_from_filename(input_file.name)["timespan"]
+
     if claimed_timespan != actual_timespan:
-        logging.warning(f"Claimed vs actual timespan differs in file '{input_file.name}'. "
-                        f"Claimed: {claimed_timespan}. Actual: {actual_timespan}."
-                        )
+        logging.warning(
+            f"Claimed vs actual timespan differs in file '{input_file.name}'. "
+            f"Claimed: {claimed_timespan}. Actual: {actual_timespan}."
+        )
         return False
     return True # Timespan of file content matches what the file name says it should be.
 
