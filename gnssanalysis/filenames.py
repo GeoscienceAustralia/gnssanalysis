@@ -126,8 +126,39 @@ def determine_file_name(file_path: pathlib.Path, defaults: Dict[str, Any], overr
     :param Dict[str, Any] overrides: Name properties that should override anything detected in the file
     :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
     :return str: Proposed IGS long filename
+    """     
+    name_properties = determine_file_props(file_path, defaults, overrides)
+    return generate_IGS_long_filename(**name_properties)
+
+
+def determine_file_props(file_path: pathlib.Path, defaults: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+    """Determine the properties of a file based on its contents
+
+    The function reads both the existing filename of the provided file as well as
+    its contents and does its best to determine appropriate name properties.
+    In addition to these extracted properties, defaults and overrides can be manually provided via
+    dictionaries. Defaults apply if the corresponding properties can't be extracted from the file.
+    Overrides instead force properties to always take certain the provided values.
+    The possible key value pairs are the arguments to :func: `filenames.generate_IGS_long_filename`,
+    namely:
+     - analysis_center: str
+     - content_type: str
+     - format_type: str
+     - start_epoch: datetime.datetime
+     - end_epoch: datetime.datetime
+     - timespan: datetime.timedelta
+     - solution_type: str
+     - sampling_rate: str
+     - version: str
+     - project: str
+
+    :param pathlib.Path file_path: Path to the file for which to determine properties
+    :param Dict[str, Any] defaults: Default name properties to use when properties can't be determined
+    :param Dict[str, Any] overrides: Name properties that should override anything detected in the file
+    :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
+    :return str: Dictionary of file properties
     """
-    logging.debug(f"determine_file_name for {file_path}")
+    logging.debug(f"determine_file_props for {file_path}")
     file_ext = file_path.suffix.lower()
     logging.debug(f"Matching file extension: {file_ext}")
     if file_ext == ".bia":
@@ -165,7 +196,7 @@ def determine_file_name(file_path: pathlib.Path, defaults: Dict[str, Any], overr
     name_properties.update(file_properties)
     name_properties.update(overrides)
     logging.debug(f"name_properties =\n{name_properties}")
-    return generate_IGS_long_filename(**name_properties)
+    return name_properties
 
 
 @overload
@@ -720,6 +751,35 @@ def determine_name_props_from_filename(filename: str) -> Dict[str, Any]:
         "format_type": extension[0:3].upper(),
         # Do start epoch estimation eventually
     }
+
+
+def warn_on_unexpected_filename(input_file: pathlib.Path) -> bool:
+    expected_file_name = determine_file_name(input_file, defaults={}, overrides={})
+    if input_file.name != expected_file_name:
+        logging.warning(f"File name: '{input_file.name}' "
+                       f"didn't match expected: '{expected_file_name}'. "
+                       "Contents may be incorrect and lead to failures."
+                       )
+        return False
+    return True
+
+
+def check_file_timespan_as_claimed(input_file: pathlib.Path) -> bool:
+    try:
+        actual_timespan:datetime.timedelta = determine_file_props(
+                                                                 file_path=input_file, defaults={}, overrides={}
+                                                                 )["timespan"]
+    except NotImplementedError as e:
+        logging.warning("Couldn't check file timespan. Format not yet supported by determine_file_props(): " + str(e))
+        return False # Assume it's bad, as we can't verify it's good.
+    claimed_timespan:datetime.timedelta = determine_name_props_from_filename(input_file.name)["timespan"]
+    
+    if claimed_timespan != actual_timespan:
+        logging.error(f"Claimed vs actual timespan differ in file '{input_file.name}'. "
+                     f"Claimed: {claimed_timespan}. Actual: {actual_timespan}."
+                     )
+        return False
+    return True
 
 
 def subset_dictupdate(dest: dict, source: dict, keys: Iterable):
