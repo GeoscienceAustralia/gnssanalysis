@@ -754,6 +754,11 @@ def determine_name_properties_from_filename(filename: str) -> Dict[str, Any]:
 
 
 def check_for_expected_filename(input_file: pathlib.Path) -> bool:
+    """Checks that the specified file's name is consistent with its contents.
+
+    :param Path input_file: Path to the file to be checked
+    :return bool: True if the file contents seems to reflect the filename, False if not.
+    """
     expected_file_name = determine_file_name(input_file, defaults={}, overrides={})
     if input_file.name != expected_file_name:
         logging.error(
@@ -766,6 +771,12 @@ def check_for_expected_filename(input_file: pathlib.Path) -> bool:
 
 
 def check_file_timespan_matches_name(input_file: pathlib.Path) -> bool:
+    """Checks that the timespan of data in the specified file, is consistent what its filename says.
+    I.e. if the filename specifies 01D for the timespan component, we expect to find 24 hours worth of data in the file.
+
+    :param Path input_file: Path to the file to be checked
+    :return bool: True if the timespan of data in the file matches the filename, False if it does not.
+    """
     try:
         actual_timespan: datetime.timedelta = determine_file_properties(
             file_path=input_file, defaults={}, overrides={}
