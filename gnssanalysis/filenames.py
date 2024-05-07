@@ -127,11 +127,12 @@ def determine_file_name(file_path: pathlib.Path, defaults: Dict[str, Any], overr
     :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
     :return str: Proposed IGS long filename
     """     
-    name_properties = determine_file_props(file_path, defaults, overrides)
+    name_properties = determine_file_properties(file_path, defaults, overrides)
     return generate_IGS_long_filename(**name_properties)
 
 
-def determine_file_props(file_path: pathlib.Path, defaults: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+def determine_file_properties(file_path: pathlib.Path, defaults: Dict[str, Any], overrides: Dict[str, Any]
+) -> Dict[str, Any]:
     """Determine the properties of a file based on its contents
 
     The function reads both the existing filename of the provided file as well as
@@ -417,7 +418,7 @@ def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     try:
         logging.debug(f"Reading {file_path}")
         clk_df = gn_io.clk.read_clk(file_path)
-        props_from_existing_name = determine_name_props_from_filename(file_path.name)
+        props_from_existing_name = determine_name_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # Could pull some analysis center from the file comments/header
         # But... read_clk doesn't currently read the header and this information
@@ -475,7 +476,7 @@ def determine_erp_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     name_props = {}
     try:
         erp_df = gn_io.erp.read_erp(file_path)
-        props_from_existing_name = determine_name_props_from_filename(file_path.name)
+        props_from_existing_name = determine_name_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # ERP files have inconsistent enough headers that we can't attempt to extract the analysis center
         name_props["analysis_center"] = props_from_existing_name["analysis_center"]
@@ -528,7 +529,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     """
     name_props = {}
     try:
-        props_from_existing_name = determine_name_props_from_filename(file_path.name)  # TODO: check sinex filenames
+        props_from_existing_name = determine_name_properties_from_filename(file_path.name)  # TODO: check sinex filenames
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         props_from_header_line = gn_io.sinex.get_header_dict(file_path)
         logging.debug(f"props_from_header_line =\n{props_from_header_line}")
@@ -620,7 +621,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     name_props = {}
     try:
         sp3_df = gn_io.sp3.read_sp3(file_path)
-        props_from_existing_name = determine_name_props_from_filename(file_path.name)
+        props_from_existing_name = determine_name_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3,"X")
         name_props["analysis_center"] = props_from_existing_name["analysis_center"]
@@ -672,7 +673,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     return name_props
 
 
-def determine_name_props_from_filename(filename: str) -> Dict[str, Any]:
+def determine_name_properties_from_filename(filename: str) -> Dict[str, Any]:
     """Determine IGS filename properties based purely on a filename
 
     This function does its best to support both IGS long filenames and old short filenames.
@@ -681,7 +682,6 @@ def determine_name_props_from_filename(filename: str) -> Dict[str, Any]:
 
     :param str filename: filename to examine for naming properties
     :return Dict[str, Any]: dictionary containing the extracted name properties
-    """ """
     """
     basename, _, extension = filename.rpartition(".")
     # Long filenames
@@ -753,7 +753,7 @@ def determine_name_props_from_filename(filename: str) -> Dict[str, Any]:
     }
 
 
-def warn_on_unexpected_filename(input_file: pathlib.Path) -> bool:
+def check_for_expected_filename(input_file: pathlib.Path) -> bool:
     expected_file_name = determine_file_name(input_file, defaults={}, overrides={})
     if input_file.name != expected_file_name:
         logging.warning(f"File name: '{input_file.name}' "
@@ -761,25 +761,27 @@ def warn_on_unexpected_filename(input_file: pathlib.Path) -> bool:
                        "Contents may be incorrect and lead to failures."
                        )
         return False
-    return True
+    return True # Filename as expected
 
 
-def check_file_timespan_as_claimed(input_file: pathlib.Path) -> bool:
+def check_file_timespan_matches_name(input_file: pathlib.Path) -> bool:
     try:
-        actual_timespan:datetime.timedelta = determine_file_props(
+        actual_timespan:datetime.timedelta = determine_file_properties(
                                                                  file_path=input_file, defaults={}, overrides={}
                                                                  )["timespan"]
     except NotImplementedError as e:
-        logging.warning("Couldn't check file timespan. Format not yet supported by determine_file_props(): " + str(e))
+        logging.warning("Couldn't validate that file timespan matches filename. "
+                        "Format not yet supported by determine_file_properties(): " + str(e)
+                        )
         return False # Assume it's bad, as we can't verify it's good.
-    claimed_timespan:datetime.timedelta = determine_name_props_from_filename(input_file.name)["timespan"]
+    claimed_timespan:datetime.timedelta = determine_name_properties_from_filename(input_file.name)["timespan"]
     
     if claimed_timespan != actual_timespan:
-        logging.error(f"Claimed vs actual timespan differ in file '{input_file.name}'. "
-                     f"Claimed: {claimed_timespan}. Actual: {actual_timespan}."
-                     )
+        logging.warning(f"Claimed vs actual timespan differs in file '{input_file.name}'. "
+                        f"Claimed: {claimed_timespan}. Actual: {actual_timespan}."
+                        )
         return False
-    return True
+    return True # Timespan of file content matches what the file name says it should be.
 
 
 def subset_dictupdate(dest: dict, source: dict, keys: Iterable):
