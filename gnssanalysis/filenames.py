@@ -766,7 +766,7 @@ def determine_name_properties_from_filename(filename: str) -> Dict[str, Any]:
     }
 
 
-def check_filename_and_contents_consistency(input_file: pathlib.Path) -> None | Mapping[str, tuple[str,str]]:
+def check_filename_and_contents_consistency(input_file: pathlib.Path) -> Mapping[str, tuple[str,str]]:
     """
     Checks that the content of the provided file matches what its filename says should be in it.
     
@@ -775,8 +775,8 @@ def check_filename_and_contents_consistency(input_file: pathlib.Path) -> None | 
     File properties which do not match are returned as a mapping of str -> tuple(str, str), taking the form
     property_name > filename_derived_value, file_contents_derived_value
     :param Path input_file: Path to the file to be checked.
-    :return None | Mapping[str, tuple[str,str]]: None, if file name and file content properties match, otherwise a
-    mapping of property_name > filename_derived_value, file_contents_derived_value.
+    :return Mapping[str, tuple[str,str]]: Empty map if properties agree, else a mapping
+    of property_name > filename_derived_value, file_contents_derived_value.
     :raises NotImplementedError: if called with a file type not yet supported.
     """
     file_name_properties = determine_name_properties_from_filename(input_file.name)
@@ -787,8 +787,6 @@ def check_filename_and_contents_consistency(input_file: pathlib.Path) -> None | 
         if (file_val := file_name_properties[key]) != (content_val := file_content_properties[key]):
             discrepancies[key] = (file_val, content_val)
 
-    if len(discrepancies) == 0:
-        return None
     return discrepancies
 
 
