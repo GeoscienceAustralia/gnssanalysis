@@ -453,12 +453,13 @@ def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         # The pandas stubs seem to assume .index returns an Index (not MultiIndex), so we need to ignore the typing for now
         sampling_rate = np.median(np.diff(clk_df.index.levels[1]))  # type: ignore
         # Alternatively:
-        sampling_rate = np.median(np.diff(clk_df.index.get_level_values("J2000").unique()))
+        # sampling_rate = np.median(np.diff(clk_df.index.get_level_values("J2000").unique()))
         end_epoch = gn_datetime.j2000_to_pydatetime(end_j2000sec + sampling_rate)
         timespan = end_epoch - start_epoch
         name_props["start_epoch"] = start_epoch
         name_props["end_epoch"] = end_epoch
         name_props["timespan"] = timespan
+        name_props["sampling_rate_seconds"] = sampling_rate
         name_props["sampling_rate"] = nominal_span_string(sampling_rate)
         logging.debug(f"name_props prior to adding props extracted from name = {name_props}")
         # If we extracted solution type from the name we keep it
@@ -513,6 +514,7 @@ def determine_erp_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         name_props["start_epoch"] = start_epoch
         name_props["end_epoch"] = end_epoch
         name_props["timespan"] = timespan
+        name_props["sampling_rate_seconds"] = sampling_rate.total_seconds()
         name_props["sampling_rate"] = nominal_span_string(sampling_rate.total_seconds())
         logging.debug(f"name_props prior to adding props extracted from name = {name_props}")
         # If we extracted solution type from the name we keep it
@@ -604,6 +606,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
                 sampling_rate = name_props["timespan"]
         else:
             sampling_rate = name_props["timespan"]
+        name_props["sampling_rate_seconds"] = sampling_rate.total_seconds()
         name_props["sampling_rate"] = nominal_span_string(sampling_rate.total_seconds())
         logging.debug(f"name_props prior to adding props extracted from name = {name_props}")
         # If we extracted solution type from the name we keep it
@@ -660,6 +663,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         name_props["start_epoch"] = start_epoch
         name_props["end_epoch"] = end_epoch
         name_props["timespan"] = timespan
+        name_props["sampling_rate_seconds"] = sampling_rate
         name_props["sampling_rate"] = nominal_span_string(sampling_rate)
         # Solution type can be estimated based on data duration or pulled from filename
         if "solution_type" in props_from_existing_name:
