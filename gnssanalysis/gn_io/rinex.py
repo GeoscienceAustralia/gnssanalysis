@@ -1,5 +1,6 @@
 """IO functions for reading RINEX files """
 
+import logging as _logging
 import re as _re
 from io import BytesIO as _BytesIO
 
@@ -9,7 +10,6 @@ from .. import gn_datetime as _gn_datetime
 from .. import gn_io as _gn_io
 
 _RE_RNX = _re.compile(rb"^\>(.+)\n((?:[^\>]+)+)", _re.MULTILINE)
-_RE_RNX_HEADER = _re.compile(rb"\n(\w)\s+(\d+)(.+)OBS\sTYPES((?:\W\s{6}.+|))")
 _RE_RNX_POSITION = _re.compile(rb"\n(.+)APPROX\sPOSITION\sXYZ")
 
 
@@ -18,53 +18,60 @@ def _read_rnx(rnx_path):
     the signal strength and loss-of-lock field keys.
     Assumes that rinex had been previously Hatanaka decompressed"""
     rnx_content = _gn_io.common.path2bytes(str(rnx_path))
-    data_blocks = _np.asarray(_RE_RNX.findall(string=rnx_content))
-    header_blocks = _RE_RNX_HEADER.findall(string=rnx_content)
+    header_bytes, header_marker, data_bytes = rnx_content.partition(b"END OF HEADER\n")
+    if not data_bytes:
+        _logging.warning(f"Failed to find end of header in RINEX {rnx_path}, file may be non-compliant.")
+        data_bytes = header_bytes
 
-    header_blocks = _pd.DataFrame(_np.asarray(header_blocks).astype(str))
-    rnx_head = (
-        (header_blocks[2] + header_blocks[3])
-        .str.extractall(
-            pat=r"(\w\d\w)",
-        )
-        .squeeze()
-    )
+    signal_header_marker = b"SYS / # / OBS TYPES"
+    signal_lines = (line.removesuffix(signal_header_marker).decode() for line in header_bytes.splitlines() if line.endswith(signal_header_marker))
+    constellation_signals = {}
+    constellation_code = ""
+    for line in signal_lines:
+        if line[0].isalpha():
+            constellation_code, signal_count, *signal_identifiers = line.split()
+            constellation_signals[constellation_code] = (int(signal_count), signal_identifiers)
+        else:
+            if not constellation_code:
+                _logging.warning(f"Found signal line in header without preceding constellation code: {line}")
+            else:
+                constellation_signals.get(constellation_code, (0, []))[1].extend(line.split())
 
-    cols = rnx_head.count(level=0).max()
+    maximum_columns = 0
+    for code, (signal_count, signal_identifiers) in constellation_signals.items():
+        identifier_count = len(signal_identifiers)
+        maximum_columns = max(maximum_columns, identifier_count)
+        if signal_count != identifier_count:
+            _logging.warning(f"Disagreement in signal count for constellation {code}, reported {signal_count} signals"
+                             f", found {identifier_count}: {signal_identifiers}")
+            constellation_signals[code][0] = identifier_count
 
-    rnx_head = rnx_head.unstack().set_index(header_blocks[0])
+    data_blocks = _np.asarray(_RE_RNX.findall(string=data_bytes))
     dates = data_blocks[:, 0]
-    data = data_blocks[:, 1]
-    counts = _np.char.count(data, b"\n")
+    data_record_blocks = data_blocks[:, 1]
+    record_counts = _np.char.count(data_record_blocks, b"\n")
 
-    epochs_dt = _pd.to_datetime(_pd.Series(dates).str.slice(1, 20).values.astype(str), format=r"%Y %m %d %H %M %S")
+    dates_as_datetimes = _pd.to_datetime(_pd.Series(dates).str.slice(1, 20).values.astype(str), format=r"%Y %m %d %H %M %S")
+    datetime_index = _np.repeat(_gn_datetime.datetime2j2000(dates_as_datetimes), repeats=record_counts)
 
-    dt_index = _np.repeat(a=_gn_datetime.datetime2j2000(epochs_dt), repeats=counts)
-    b_string = b"".join(data.tolist())
+    data_records = _pd.Series(_np.concatenate(_np.char.splitlines(data_record_blocks)))
 
-    b_series = _pd.Series(b_string.splitlines())
+    data_raw = data_records.str[3:]
+    missing = (16 * maximum_columns - data_raw.str.len()).values.astype(object)  # has to be square for method to work
 
-    data_raw = b_series.str[3:]
-    missing = (16 * cols - data_raw.str.len()).values.astype(object)  # has to be square for method to work
-
-    m = (data_raw.values + missing * b" ").astype(bytes).view("S16").reshape((cols, -1))
+    m = (data_raw.values + missing * b" ").astype(bytes).view("S16").reshape((maximum_columns, -1))
     rnx_df = rnx_vals2df(m)
-    prn = b_series.str[:3].values.astype(str)
+    prn = data_records.str[:3].values.astype(str)
     prn_code = prn.astype("U1")
-    rnx_df = rnx_df.set_index([dt_index, prn])
-    rnx_df.columns = _pd.MultiIndex.from_product([list(range(cols)), ["EST", "STRG"]])
+    rnx_df = rnx_df.set_index([datetime_index, prn])
+    rnx_df.columns = _pd.MultiIndex.from_product([list(range(maximum_columns)), ["EST", "STRG"]])
 
     buf = []
-    for constel in rnx_head.index:
-        gnss_df = rnx_head.loc[constel]
-        n_cols_gnss = gnss_df[~gnss_df.isna()].shape[0]
-        gnss_rnx_df = rnx_df[(prn_code == gnss_df.name)]
-        valid_columns = gnss_rnx_df.loc(axis=1)[:, "EST"].columns.get_level_values(0)[:n_cols_gnss]
-
-        gnss_rnx_df = gnss_rnx_df[valid_columns].copy()
-        gnss_rnx_df.columns = _pd.MultiIndex.from_product([gnss_df[~gnss_df.isna()].to_list(), ["EST", "STRG"]])
+    for constellation_code, (signal_counts, signal_headers) in constellation_signals.items():
+        gnss_rnx_df = rnx_df[(prn_code == constellation_code)][0:(signal_counts-1)].copy()
+        gnss_rnx_df.columns = _pd.MultiIndex.from_product([signal_headers, ["EST", "STRG"]])
         buf.append(gnss_rnx_df)
-    return _pd.concat(buf, keys=rnx_head.index, axis=0)
+    return _pd.concat(buf, keys=constellation_signals.keys(), axis=0)
 
 
 def rnx_vals2df(m):

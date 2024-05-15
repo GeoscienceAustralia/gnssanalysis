@@ -195,12 +195,6 @@ def datetime2gpsweeksec(array: _np.ndarray, as_decimal=False) -> _Union[tuple, _
 
 def datetime2j2000(datetime: _np.ndarray) -> _np.ndarray:
     """datetime64 conversion to int seconds after J2000 (2000-01-01 12:00:00)"""
-    if not isinstance(datetime, (_np.ndarray, _np.datetime64)):
-        raise TypeError("input should be numpy ndarray or single datetime64 value")
-    if datetime.dtype != "<M8[s]":
-        return (datetime.astype("datetime64[s]") - _gn_const.J2000_ORIGIN).astype(
-            int
-        )  # this will break on pandas dataframe
     return (datetime.astype("datetime64[s]") - _gn_const.J2000_ORIGIN).astype(int)
 
 
