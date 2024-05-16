@@ -30,6 +30,12 @@ def _get_snx_header(path_or_bytes):
     header_begin = snx_bytes.find(b"%=SNX")
     header_end = snx_bytes.find(b"\n", header_begin)
     snx_hline = snx_bytes[header_begin:header_end].decode()
+    if len(snx_hline) == 0: # Raise an inteligible error if the Sinex header is effectively empty.
+        # Is the source bytes, or a path / str path? If not bytes, we can output it.
+        if isinstance(path_or_bytes, bytes):
+            raise ValueError(f"Sinex header is empty for UNKNOWN file (passed in as bytes object not path)")
+        else:
+            raise ValueError(f"Sinex header is empty for file: '{str(path_or_bytes)}'")
     dates = _gn_datetime.yydoysec2datetime([snx_hline[15:27], snx_hline[32:44], snx_hline[45:57]]).tolist()
     return {
         "version": float(snx_hline[6:10]),
