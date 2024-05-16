@@ -68,8 +68,11 @@ def _read_rnx(rnx_path):
 
     buf = []
     for constellation_code, (signal_counts, signal_headers) in constellation_signals.items():
-        gnss_rnx_df = rnx_df[(prn_code == constellation_code)][0:(signal_counts-1)].copy()
-        gnss_rnx_df.columns = _pd.MultiIndex.from_product([signal_headers, ["EST", "STRG"]])
+        gnss_rnx_df = rnx_df[(prn_code == constellation_code)].copy()
+        trailing_column_count = len(rnx_df.columns) // 2 - signal_counts
+        padded_signal_headers = signal_headers + list(range(trailing_column_count))
+        gnss_rnx_df.columns = _pd.MultiIndex.from_product([padded_signal_headers, ["EST", "STRG"]])
+        gnss_rnx_df.dropna(axis="columns", how="all", )
         buf.append(gnss_rnx_df)
     return _pd.concat(buf, keys=constellation_signals.keys(), axis=0)
 
