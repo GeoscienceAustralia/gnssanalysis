@@ -326,7 +326,7 @@ def compare_clk(
     clk_a = _gn_io.clk.get_AS_entries(clk_a)
     clk_b = _gn_io.clk.get_AS_entries(clk_b)
 
-    if  not isinstance(norm_types,list): # need list for 'sv' to be correctly converted to array of SVs to use for norm
+    if not isinstance(norm_types, list):  # need list for 'sv' to be correctly converted to array of SVs to use for norm
         norm_types = list(norm_types)
 
     if ext_dt is None:
@@ -365,9 +365,9 @@ def compare_clk(
             )
 
             # get the sv to use for norm and overwrite norm_type value with sv prn code
-        _logging.info('---removing common mode from clk 1---')
+        _logging.info("---removing common mode from clk 1---")
         _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types)
-        _logging.info('---removing common mode from clk 2---')
+        _logging.info("---removing common mode from clk 2---")
         _gn_io.clk.rm_clk_bias(clk_b_unst, norm_types=norm_types)
     return clk_a_unst - clk_b_unst
 
@@ -434,7 +434,7 @@ def sisre(
     sisre : DataFrame or Series depending in the output_mode selection
         output_mode = 'rms'  : Series of RMS SISRE values, value per GNSS.
         output_mode = 'gnss' : DataFrame of epoch-wise RMS SISRE values per GNSS.
-        output_mode = 'sv'   : DataFrame of epoch-wise SISRE values per SV. NOTE: SV here refers to Satellite 
+        output_mode = 'sv'   : DataFrame of epoch-wise SISRE values per SV. NOTE: SV here refers to Satellite
                                Vehicle ID (1-1 mappable to Pseudo-Random Noise identifier i.e. PRN). It does NOT
                                refer to Satellite Vehicle Number (which is permanent).
     """
@@ -448,9 +448,9 @@ def sisre(
     )
 
     if write_rac_file:
-        rtn_filename = rac.attrs["sp3_a"]+ " - " + rac.attrs["sp3_b"] + hlm_mode if hlm_mode is not None else ""
+        rtn_filename = rac.attrs["sp3_a"] + " - " + rac.attrs["sp3_b"] + hlm_mode if hlm_mode is not None else ""
         print(rtn_filename)
-        rac.to_csv(path_or_buf = rtn_filename,header=True,index=True)
+        rac.to_csv(path_or_buf=rtn_filename, header=True, index=True)
 
     rac_unstack = rac.EST_RAC.unstack() * 1000  # km to meters,
     # sync is being done within the function.
@@ -465,8 +465,11 @@ def sisre(
         _gn_plot.racplot(rac_unstack=rac_unstack, output=plot if isinstance(plot, str) else None)
 
     if (clk_a is not None) & (clk_b is not None):  # check if clk data is present
-        clk_diff = compare_clk(
-            clk_a, clk_b, norm_types=norm_type, ext_dt=rac_unstack.index, ext_svs=rac_unstack.columns.levels[1]
+        clk_diff = (
+            compare_clk(
+                clk_a, clk_b, norm_types=norm_type, ext_dt=rac_unstack.index, ext_svs=rac_unstack.columns.levels[1]
+            )
+            * _gn_const.C_LIGHT
         )  # units are meters
         if clean:
             if cutoff is not None:
@@ -475,7 +478,7 @@ def sisre(
         common_epochs_RAC_T = rac_unstack.index.intersection(
             clk_diff.index.values
         )  # RAC epochs not present in clk_diff
-    
+
         # NOTE: SV here refers to Satellite Vehicle ID, not to be confused with the *permanent* Satellite
         # Vehicle Number.
         # The columns here have been cleared of unused levels in sp3.diff_sp3_rac(). If this were not done, we would
@@ -517,7 +520,9 @@ def sisre(
         return _gn_aux.rms(rms_sisre, axis=0)
 
 
-def diffsp3(sp3_a_path, sp3_b_path, tol, log_lvl, clk_a_path, clk_b_path, hlm_mode=None, plot=False, write_rac_file=False):
+def diffsp3(
+    sp3_a_path, sp3_b_path, tol, log_lvl, clk_a_path, clk_b_path, hlm_mode=None, plot=False, write_rac_file=False
+):
     """Compares two sp3 files and outputs a dataframe of differences above tolerance if such were found"""
     sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path), _gn_io.sp3.read_sp3(sp3_b_path)
 
