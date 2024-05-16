@@ -14,6 +14,7 @@ import logging
 import os as _os
 import random as _random
 import shutil
+import click as _click
 import sys as _sys
 import threading
 import time as _time
@@ -415,7 +416,7 @@ def check_whether_to_download(
     # Check if file already exists - if so, then re-download or not based on if_file_present value
     if output_path.is_file():
         if if_file_present == "prompt_user":
-            replace = click.confirm(
+            replace = _click.confirm(
                 f"File {output_path} already present; download and replace? - Answer:", default=None
             )
             if replace:
