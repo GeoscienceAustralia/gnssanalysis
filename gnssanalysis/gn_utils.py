@@ -526,14 +526,35 @@ def trace2mongo(trace_paths, db_name):
     default=True,
     help="Flag to include index in output data. Default: True",
 )
-def orbq(input, output_path, format, csv_separation, json_format, hlm_mode, satellite, constellation, header, index):
+@_click.option(
+    "-r",
+    "--reject",
+    "reject_re",
+    type=str,
+    help="SVs to reject from comparison, a regex expression. Must be in quotes, e.g. 'G0.*', 'E01|G01', '[EG]0.*', 'G18'",
+    default=None,
+    show_default=True,
+)
+def orbq(input, output_path, format, csv_separation, json_format, hlm_mode, satellite, constellation, header, index, reject_re):
     """
     A simple utility to assess pairs of sp3 files
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux
+    _logging.basicConfig(level="INFO")  # seems that logging can only be configured before the first logging call
+    logger = _logging.getLogger()
+    # if verbose:
+    #     logger.setLevel(_logging.INFO)
+    # else:
+    #     _logging.disable()
 
     sp3_a = gn_io.sp3.read_sp3(input[0])
     sp3_b = gn_io.sp3.read_sp3(input[1])
+    if reject_re is not None:
+        logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
+        reject_mask = sp3_a.index.get_level_values(1).str.match(reject_re)
+        sp3_a = sp3_a[~reject_mask]
+        reject_mask = sp3_b.index.get_level_values(1).str.match(reject_re)
+        sp3_b = sp3_b[~reject_mask]
 
     rac = gn_io.sp3.diff_sp3_rac(
         gn_aux.rm_duplicates_df(sp3_a.iloc[:, :3], rm_nan_level=1),
