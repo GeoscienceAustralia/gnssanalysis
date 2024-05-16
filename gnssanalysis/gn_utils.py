@@ -552,12 +552,10 @@ def orbq(input, output_path, format, csv_separation, json_format, hlm_mode, sate
     if reject_re is not None:
         logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
         reject_mask = sp3_a.index.get_level_values(1).str.match(reject_re)
-        sats_to_remove = sp3_a[reject_mask].index.get_level_values(1).unique().to_list()
         sp3_a = sp3_a[~reject_mask]
         reject_mask = sp3_b.index.get_level_values(1).str.match(reject_re)
-        sats_to_remove = sp3_b[reject_mask].index.get_level_values(1).unique().to_list()
         sp3_b = sp3_b[~reject_mask]
-        # logger.log(msg=f"Removed the following satellites from file {i}: '{sats_to_remove}'", level=_logging.INFO)
+
     rac = gn_io.sp3.diff_sp3_rac(
         gn_aux.rm_duplicates_df(sp3_a.iloc[:, :3], rm_nan_level=1),
         gn_aux.rm_duplicates_df(sp3_b.iloc[:, :3], rm_nan_level=1),
