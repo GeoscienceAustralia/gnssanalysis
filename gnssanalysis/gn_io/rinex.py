@@ -72,7 +72,7 @@ def _read_rnx(rnx_path):
         trailing_column_count = len(rnx_df.columns) // 2 - signal_counts
         padded_signal_headers = signal_headers + list(range(trailing_column_count))
         gnss_rnx_df.columns = _pd.MultiIndex.from_product([padded_signal_headers, ["EST", "STRG"]])
-        gnss_rnx_df.dropna(axis="columns", how="all", )
+        gnss_rnx_df.dropna(axis="columns", how="all", inplace=True)
         buf.append(gnss_rnx_df)
     return _pd.concat(buf, keys=constellation_signals.keys(), axis=0)
 
