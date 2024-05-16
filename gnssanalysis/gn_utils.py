@@ -549,15 +549,15 @@ def orbq(input, output_path, format, csv_separation, json_format, hlm_mode, sate
 
     sp3_a = gn_io.sp3.read_sp3(input[0])
     sp3_b = gn_io.sp3.read_sp3(input[1])
-
     if reject_re is not None:
         logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
-        for i, sp3 in enumerate([sp3_a, sp3_b]):
-            reject_mask = sp3.index.get_level_values(2).str.match(reject_re)
-            sats_to_remove = sp3[reject_mask].index.get_level_values(2).unique().to_list()
-            sp3 = sp3[~reject_mask]
-            logger.log(msg=f"Removed the following satellites from file {i}: '{sats_to_remove}'", level=_logging.INFO)
-
+        reject_mask = sp3_a.index.get_level_values(1).str.match(reject_re)
+        sats_to_remove = sp3_a[reject_mask].index.get_level_values(1).unique().to_list()
+        sp3_a = sp3_a[~reject_mask]
+        reject_mask = sp3_b.index.get_level_values(1).str.match(reject_re)
+        sats_to_remove = sp3_b[reject_mask].index.get_level_values(1).unique().to_list()
+        sp3_b = sp3_b[~reject_mask]
+        # logger.log(msg=f"Removed the following satellites from file {i}: '{sats_to_remove}'", level=_logging.INFO)
     rac = gn_io.sp3.diff_sp3_rac(
         gn_aux.rm_duplicates_df(sp3_a.iloc[:, :3], rm_nan_level=1),
         gn_aux.rm_duplicates_df(sp3_b.iloc[:, :3], rm_nan_level=1),
@@ -744,11 +744,14 @@ def clkq(
     clk_a, clk_b = gn_io.clk.read_clk(input_clk_paths[0]), gn_io.clk.read_clk(input_clk_paths[1])
     if reject_re is not None:
         logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
-        for i, clk in enumerate([clk_a, clk_b]):
-            reject_mask = clk.index.get_level_values(2).str.match(reject_re)
-            sats_to_remove = clk[reject_mask].index.get_level_values(2).unique().to_list()
-            clk = clk[~reject_mask]
-            logger.log(msg=f"Removed the following satellites from file {i}: '{sats_to_remove}'", level=_logging.INFO)
+        reject_mask_a = clk_a.index.get_level_values(2).str.match(reject_re)
+        reject_mask_b = clk_b.index.get_level_values(2).str.match(reject_re)
+        sats_to_remove_a = clk_a[reject_mask_a].index.get_level_values(2).unique().to_list()
+        sats_to_remove_b = clk_b[reject_mask_b].index.get_level_values(2).unique().to_list()
+        clk_a = clk_a[~reject_mask_a]
+        logger.log(msg=f"Removed the following satellites from first file: '{sats_to_remove_a}'", level=_logging.INFO)
+        clk_b = clk_b[~reject_mask_b]
+        logger.log(msg=f"Removed the following satellites from second file: '{sats_to_remove_b}'", level=_logging.INFO)
     diff_clk = gn_diffaux.compare_clk(clk_a=clk_a, clk_b=clk_b, norm_types=norm)
 
     if input_bia_paths is not None:
