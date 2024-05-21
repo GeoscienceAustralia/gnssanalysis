@@ -14,7 +14,7 @@ def pod_get_IC_dt(pod_out: bytes) -> int:
     end = pod_out.find(b"\n", begin)
     date = _pd.Series(pod_out[begin:end].strip().decode()).str.split(pat=r"\s+")
     year, month, day, frac = date.tolist()[0]
-    dt_value = (_np.datetime64("-".join([year, month.zfill(2), day])) - _gn_const.J2000_ORIGIN).astype(int)
+    dt_value = (_np.datetime64("-".join([year, month.zfill(2), day])) - _gn_const.J2000_ORIGIN).astype("int64")
     return dt_value + int(86400 * float(frac))
 
 
