@@ -161,8 +161,8 @@ def datetime2yydoysec(datetime: _Union[_np.ndarray, _pd.Series]) -> _np.ndarray:
         )  # .astype("datetime64[Y]") called on ndarray will return 4-digit year, not YYYY-MM-DD as in case of Series
     datetime_Y = datetime.astype("datetime64[Y]")
     datetime_D = datetime.astype("datetime64[D]")
-    doy = _pd.Series((datetime_D - datetime_Y).astype(int).astype(str))
-    seconds = _pd.Series((datetime - datetime_D).astype("timedelta64[s]").astype(int).astype(str))
+    doy = _pd.Series((datetime_D - datetime_Y).astype("int64").astype(str))
+    seconds = _pd.Series((datetime - datetime_D).astype("timedelta64[s]").astype("int64").astype(str))
     yydoysec = (
         _pd.Series(datetime_Y.astype(str)).str.slice(2).values
         + ":"
@@ -175,32 +175,32 @@ def datetime2yydoysec(datetime: _Union[_np.ndarray, _pd.Series]) -> _np.ndarray:
 
 def gpsweeksec2datetime(gps_week: _np.ndarray, tow: _np.ndarray, as_j2000: bool = True) -> _np.ndarray:
     """trace file date (gps week, time_of_week) to datetime64 conversion"""
-    ORIGIN = (_gn_const.GPS_ORIGIN - _gn_const.J2000_ORIGIN).astype(int) if as_j2000 else _gn_const.GPS_ORIGIN
+    ORIGIN = (_gn_const.GPS_ORIGIN - _gn_const.J2000_ORIGIN).astype("int64") if as_j2000 else _gn_const.GPS_ORIGIN
     datetime = ORIGIN + (gps_week * _gn_const.SEC_IN_WEEK + tow)
     return datetime
 
 
 def datetime2gpsweeksec(array: _np.ndarray, as_decimal=False) -> _Union[tuple, _np.ndarray]:
     if array.dtype == int:
-        ORIGIN = _gn_const.J2000_ORIGIN.astype(int) - _gn_const.GPS_ORIGIN.astype(int)
+        ORIGIN = _gn_const.J2000_ORIGIN.astype("int64") - _gn_const.GPS_ORIGIN.astype("int64")
         gps_time = array + ORIGIN  # need int conversion for the case of datetime64
     else:
-        ORIGIN = _gn_const.GPS_ORIGIN.astype(int)
-        gps_time = array.astype("datetime64[s]").astype(int) - ORIGIN  # datetime64 converted to int seconds
+        ORIGIN = _gn_const.GPS_ORIGIN.astype("int64")
+        gps_time = array.astype("datetime64[s]").astype("int64") - ORIGIN  # datetime64 converted to int seconds
 
-    weeks_int = (gps_time / _gn_const.SEC_IN_WEEK).astype(int)
+    weeks_int = (gps_time / _gn_const.SEC_IN_WEEK).astype("int64")
     tow = gps_time - weeks_int * _gn_const.SEC_IN_WEEK  # this eliminates rounding error problem
     return weeks_int + (tow / 1000000) if as_decimal else (weeks_int, tow)
 
 
 def datetime2j2000(datetime: _np.ndarray) -> _np.ndarray:
     """datetime64 conversion to int seconds after J2000 (2000-01-01 12:00:00)"""
-    return (datetime.astype("datetime64[s]") - _gn_const.J2000_ORIGIN).astype(int)
+    return (datetime.astype("datetime64[s]") - _gn_const.J2000_ORIGIN).astype("int64")
 
 
 def j20002datetime(j2000secs: _np.ndarray, as_datetime: bool = False) -> _np.ndarray:
     """int64 seconds after J2000 (2000-01-01 12:00:00) conversion to datetime64, if as_datetime selected - will additionally convert to datetime.datetime"""
-    j2000secs = j2000secs if isinstance(j2000secs.dtype, int) else j2000secs.astype(int)
+    j2000secs = j2000secs if isinstance(j2000secs.dtype, int) else j2000secs.astype("int64")
     datetime64 = _gn_const.J2000_ORIGIN + j2000secs
     if as_datetime:
         return datetime64.astype(_datetime)
@@ -223,7 +223,7 @@ def j20002yydoysec(j2000secs: _np.ndarray) -> _np.ndarray:
 
 
 def datetime2mjd(array: _np.ndarray) -> tuple:
-    mjd_seconds = (array - _gn_const.MJD_ORIGIN).astype(int)  # seconds
+    mjd_seconds = (array - _gn_const.MJD_ORIGIN).astype("int64")  # seconds
     return mjd_seconds // _gn_const.SEC_IN_DAY, (mjd_seconds % _gn_const.SEC_IN_DAY) / _gn_const.SEC_IN_DAY
 
 
@@ -238,7 +238,7 @@ def pydatetime_to_mjd(dt: _datetime) -> float:
 
 
 def j20002mjd(array: _np.ndarray) -> tuple:
-    j2000_mjd_bias = (_gn_const.J2000_ORIGIN - _gn_const.MJD_ORIGIN).astype(int)  # in seconds
+    j2000_mjd_bias = (_gn_const.J2000_ORIGIN - _gn_const.MJD_ORIGIN).astype("int64")  # in seconds
     mjd_seconds = j2000_mjd_bias + array
     return mjd_seconds // _gn_const.SEC_IN_DAY, (mjd_seconds % _gn_const.SEC_IN_DAY) / _gn_const.SEC_IN_DAY
 
@@ -250,7 +250,7 @@ def j20002j2000days(array: _np.ndarray) -> _np.ndarray:
 
 def mjd2datetime(mjd: _np.ndarray, seconds_frac: _np.ndarray, pea_partials=False) -> _np.ndarray:
     seconds = (
-        (86400 * seconds_frac).astype(int) if not pea_partials else seconds_frac.astype(int)
+        (86400 * seconds_frac).astype("int64") if not pea_partials else seconds_frac.astype("int64")
     )  # pod orb_partials file has a custom mjd date format with frac being seconds
     dt = _gn_const.MJD_ORIGIN + mjd.astype("timedelta64[D]") + seconds
     return dt
@@ -284,12 +284,12 @@ def j20002rnxdt(j2000secs: _np.ndarray) -> _np.ndarray:
     minute = datetime.astype("datetime64[m]")
 
     date_y = "*" + _pd.Series(year.astype(str)).str.rjust(6).values
-    date_m = _pd.Series(((month - year).astype(int) + 1).astype(str)).str.rjust(3).values
-    date_d = _pd.Series(((day - month).astype(int) + 1).astype(str)).str.rjust(3).values
+    date_m = _pd.Series(((month - year).astype("int64") + 1).astype(str)).str.rjust(3).values
+    date_d = _pd.Series(((day - month).astype("int64") + 1).astype(str)).str.rjust(3).values
 
-    time_h = _pd.Series((hour - day).astype(int).astype(str)).str.rjust(3).values
-    time_m = _pd.Series((minute - hour).astype(int).astype(str)).str.rjust(3).values
-    time_s = (_pd.Series((datetime - minute)).view(int) / 1e9).apply("{:.8f}\n".format).str.rjust(13).values
+    time_h = _pd.Series((hour - day).astype("int64").astype(str)).str.rjust(3).values
+    time_m = _pd.Series((minute - hour).astype("int64").astype(str)).str.rjust(3).values
+    time_s = (_pd.Series((datetime - minute)).view("int64") / 1e9).apply("{:.8f}\n".format).str.rjust(13).values
     return date_y + date_m + date_d + time_h + time_m + time_s
 
 
