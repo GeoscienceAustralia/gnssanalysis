@@ -327,6 +327,11 @@ def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Unio
             ).astype(int)
 
         std_df = sp3_df["STD"]
+        #  Remove attribute data from this shallow copy of the Dataframe.
+        #  This works around an apparent bug in Pandas, due to the fact calling == on two Series produces a list
+        #  of element-wise comparisons, rather than a single boolean value. This list seems to break Pandas
+        #  concat() when it is invoked within transform() and tries to check if attributes match between columns
+        #  being concatenated.
         std_df.attrs = {}
         std_df = std_df.transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
         std_df = std_df.rename(columns=lambda x: "STD_" + x)
