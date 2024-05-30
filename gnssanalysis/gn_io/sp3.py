@@ -329,7 +329,7 @@ def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Unio
         std_df = sp3_df["STD"]
         std_df.attrs = {}
         std_df = std_df.transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
-        std_df = std_df.rename(columns=lambda x: "STD" + x)
+        std_df = std_df.rename(columns=lambda x: "STD_" + x)
         out_df = _pd.concat([out_df, std_df], axis="columns")
 
     def prn_formatter(x):
