@@ -1,4 +1,5 @@
 """IGS log files parser"""
+
 import glob as _glob
 import re as _re
 from multiprocessing import Pool as _Pool
@@ -297,7 +298,9 @@ def gather_metadata(logs_glob_path="/data/station_logs/station_logs_IGS/*/*.log"
     xyz_norm = (xyz_array[valid_mask] ** 2).sum(axis=1) ** 0.5
     valid_mask[valid_mask] = (xyz_norm > 6000000) & (xyz_norm < 6500000)
 
-    llh = _gn_transform.xyz2llh(xyz_array[valid_mask], method="heikkinen", ellipsoid=_gn_const.WGS84, latlon_as_deg=True)
+    llh = _gn_transform.xyz2llh(
+        xyz_array[valid_mask], method="heikkinen", ellipsoid=_gn_const.WGS84, latlon_as_deg=True
+    )
     llh_snx = _gn_io.sinex.llh2snxdms(llh)
 
     llh2 = id_loc_df[~valid_mask][["LAT", "LON", "HEI"]]
@@ -435,7 +438,7 @@ def meta2sting(id_loc_df, rec_df, ant_df):
         + " "
         + rec_df.END_SNX
         + " "
-        + +rec_df.RECEIVER.str.ljust(20, " ")
+        + rec_df.RECEIVER.str.ljust(20, " ")
         + " "
         + rec_df["S/N"].str.ljust(5, " ")
         + " "
