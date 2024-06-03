@@ -25,17 +25,21 @@ _RE_STATISTICS = _re.compile(r"^[ ]([A-Z (-]+[A-Z)])[ ]+([\d+\.]+)", _re.MULTILI
 
 
 def _get_snx_header(path_or_bytes):
+    # Helper for error logging
+    def file_desc(pb) -> str:
+        return "Source file: unknown (passed as bytes)" if isinstance(path_or_bytes, bytes) else "Source file: "+str(path_or_bytes)
+    
     # read line that starts with %=SNX and parse it into dict
     snx_bytes = _gn_io.common.path2bytes(path_or_bytes)
     header_begin = snx_bytes.find(b"%=SNX")
+    if (header_begin == -1):
+        raise ValueError("Sinex header missing!", file_desc(path_or_bytes))
     header_end = snx_bytes.find(b"\n", header_begin)
+    if header_end == -1:
+        raise ValueError("Sinex header found but wasn't newline terminated (end unclear)", file_desc(path_or_bytes))
     snx_hline = snx_bytes[header_begin:header_end].decode()
     if len(snx_hline) == 0: # Raise an inteligible error if the Sinex header is effectively empty.
-        # Is the source bytes, or a path / str path? If not bytes, we can output it.
-        if isinstance(path_or_bytes, bytes):
-            raise ValueError(f"Sinex header is empty for UNKNOWN file (passed in as bytes object not path)")
-        else:
-            raise ValueError(f"Sinex header is empty for file: '{str(path_or_bytes)}'")
+        raise ValueError(f"Sinex header found, but empty!", file_desc(path_or_bytes))
     dates = _gn_datetime.yydoysec2datetime([snx_hline[15:27], snx_hline[32:44], snx_hline[45:57]]).tolist()
     return {
         "version": float(snx_hline[6:10]),
