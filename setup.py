@@ -17,6 +17,7 @@ setuptools.setup(
     install_requires=[
         "boto3",
         "click",
+        "requests",
         "hatanaka",
         "matplotlib",
         "numpy",
