@@ -1,5 +1,7 @@
 import logging
 
+import numpy as np
+
 """Ephemeris functions"""
 import io as _io
 import os as _os
@@ -48,11 +50,9 @@ def sp3_clock_nodata_to_nan(sp3_df):
     Converts the SP3 Clock column's nodata value (999999 or 999999.999999 - the fractional component optional) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
     """
-    nan_mask = sp3_df.iloc[:, 1:5].values >= SP3_CLOCK_NODATA_NUMERIC
-    nans = nan_mask.astype(float)
-    nans[nan_mask] = _np.NAN
-    sp3_df.iloc[:, 1:5] = sp3_df.iloc[:, 1:5].values + nans
-
+    # nan_mask = sp3_df.iloc[:, :5].values >= SP3_CLOCK_NODATA_NUMERIC
+    # sp3_df.iloc[:, :5].where(sp3_df.iloc[:, :5] < SP3_CLOCK_NODATA_NUMERIC, _np.nan, inplace=True)
+    sp3_df.loc[:, sp3_df.columns[:6]] = sp3_df.iloc[:, :6].where(sp3_df.iloc[:, :6] < SP3_CLOCK_NODATA_NUMERIC, _np.nan)
 
 def mapparm(old, new):
     """scipy function f map values"""
@@ -75,89 +75,49 @@ def read_sp3(sp3_path, pOnly=True):
     content = content[header_end:]
 
     parsed_header = parse_sp3_header(header)
-
+    counts = parsed_header.SV_INFO.count()
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
+    _RE_SP3 = _re.compile(rb"^\*(.+)\n(.+).+", _re.MULTILINE)
 
     data_blocks = _np.asarray(_RE_SP3.findall(string=content[: content.rfind(b"EOF")]))
+    # Compile the regular expression pattern
+    pattern = _re.compile(r'^\*(.+)$', _re.MULTILINE)
 
-    dates = data_blocks[:, 0]
-    data = data_blocks[:, 1]
-    if not data[-1].endswith(b"\n"):
-        data[-1] += b"\n"
+    # Split the content by the lines starting with '*'
+    blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
+    date_lines = blocks[1::2]
+    data_blocks = np.asarray(blocks[2::2])
+    # print(data_blocks)
 
-    counts = _np.char.count(data, b"\n")
-
-    epochs_dt = _pd.to_datetime(_pd.Series(dates).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
-
-    dt_index = _np.repeat(a=_gn_datetime.datetime2j2000(epochs_dt.values), repeats=counts)
-    b_string = b"".join(data.tolist())
-
-    series = _pd.Series(b_string.splitlines())
-    data_width = series.str.len()
-    missing = b" " * (data_width.max() - data_width).values.astype(object)
-    series += missing  # rows need to be of equal len
-    data_test = series.str[4:60].values.astype("S56").view(("S14")).reshape(series.shape[0], -1).astype(float)
-
-    if parsed_header.HEAD.ORB_TYPE in ["FIT", "INT"]:
-        sp3_df = _pd.DataFrame(data_test).astype(float)
-        sp3_df.columns = [
-            ["EST", "EST", "EST", "EST"],
-            [
-                "X",
-                "Y",
-                "Z",
-                "CLK",
-            ],
-        ]
-
-    else:  # parsed_header.HEAD.ORB_TYPE == 'HLM':
-        # might need to output log message
-        std = (series.str[60:69].values + series.str[70:73].values).astype("S12").view("S3").astype(object)
-        std[std == b"   "] = None
-        std = std.astype(float).reshape(series.shape[0], -1)
-
-        ind = (series.str[75:76].values + series.str[79:80].values).astype("S2").view("S1")
-        ind[ind == b" "] = b""
-        ind = ind.reshape(series.shape[0], -1).astype(str)
-
-        sp3_df = _pd.DataFrame(
-            _np.column_stack([data_test, std, ind]),
-        ).astype(
-            {
-                0: float,
-                1: float,
-                2: float,
-                3: float,
-                4: float,
-                5: float,
-                6: float,
-                7: float,
-                8: "category",
-                9: "category",
-            }
-        )
-        sp3_df.columns = [
-            ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "P_XYZ", "P_CLK"],
-            ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", ""],
-        ]
-        sp3_df.STD = base_xyzc**sp3_df.STD.values
-
-    sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
-    if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
-        pMask = series.astype("S1") == b"P"
-        sp3_df = sp3_df[pMask].set_index([dt_index[pMask], series.str[1:4].values[pMask].astype(str).astype(object)])
-        sp3_df.index.names = ("J2000", "PRN")
-    else:
-        sp3_df = sp3_df.set_index(
-            [dt_index, series.values.astype("U1"), series.str[1:4].values.astype(str).astype(object)]
-        )
-        sp3_df.index.names = ("J2000", "PV_FLAG", "PRN")
-
-    sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
-    sp3_df.attrs["path"] = sp3_path
-
+    widths = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1]
+    names = ['PV_FLAG', 'PRN', 'x_coordinate', 'y_coordinate', 'z_coordinate', 'clock', 'Unused1', 'x_sdev', 'Unused2', 'y_sdev', 'Unused3', 'z_sdev', 'Unused4', 'c_sdev', 'Unused5', 'Clock_Event_Flag', 'Clock_Pred_Flag', 'Unused6', 'Maneuver_Flag', 'Orbit_Pred_Flag']
+    name_float = ['x_coordinate', 'y_coordinate', 'z_coordinate', 'clock', 'x_sdev', 'y_sdev', 'z_sdev', 'c_sdev']
+    from io import StringIO
+    sp3_df = _pd.DataFrame()
+    for date, data in zip(date_lines, data_blocks):
+        epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
+        temp_sp3 = _pd.read_fwf(StringIO(data), widths=widths, names=names)
+        dt_index = _np.repeat(a=_gn_datetime.datetime2j2000(epochs_dt.values), repeats=len(temp_sp3))
+        temp_sp3.set_index(dt_index, inplace=True)
+        temp_sp3.index.name = "J2000"
+        #add PRN to index
+        temp_sp3.set_index(temp_sp3.PRN.astype(str), append=True, inplace=True)
+        # temp_sp3.set_index(temp_sp3.PV_FLAG.astype(str), append=True, inplace=True)
+        # append sp3_df to the final dataframe
+        sp3_df = sp3_df._append(temp_sp3)
+    sp3_df[name_float] = sp3_df[name_float].apply(_pd.to_numeric, errors="coerce")
+    sp3_df = sp3_df.loc[:, ~sp3_df.columns.str.startswith('Unused')]
+    #remove PRN and PV_FLAG columns
+    sp3_df = sp3_df.drop(columns=['PRN', 'PV_FLAG'])
+    #rename columsn x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
+    sp3_df.columns = [
+        ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
+        ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", "", "", ""],
+    ]
+    sp3_clock_nodata_to_nan(sp3_df)
+    # print(sp3_df.index.has_duplicates())
     # Check for duplicate epochs, dedupe and log warning
     if sp3_df.index.has_duplicates:  # a literaly free check
         duplicated_indexes = sp3_df.index.duplicated()  # Typically sub ms time. Marks all but first instance as duped.
@@ -168,7 +128,8 @@ def read_sp3(sp3_path, pOnly=True):
             f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
         )
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]  # Now dedupe them, keeping the first of any clashes
-
+    sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
+    sp3_df.attrs["path"] = sp3_path
     return sp3_df
 
 
@@ -203,7 +164,7 @@ def parse_sp3_header(header):
 def getVelSpline(sp3Df):
     """returns in the same units as intput, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard"""
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
-    datetime = sp3dfECI.index.values
+    datetime = sp3dfECI.index.get_level_values('J2000')
     spline = _interpolate.CubicSpline(datetime, sp3dfECI.values)
     velDf = _pd.DataFrame(data=spline.derivative(1)(datetime), index=sp3dfECI.index, columns=sp3dfECI.columns).stack(1)
     return _pd.concat([sp3Df, _pd.concat([velDf], keys=["VELi"], axis=1)], axis=1)
@@ -514,7 +475,6 @@ def diff_sp3_rac(
         sp3_baseline_eci_vel = getVelSpline(sp3Df=sp3_baseline_eci)
     else:
         sp3_baseline_eci_vel = getVelPoly(sp3Df=sp3_baseline_eci, deg=35)
-
     nd_rac = diff_eci.values[:, _np.newaxis] @ _gn_transform.eci2rac_rot(sp3_baseline_eci_vel)
     df_rac = _pd.DataFrame(
         nd_rac.reshape(-1, 3),
