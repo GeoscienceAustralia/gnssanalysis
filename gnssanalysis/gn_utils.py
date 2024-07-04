@@ -565,7 +565,7 @@ def orbq(input, output_path, format, csv_separation, json_format, hlm_mode, sate
     rms_df = gn_diffaux.rac_df_to_rms_df(rac)
 
     if hlm_mode is not None:
-        print(f"Helmert coeffs computed in {hlm_mode}: {rac.attrs['hlm'][0][0].reshape(-1)}")
+        print(f"Helmert coeffs computed in {hlm_mode}: {rac.attrs['hlm'][0].reshape(-1)}")
     # Convert km to m and round:
     conv_to_m = lambda df: df.mul(1000).round(5)
     # Output dataframes
