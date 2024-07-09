@@ -167,7 +167,7 @@ def _find_trace(output_path: str) -> tuple:
 #     LC_bytes = b''.join(trace_LC_list)
 #     LC_bytes = LC_bytes.replace(b'=',b'') #getting rif of '='
 
-#     df_LC = _pd.read_csv(_BytesIO(LC_bytes),delim_whitespace=True,header=None,usecols=[1,2,4,6,8,9,10,11,12,13]).astype(
+#     df_LC = _pd.read_csv(_BytesIO(LC_bytes),sep="\\s+",header=None,usecols=[1,2,4,6,8,9,10,11,12,13]).astype(
 #         {
 #             1: _np.int16, 2:_np.int32, 4: '<U3',
 #             6: '<U1', 8: '<U4',

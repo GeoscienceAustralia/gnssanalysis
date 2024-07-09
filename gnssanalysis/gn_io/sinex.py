@@ -457,7 +457,7 @@ def _get_snx_matrix(path_or_bytes, stypes=("APR", "EST"), verbose=True, snx_head
     else:
         return None  # not found
 
-    matrix_raw = _pd.read_csv(snx_buffer, delim_whitespace=True, dtype={0: _np.int16, 1: _np.int16})
+    matrix_raw = _pd.read_csv(snx_buffer, sep="\\s+", dtype={0: _np.int16, 1: _np.int16})
     # can be 4 and 5 columns; only 2 first int16
 
     output = []

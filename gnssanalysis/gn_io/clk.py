@@ -33,7 +33,7 @@ def read_clk(clk_path):
 
     clk_df = _pd.read_csv(
         _BytesIO(data),
-        delim_whitespace=True,
+        sep="\\s+",  # delim_whitespace is deprecated
         header=None,
         usecols=clk_cols,
         names=clk_names,  # type:ignore

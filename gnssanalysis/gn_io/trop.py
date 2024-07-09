@@ -22,7 +22,7 @@ def _read_tro_solution(path: str, recenter: bool = True) -> _pd.DataFrame:
     try:
         solution_df = _pd.read_csv(
             _BytesIO(tro_estimate),
-            delim_whitespace=True,
+            sep="\\s+",  # delim_whitespace is deprecated
             comment=b"*",
             index_col=False,
             header=None,
