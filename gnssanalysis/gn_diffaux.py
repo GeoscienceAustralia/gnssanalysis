@@ -364,6 +364,9 @@ def compare_clk(
                 clk_a_unst=clk_a_unst, clk_b_unst=clk_b_unst
             )
 
+        clk_a_unst[clk_b_unst.isna()] = _np.nan  # replace corresponding values in clk_a_unst with NaN where clk_b_unst is NaN
+        clk_b_unst[clk_a_unst.isna()] = _np.nan  # replace corresponding values in clk_b_unst with NaN where clk_a_unst is NaN
+
             # get the sv to use for norm and overwrite norm_type value with sv prn code
         _logging.info("---removing common mode from clk 1---")
         _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types)
