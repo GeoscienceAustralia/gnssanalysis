@@ -39,19 +39,31 @@ _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 SP3_CLOCK_NODATA_STRING = " 999999.999999"  # Not used for reading, as fractional components are optional
 SP3_CLOCK_NODATA_NUMERIC = 999999
 SP3_POS_NODATA_STRING = "      0.000000"
+SP3_POS_NODATA_NUMERIC = 0
 SP3_CLOCK_STD_NODATA = -1000
 SP3_POS_STD_NODATA = -100
 
 
-def sp3_clock_nodata_to_nan(sp3_df):
+def sp3_pos_nodata_to_nan(sp3_df):
     """
-    Converts the SP3 Clock column's nodata value (999999 or 999999.999999 - the fractional component optional) to NaNs.
+    Converts the SP3 Positional column's nodata values (0.000000) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
     """
-    nan_mask = sp3_df.iloc[:, 1:5].values >= SP3_CLOCK_NODATA_NUMERIC
-    nans = nan_mask.astype(float)
-    nans[nan_mask] = _np.NAN
-    sp3_df.iloc[:, 1:5] = sp3_df.iloc[:, 1:5].values + nans
+    nan_mask = (
+        (sp3_df[("EST", "X")] == SP3_POS_NODATA_NUMERIC)
+        & (sp3_df[("EST", "Y")] == SP3_POS_NODATA_NUMERIC)
+        & (sp3_df[("EST", "Z")] == SP3_POS_NODATA_NUMERIC)
+    )
+    sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.NAN
+
+
+def sp3_clock_nodata_to_nan(sp3_df):
+    """
+    Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - the fractional component optional) to NaNs.
+    See https://files.igs.org/pub/data/format/sp3_docu.txt
+    """
+    nan_mask = sp3_df[("EST", "CLK")] >= SP3_CLOCK_NODATA_NUMERIC
+    sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.NAN
 
 
 def mapparm(old, new):
@@ -144,6 +156,7 @@ def read_sp3(sp3_path, pOnly=True):
         ]
         sp3_df.STD = base_xyzc**sp3_df.STD.values
 
+    sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
     sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         pMask = series.astype("S1") == b"P"
