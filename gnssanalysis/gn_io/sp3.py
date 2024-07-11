@@ -75,7 +75,7 @@ def mapparm(old, new):
     return off, scl
 
 
-def read_sp3(sp3_path, pOnly=True):
+def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
     """Read SP3 file
     Returns STD values converted to proper units (mm/ps) also if present.
     by default leaves only P* values (positions), removing the P key itself
@@ -156,8 +156,10 @@ def read_sp3(sp3_path, pOnly=True):
         ]
         sp3_df.STD = base_xyzc**sp3_df.STD.values
 
-    sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
-    sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+    if nodata_to_nan:
+        sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
+        sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         pMask = series.astype("S1") == b"P"
         sp3_df = sp3_df[pMask].set_index([dt_index[pMask], series.str[1:4].values[pMask].astype(str).astype(object)])
@@ -471,9 +473,9 @@ def merge_attrs(df_list):
     return _pd.Series(_np.concatenate([head, sv_info]), index=df.index)
 
 
-def sp3merge(sp3paths, clkpaths=None):
+def sp3merge(sp3paths, clkpaths=None, nodata_to_nan=False):
     """Reads in a list of sp3 files and optianl list of clk file and merges them into a single sp3 file"""
-    sp3_dfs = [read_sp3(sp3_file) for sp3_file in sp3paths]
+    sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
     merged_sp3 = _pd.concat(sp3_dfs)
     merged_sp3.attrs["HEADER"] = merge_attrs(sp3_dfs)
 
