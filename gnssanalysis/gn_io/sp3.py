@@ -44,10 +44,15 @@ SP3_CLOCK_STD_NODATA = -1000
 SP3_POS_STD_NODATA = -100
 
 
-def sp3_pos_nodata_to_nan(sp3_df):
+def sp3_pos_nodata_to_nan(
+    sp3_df: _pd.DataFrame
+) -> None:
     """
     Converts the SP3 Positional column's nodata values (0.000000) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
+
+    :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
+    :return None
     """
     nan_mask = (
         (sp3_df[("EST", "X")] == SP3_POS_NODATA_NUMERIC)
@@ -57,10 +62,15 @@ def sp3_pos_nodata_to_nan(sp3_df):
     sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.NAN
 
 
-def sp3_clock_nodata_to_nan(sp3_df):
+def sp3_clock_nodata_to_nan(
+    sp3_df: _pd.DataFrame
+) -> None:
     """
     Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - the fractional component optional) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
+
+    :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
+    :return None
     """
     nan_mask = sp3_df[("EST", "CLK")] >= SP3_CLOCK_NODATA_NUMERIC
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.NAN
