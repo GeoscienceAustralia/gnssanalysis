@@ -364,6 +364,9 @@ def compare_clk(
                 clk_a_unst=clk_a_unst, clk_b_unst=clk_b_unst
             )
 
+        clk_a_unst[clk_b_unst.isna()] = _np.nan  # replace corresponding values in clk_a_unst with NaN where clk_b_unst is NaN
+        clk_b_unst[clk_a_unst.isna()] = _np.nan  # replace corresponding values in clk_b_unst with NaN where clk_a_unst is NaN
+
             # get the sv to use for norm and overwrite norm_type value with sv prn code
         _logging.info("---removing common mode from clk 1---")
         _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types)
@@ -521,10 +524,10 @@ def sisre(
 
 
 def diffsp3(
-    sp3_a_path, sp3_b_path, tol, log_lvl, clk_a_path, clk_b_path, hlm_mode=None, plot=False, write_rac_file=False
+    sp3_a_path, sp3_b_path, tol, log_lvl, clk_a_path, clk_b_path, nodata_to_nan=True, hlm_mode=None, plot=False, write_rac_file=False
 ):
     """Compares two sp3 files and outputs a dataframe of differences above tolerance if such were found"""
-    sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path), _gn_io.sp3.read_sp3(sp3_b_path)
+    sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path, nodata_to_nan=nodata_to_nan), _gn_io.sp3.read_sp3(sp3_b_path, nodata_to_nan=nodata_to_nan)
 
     as_sisre = False  # the switch only needed for logging msg
     clk_a = clk_b = None

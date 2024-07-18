@@ -39,18 +39,37 @@ _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 SP3_CLOCK_NODATA_STRING = " 999999.999999"  # Not used for reading, as fractional components are optional
 SP3_CLOCK_NODATA_NUMERIC = 999999
 SP3_POS_NODATA_STRING = "      0.000000"
+SP3_POS_NODATA_NUMERIC = 0
 SP3_CLOCK_STD_NODATA = -1000
 SP3_POS_STD_NODATA = -100
 
 
-def sp3_clock_nodata_to_nan(sp3_df):
+def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     """
-    Converts the SP3 Clock column's nodata value (999999 or 999999.999999 - the fractional component optional) to NaNs.
+    Converts the SP3 Positional column's nodata values (0.000000) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
+
+    :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
+    :return None
     """
-    # nan_mask = sp3_df.iloc[:, :5].values >= SP3_CLOCK_NODATA_NUMERIC
-    # sp3_df.iloc[:, :5].where(sp3_df.iloc[:, :5] < SP3_CLOCK_NODATA_NUMERIC, _np.nan, inplace=True)
-    sp3_df.loc[:, sp3_df.columns[:6]] = sp3_df.iloc[:, :6].where(sp3_df.iloc[:, :6] < SP3_CLOCK_NODATA_NUMERIC, _np.nan)
+    nan_mask = (
+        (sp3_df[("EST", "X")] == SP3_POS_NODATA_NUMERIC)
+        & (sp3_df[("EST", "Y")] == SP3_POS_NODATA_NUMERIC)
+        & (sp3_df[("EST", "Z")] == SP3_POS_NODATA_NUMERIC)
+    )
+    sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.NAN
+
+
+def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
+    """
+    Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - the fractional component optional) to NaNs.
+    See https://files.igs.org/pub/data/format/sp3_docu.txt
+
+    :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
+    :return None
+    """
+    nan_mask = sp3_df[("EST", "CLK")] >= SP3_CLOCK_NODATA_NUMERIC
+    sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.NAN
 
 
 def mapparm(old, new):
@@ -76,7 +95,22 @@ def _process_sp3_block(date, data, widths, names):
     return temp_sp3
 
 
-def read_sp3(sp3_path, pOnly=True):
+def _process_sp3_block(date, data, widths, names):
+    """Process a single block of SP3 data"""
+    print(data)
+    if not data or len(data) == 0:
+        return _pd.DataFrame()
+    epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
+    temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
+    dt_index = _np.repeat(a=_gn_datetime.datetime2j2000(epochs_dt.values), repeats=len(temp_sp3))
+    temp_sp3.set_index(dt_index, inplace=True)
+    temp_sp3.index.name = "J2000"
+    temp_sp3.set_index(temp_sp3.PRN.astype(str), append=True, inplace=True)
+    temp_sp3.set_index(temp_sp3.PV_FLAG.astype(str), append=True, inplace=True)
+    return temp_sp3
+
+
+def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
     """Read SP3 file
     Returns STD values converted to proper units (mm/ps) also if present.
     by default leaves only P* values (positions), removing the P key itself
@@ -139,8 +173,15 @@ def read_sp3(sp3_path, pOnly=True):
         ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
         ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", "", "", ""],
     ]
-    sp3_clock_nodata_to_nan(sp3_df)
+    if nodata_to_nan:
+        sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
+        sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
     # print(sp3_df.index.has_duplicates())
+    if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
+        sp3_df = sp3_df[sp3_df.index.get_level_values("PV_FLAG") == "P"]
+
+    sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
+    sp3_df.attrs["path"] = sp3_path
     # Check for duplicate epochs, dedupe and log warning
     if sp3_df.index.has_duplicates:  # a literaly free check
         duplicated_indexes = sp3_df.index.duplicated()  # Typically sub ms time. Marks all but first instance as duped.
@@ -442,9 +483,9 @@ def merge_attrs(df_list):
     return _pd.Series(_np.concatenate([head, sv_info]), index=df.index)
 
 
-def sp3merge(sp3paths, clkpaths=None):
+def sp3merge(sp3paths, clkpaths=None, nodata_to_nan=False):
     """Reads in a list of sp3 files and optianl list of clk file and merges them into a single sp3 file"""
-    sp3_dfs = [read_sp3(sp3_file) for sp3_file in sp3paths]
+    sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
     merged_sp3 = _pd.concat(sp3_dfs)
     merged_sp3.attrs["HEADER"] = merge_attrs(sp3_dfs)
 

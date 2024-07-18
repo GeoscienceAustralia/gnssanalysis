@@ -214,6 +214,13 @@ def clk(ctx, norm):
     show_default=True,
 )
 @_click.option(
+    "--nodata-to-nan",
+    type=bool,
+    help="convert nodata values (0.000000 for POS, 999999 or 999999.999999 for CLK) to NaNs. Default: True",
+    default=True,
+    show_default=True,
+)
+@_click.option(
     "--hlm_mode",
     type=_click.Choice(["ECF", "ECI"], case_sensitive=False),
     help="helmert inversion mode",
@@ -225,7 +232,7 @@ def clk(ctx, norm):
     is_flag=True,
     help="outputs Radial/Along-track/Cross-track into a file",
 )
-def sp3(ctx, aux1, aux2, hlm_mode, rac):  # no coef
+def sp3(ctx, aux1, aux2, nodata_to_nan, hlm_mode, rac):  # no coef
     from .gn_diffaux import diffsp3
 
     diffutil_verify_input(ctx.parent.params["input"])
@@ -236,6 +243,7 @@ def sp3(ctx, aux1, aux2, hlm_mode, rac):  # no coef
         clk_b_path=aux2,
         tol=ctx.parent.params["atol"],
         log_lvl=ctx.parent.params["log_lvl"],
+        nodata_to_nan=nodata_to_nan,
         hlm_mode=hlm_mode,
         plot=ctx.parent.params["plot"],
         write_rac_file=rac,
@@ -305,14 +313,20 @@ def snxmap(sinexpaths, outdir):
     help="output path",
     default=_os.curdir + "/merge.sp3",
 )
-def sp3merge(sp3paths, clkpaths, output):
+@_click.option(
+    "--nodata-to-nan",
+    type=bool,
+    help="convert nodata values (0.000000 for POS, 999999 or 999999.999999 for CLK) to NaNs. Default: False",
+    default=False,
+)
+def sp3merge(sp3paths, clkpaths, output, nodata_to_nan):
     """
     sp3 files paths to merge, Optional clock files which is useful to insert clk offset values into sp3 file.
     """
     from .gn_io import sp3
 
     _logging.info(msg=output)
-    merged_df = sp3.sp3merge(sp3paths=sp3paths, clkpaths=clkpaths)
+    merged_df = sp3.sp3merge(sp3paths=sp3paths, clkpaths=clkpaths, nodata_to_nan=nodata_to_nan)
     sp3.write_sp3(sp3_df=merged_df, path=output)
 
 
@@ -489,6 +503,13 @@ def trace2mongo(trace_paths, db_name):
     help="If JSON format chosen, choose how the output JSON schema is formated. Default is 'table'. Options: 'table', 'split', 'records', 'index', 'columns', 'values'",
 )
 @_click.option(
+    "--nodata-to-nan",
+    type=bool,
+    help="convert nodata values (0.000000 for POS, 999999 or 999999.999999 for CLK) to NaNs. Default: True",
+    default=True,
+    show_default=True,
+)
+@_click.option(
     "-h",
     "--hlm_mode",
     type=_click.Choice(["ECF", "ECI"], case_sensitive=False),
@@ -535,7 +556,7 @@ def trace2mongo(trace_paths, db_name):
     default=None,
     show_default=True,
 )
-def orbq(input, output_path, format, csv_separation, json_format, hlm_mode, satellite, constellation, header, index, reject_re):
+def orbq(input, output_path, format, csv_separation, json_format, nodata_to_nan, hlm_mode, satellite, constellation, header, index, reject_re):
     """
     A simple utility to assess pairs of sp3 files
     """
@@ -547,8 +568,8 @@ def orbq(input, output_path, format, csv_separation, json_format, hlm_mode, sate
     # else:
     #     _logging.disable()
 
-    sp3_a = gn_io.sp3.read_sp3(input[0])
-    sp3_b = gn_io.sp3.read_sp3(input[1])
+    sp3_a = gn_io.sp3.read_sp3(input[0], nodata_to_nan=nodata_to_nan)
+    sp3_b = gn_io.sp3.read_sp3(input[1], nodata_to_nan=nodata_to_nan)
     if reject_re is not None:
         logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
         reject_mask = sp3_a.index.get_level_values(1).str.match(reject_re)
@@ -565,7 +586,7 @@ def orbq(input, output_path, format, csv_separation, json_format, hlm_mode, sate
     rms_df = gn_diffaux.rac_df_to_rms_df(rac)
 
     if hlm_mode is not None:
-        print(f"Helmert coeffs computed in {hlm_mode}: {rac.attrs['hlm'][0][0].reshape(-1)}")
+        print(f"Helmert coeffs computed in {hlm_mode}: {rac.attrs['hlm'][0].reshape(-1)}")
     # Convert km to m and round:
     conv_to_m = lambda df: df.mul(1000).round(5)
     # Output dataframes
