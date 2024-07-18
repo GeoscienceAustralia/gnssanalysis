@@ -228,7 +228,7 @@ def llh2rot(phi, lamb, enu_to_ecef=False):
 
     assert phi.size == lamb.size, "phi and lambda arrays should be of the same size"
 
-    rot = _np.zeros((phi.size, 3, 3), dtype=_np.float_)
+    rot = _np.zeros((phi.size, 3, 3), dtype=_np.float64)
     rot[:, 0, 0] = -sin_lamb
     rot[:, 0, 1] = cos_lamb
     #         ^col

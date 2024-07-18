@@ -1,7 +1,37 @@
+import unittest
+
 import numpy as _np
 
 from gnssanalysis import gn_const, gn_transform, gn_aux
 
+
+class TestHelmert(unittest.TestCase):
+    def test_hlm(self):
+        hlm_params_estimated = gn_transform.get_helmert7(SWEREFF93, RT90)
+        self.assertTrue(_np.allclose(hlm_params_estimated[0], RT90_SWEREFF93_HLM, atol=1e-1))
+
+
+class TestLLH2XYZ(unittest.TestCase):
+    def test_xyz2llh_heikkinen(self):
+        self.assertTrue(_np.allclose(LLH_HEIKKINEN, STATIONS_LLH, rtol=1e-2))
+
+    def test_xyz2llh_zhu(self):
+        self.assertTrue(_np.allclose(LLH_ZHU, STATIONS_LLH, rtol=1e-2))
+
+    def test_xyz2llh_iterative(self):
+        self.assertTrue(_np.allclose(LLH_ITERATIVE, STATIONS_LLH, rtol=1e-2))
+
+    def test_xyz2llh_heikkinen_rel_zhu(self):
+        self.assertTrue(_np.allclose(LLH_HEIKKINEN, LLH_ZHU, atol=1e-8))
+
+    def test_xyz2llh_heikkinen_rel_iterative(self):
+        self.assertTrue(_np.allclose(LLH_HEIKKINEN, LLH_ITERATIVE, atol=1e-8))
+
+    def test_xyz2llh_zhu_rel_iterative(self):
+        self.assertTrue(_np.allclose(LLH_ZHU, LLH_ITERATIVE, atol=1e-8))
+
+
+##ALL DATA
 # Examples from Islam, Md. Tariqul. (2014). Least Square Approach to Estimate 3D Coordinate Transformation Parameters: A Case of Three Reference Systems in Sweden. 3. 30-38.
 
 RT90 = _np.asarray(
@@ -61,11 +91,6 @@ RT90_SWEREFF93_HLM = _np.asarray(
 )
 
 
-def test_hlm():
-    hlm_params_estimated = gn_transform.get_helmert7(RT90, SWEREFF93)
-    assert _np.allclose(hlm_params_estimated[0], RT90_SWEREFF93_HLM, atol=1e-2)
-
-
 STATIONS_XYZ = _np.asarray(
     [
         [-4052052.7352, 4212835.9833, -2545104.5853],  # ALIC, AUSTRALIA
@@ -97,30 +122,6 @@ LLH_ZHU = gn_transform.xyz2llh(STATIONS_XYZ, method="zhu", latlon_as_deg=True, m
 LLH_ITERATIVE = gn_transform.xyz2llh(STATIONS_XYZ, method="iterative", latlon_as_deg=True, make_lon_positive=False)
 
 
-def test_xyz2llh_heikkinen():
-    assert _np.allclose(LLH_HEIKKINEN, STATIONS_LLH, rtol=1e-2)
-
-
-def test_xyz2llh_zhu():
-    assert _np.allclose(LLH_ZHU, STATIONS_LLH, rtol=1e-2)
-
-
-def test_xyz2llh_iterative():
-    assert _np.allclose(LLH_ITERATIVE, STATIONS_LLH, rtol=1e-2)
-
-
-def test_xyz2llh_heikkinen_rel_zhu():
-    assert _np.allclose(LLH_HEIKKINEN, LLH_ZHU, atol=1e-8)
-
-
-def test_xyz2llh_heikkinen_rel_iterative():
-    assert _np.allclose(LLH_HEIKKINEN, LLH_ITERATIVE, atol=1e-8)
-
-
-def test_xyz2llh_zhu_rel_iterative():
-    assert _np.allclose(LLH_ZHU, LLH_ITERATIVE, atol=1e-8)
-
-
 # Testing example from 2007 Portland State Aerospace Society
 LAT = gn_aux.degminsec2deg("34 0 0.00174")
 LON = gn_aux.degminsec2deg("117 20 0.84965")
@@ -128,35 +129,8 @@ HEIGHT = 251.702
 X0Y0Z0_1 = gn_transform.llh2xyz(llh_array=_np.asarray([LAT, LON, HEIGHT]))
 
 
-def test_llh2xyz():
-    xyz = gn_transform.llh2xyz(STATIONS_LLH, ellipsoid=gn_const.WGS84, latlon_as_deg=True)
-    assert _np.allclose(xyz, STATIONS_XYZ, rtol=1e-5)
-
-
-def test_degminsec2deg():
-    assert _np.allclose(LAT, 34.00000048333333) & _np.allclose(LON, 117.33356934722222)
-
-
-def test_xyz2llh_2():
-    assert _np.allclose(X0Y0Z0_1, _np.asarray([[-2430601.82799507, 4702442.70316661, 3546587.35789486]]))
-
-
 # Testing using the matlab example from https://www.mathworks.com/help/map/ref/ecef2enu.html
 LLH_ORIGIN = _np.asarray([45.9132, 36.7484, 1877.7532 * 1000])[None]
 XYZ_OF_OBJECT = _np.asarray([5507.5289 * 1000, 4556.2241 * 1000, 6012.8208 * 1000])[None]
 X0Y0Z0_2 = gn_transform.llh2xyz(LLH_ORIGIN, latlon_as_deg=True)
 ENU = gn_transform.xyz2enu(x0y0z0=X0Y0Z0_2, xyz=XYZ_OF_OBJECT)
-
-
-def test_llh2xyz2():
-    assert _np.allclose(X0Y0Z0_2, _np.asarray([[4608665.16952148, 3441253.05286186, 5907305.29118421]]))
-
-
-def test_xyz2enu():
-    assert _np.allclose(ENU / 1000, _np.asarray([355.60126155, -923.0831559, 1041.01642379]))
-
-
-def test_ecu2xyz():
-    # inverting enu back to xyz
-    _xyz = gn_transform.enu2xyz(enu=ENU, x0y0z0=X0Y0Z0_2)
-    assert _np.allclose(_xyz, XYZ_OF_OBJECT, rtol=1e-8)

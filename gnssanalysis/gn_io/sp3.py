@@ -1,6 +1,4 @@
 import logging
-
-"""Ephemeris functions"""
 import io as _io
 import os as _os
 import re as _re
@@ -14,7 +12,6 @@ from .. import gn_aux as _gn_aux
 from .. import gn_datetime as _gn_datetime
 from .. import gn_io as _gn_io
 from .. import gn_transform as _gn_transform
-
 from .. import gn_const
 
 logger = logging.getLogger(__name__)
