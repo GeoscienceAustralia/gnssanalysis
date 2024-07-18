@@ -92,20 +92,6 @@ def _process_sp3_block(date, data, widths, names):
     temp_sp3.set_index(dt_index, inplace=True)
     temp_sp3.index.name = "J2000"
     temp_sp3.set_index(temp_sp3.PRN.astype(str), append=True, inplace=True)
-    return temp_sp3
-
-
-def _process_sp3_block(date, data, widths, names):
-    """Process a single block of SP3 data"""
-    print(data)
-    if not data or len(data) == 0:
-        return _pd.DataFrame()
-    epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
-    temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
-    dt_index = _np.repeat(a=_gn_datetime.datetime2j2000(epochs_dt.values), repeats=len(temp_sp3))
-    temp_sp3.set_index(dt_index, inplace=True)
-    temp_sp3.index.name = "J2000"
-    temp_sp3.set_index(temp_sp3.PRN.astype(str), append=True, inplace=True)
     temp_sp3.set_index(temp_sp3.PV_FLAG.astype(str), append=True, inplace=True)
     return temp_sp3
 
@@ -117,27 +103,22 @@ def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
     """
     content = _gn_io.common.path2bytes(str(sp3_path))
     header_end = content.find(b"/*")
-
     header = content[:header_end]
     content = content[header_end:]
-
     parsed_header = parse_sp3_header(header)
     counts = parsed_header.SV_INFO.count()
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
     _RE_SP3 = _re.compile(rb"^\*(.+)\n(.+).+", _re.MULTILINE)
-
     data_blocks = _np.asarray(_RE_SP3.findall(string=content[: content.rfind(b"EOF")]))
     # Compile the regular expression pattern
     pattern = _re.compile(r"^\*(.+)$", _re.MULTILINE)
-
     # Split the content by the lines starting with '*'
     blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
     date_lines = blocks[1::2]
     data_blocks = _np.asarray(blocks[2::2])
     # print(data_blocks)
-
     widths = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1]
     names = [
         "PV_FLAG",
@@ -162,7 +143,6 @@ def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
         "Orbit_Pred_Flag",
     ]
     name_float = ["x_coordinate", "y_coordinate", "z_coordinate", "clock", "x_sdev", "y_sdev", "z_sdev", "c_sdev"]
-
     sp3_df = _pd.concat([_process_sp3_block(date, data, widths, names) for date, data in zip(date_lines, data_blocks)])
     sp3_df[name_float] = sp3_df[name_float].apply(_pd.to_numeric, errors="coerce")
     sp3_df = sp3_df.loc[:, ~sp3_df.columns.str.startswith("Unused")]
@@ -179,7 +159,6 @@ def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
     # print(sp3_df.index.has_duplicates())
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df[sp3_df.index.get_level_values("PV_FLAG") == "P"]
-
     sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
     sp3_df.attrs["path"] = sp3_path
     # Check for duplicate epochs, dedupe and log warning
