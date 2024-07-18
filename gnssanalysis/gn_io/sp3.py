@@ -475,7 +475,7 @@ def sp3merge(sp3paths, clkpaths=None, nodata_to_nan=False):
     return merged_sp3
 
 
-def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple((_pd.DataFrame, list)):
+def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, list]:
     """Rotates sp3_b into sp3_a. Returns a tuple of updated sp3_b and HLM array with applied computed parameters and residuals"""
     hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
     b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
