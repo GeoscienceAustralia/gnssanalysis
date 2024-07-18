@@ -1,7 +1,5 @@
 import logging
 
-import numpy as np
-
 """Ephemeris functions"""
 import io as _io
 import os as _os
@@ -54,6 +52,7 @@ def sp3_clock_nodata_to_nan(sp3_df):
     # sp3_df.iloc[:, :5].where(sp3_df.iloc[:, :5] < SP3_CLOCK_NODATA_NUMERIC, _np.nan, inplace=True)
     sp3_df.loc[:, sp3_df.columns[:6]] = sp3_df.iloc[:, :6].where(sp3_df.iloc[:, :6] < SP3_CLOCK_NODATA_NUMERIC, _np.nan)
 
+
 def mapparm(old, new):
     """scipy function f map values"""
     oldlen = old[1] - old[0]
@@ -61,6 +60,20 @@ def mapparm(old, new):
     off = (old[1] * new[0] - old[0] * new[1]) / oldlen
     scl = newlen / oldlen
     return off, scl
+
+
+def _process_sp3_block(date, data, widths, names):
+    """Process a single block of SP3 data"""
+    print(data)
+    if not data or len(data) == 0:
+        return _pd.DataFrame()
+    epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
+    temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
+    dt_index = _np.repeat(a=_gn_datetime.datetime2j2000(epochs_dt.values), repeats=len(temp_sp3))
+    temp_sp3.set_index(dt_index, inplace=True)
+    temp_sp3.index.name = "J2000"
+    temp_sp3.set_index(temp_sp3.PRN.astype(str), append=True, inplace=True)
+    return temp_sp3
 
 
 def read_sp3(sp3_path, pOnly=True):
@@ -83,35 +96,45 @@ def read_sp3(sp3_path, pOnly=True):
 
     data_blocks = _np.asarray(_RE_SP3.findall(string=content[: content.rfind(b"EOF")]))
     # Compile the regular expression pattern
-    pattern = _re.compile(r'^\*(.+)$', _re.MULTILINE)
+    pattern = _re.compile(r"^\*(.+)$", _re.MULTILINE)
 
     # Split the content by the lines starting with '*'
     blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
     date_lines = blocks[1::2]
-    data_blocks = np.asarray(blocks[2::2])
+    data_blocks = _np.asarray(blocks[2::2])
     # print(data_blocks)
 
     widths = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1]
-    names = ['PV_FLAG', 'PRN', 'x_coordinate', 'y_coordinate', 'z_coordinate', 'clock', 'Unused1', 'x_sdev', 'Unused2', 'y_sdev', 'Unused3', 'z_sdev', 'Unused4', 'c_sdev', 'Unused5', 'Clock_Event_Flag', 'Clock_Pred_Flag', 'Unused6', 'Maneuver_Flag', 'Orbit_Pred_Flag']
-    name_float = ['x_coordinate', 'y_coordinate', 'z_coordinate', 'clock', 'x_sdev', 'y_sdev', 'z_sdev', 'c_sdev']
-    from io import StringIO
-    sp3_df = _pd.DataFrame()
-    for date, data in zip(date_lines, data_blocks):
-        epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
-        temp_sp3 = _pd.read_fwf(StringIO(data), widths=widths, names=names)
-        dt_index = _np.repeat(a=_gn_datetime.datetime2j2000(epochs_dt.values), repeats=len(temp_sp3))
-        temp_sp3.set_index(dt_index, inplace=True)
-        temp_sp3.index.name = "J2000"
-        #add PRN to index
-        temp_sp3.set_index(temp_sp3.PRN.astype(str), append=True, inplace=True)
-        # temp_sp3.set_index(temp_sp3.PV_FLAG.astype(str), append=True, inplace=True)
-        # append sp3_df to the final dataframe
-        sp3_df = sp3_df._append(temp_sp3)
+    names = [
+        "PV_FLAG",
+        "PRN",
+        "x_coordinate",
+        "y_coordinate",
+        "z_coordinate",
+        "clock",
+        "Unused1",
+        "x_sdev",
+        "Unused2",
+        "y_sdev",
+        "Unused3",
+        "z_sdev",
+        "Unused4",
+        "c_sdev",
+        "Unused5",
+        "Clock_Event_Flag",
+        "Clock_Pred_Flag",
+        "Unused6",
+        "Maneuver_Flag",
+        "Orbit_Pred_Flag",
+    ]
+    name_float = ["x_coordinate", "y_coordinate", "z_coordinate", "clock", "x_sdev", "y_sdev", "z_sdev", "c_sdev"]
+
+    sp3_df = _pd.concat([_process_sp3_block(date, data, widths, names) for date, data in zip(date_lines, data_blocks)])
     sp3_df[name_float] = sp3_df[name_float].apply(_pd.to_numeric, errors="coerce")
-    sp3_df = sp3_df.loc[:, ~sp3_df.columns.str.startswith('Unused')]
-    #remove PRN and PV_FLAG columns
-    sp3_df = sp3_df.drop(columns=['PRN', 'PV_FLAG'])
-    #rename columsn x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
+    sp3_df = sp3_df.loc[:, ~sp3_df.columns.str.startswith("Unused")]
+    # remove PRN and PV_FLAG columns
+    sp3_df = sp3_df.drop(columns=["PRN", "PV_FLAG"])
+    # rename columsn x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
     sp3_df.columns = [
         ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
         ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", "", "", ""],
@@ -164,7 +187,7 @@ def parse_sp3_header(header):
 def getVelSpline(sp3Df):
     """returns in the same units as intput, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard"""
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
-    datetime = sp3dfECI.index.get_level_values('J2000')
+    datetime = sp3dfECI.index.get_level_values("J2000")
     spline = _interpolate.CubicSpline(datetime, sp3dfECI.values)
     velDf = _pd.DataFrame(data=spline.derivative(1)(datetime), index=sp3dfECI.index, columns=sp3dfECI.columns).stack(1)
     return _pd.concat([sp3Df, _pd.concat([velDf], keys=["VELi"], axis=1)], axis=1)

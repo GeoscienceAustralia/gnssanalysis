@@ -1,4 +1,5 @@
 """Helmert inversion and transformation functions"""
+
 import numpy as _np
 import pandas as _pd
 
@@ -25,20 +26,18 @@ def gen_helm_aux(pt1, pt2):
     xyz_blk[:, 1, 0] = pt1[:, 2]  # z[1,0]
 
     xyz = pt1.reshape((-1, 1))
-    A = _np.column_stack(
-        [unity_blk, xyz_blk.reshape((-1, 3)), xyz]
-    ) 
+    A = _np.column_stack([unity_blk, xyz_blk.reshape((-1, 3)), xyz])
     rhs = pt2.reshape((-1, 1)) - xyz  # right-hand side
     return A, rhs
 
 
-def get_helmert7(pt1:_np.ndarray, pt2:_np.ndarray, scale_in_ppm:bool = True):
+def get_helmert7(pt1: _np.ndarray, pt2: _np.ndarray, scale_in_ppm: bool = True):
     """inversion of 7 Helmert parameters between 2 sets of points. pt1@hlm -> pt2"""
     A, rhs = gen_helm_aux(pt1, pt2)
     sol = list(_np.linalg.lstsq(A, rhs, rcond=-1))  # parameters
-    sol[0] = sol[0].flatten()*-1.0  # flattening the HLM params arr to [Tx, Ty, Tz, Rx, Ry, Rz, Scale/mu]
+    sol[0] = sol[0].flatten() * -1.0  # flattening the HLM params arr to [Tx, Ty, Tz, Rx, Ry, Rz, Scale/mu]
     if scale_in_ppm:
-        sol[0][-1] *= 1e6 # scale in ppm
+        sol[0][-1] *= 1e6  # scale in ppm
     res = rhs - A @ sol[0]  # computing residuals for pt2
     sol.append(res.reshape(-1, 3))  # appending residuals
     return sol
@@ -55,7 +54,7 @@ def gen_rot_matrix(v):
     return mat + _np.eye(3)
 
 
-def transform7(xyz_in, hlm_params, scale_in_ppm:bool = True):
+def transform7(xyz_in, hlm_params, scale_in_ppm: bool = True):
     """transformation of xyz vector with 7 helmert parameters. The helmert parameters array consists of the following:
     Three transformations Tx, Ty, Tz usually in meters, or the coordinate units used for the computation of the hlm parameters.
     Three rotations Rx, Ry and Rz in radians.
@@ -69,7 +68,7 @@ def transform7(xyz_in, hlm_params, scale_in_ppm:bool = True):
     rotation = gen_rot_matrix(hlm_params[3:6])
     scale = hlm_params[6]
     if scale_in_ppm:
-        scale *= 1e-6 # scaling in ppm thus multiplied by 1e-6
+        scale *= 1e-6  # scaling in ppm thus multiplied by 1e-6
     xyz_out = (xyz_in @ rotation) * (1 + scale) + translation
     return xyz_out
 
@@ -87,7 +86,8 @@ def _xyz2llh_larson(xyz_array: _np.ndarray, ellipsoid: _gn_const.Ellipsoid, tole
         _n = ellipsoid.semimaj / (1 - ellipsoid.ecc1sq * _np.sin(phi0[unconverged_mask]) ** 2) ** (1 / 2)
         height[unconverged_mask] = _r[unconverged_mask] / _np.cos(phi0[unconverged_mask]) - _n
         phi[unconverged_mask] = _np.arctan(
-            (z_arr[unconverged_mask] / _r[unconverged_mask]) / (1 - ellipsoid.ecc1sq * _n / (_n + height[unconverged_mask]))
+            (z_arr[unconverged_mask] / _r[unconverged_mask])
+            / (1 - ellipsoid.ecc1sq * _n / (_n + height[unconverged_mask]))
         )
         unconverged_mask = _np.abs(phi - phi0) > tolerance
         if ~unconverged_mask.any():  # if all less than tolerance
