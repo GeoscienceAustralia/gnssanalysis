@@ -80,7 +80,6 @@ def mapparm(old, new):
 
 def _process_sp3_block(date, data, widths, names):
     """Process a single block of SP3 data"""
-    print(data)
     if not data or len(data) == 0:
         return _pd.DataFrame()
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
