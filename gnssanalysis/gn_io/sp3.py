@@ -54,7 +54,7 @@ def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
         & (sp3_df[("EST", "Y")] == SP3_POS_NODATA_NUMERIC)
         & (sp3_df[("EST", "Z")] == SP3_POS_NODATA_NUMERIC)
     )
-    sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.NAN
+    sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.nan
 
 
 def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
@@ -66,7 +66,7 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     :return None
     """
     nan_mask = sp3_df[("EST", "CLK")] >= SP3_CLOCK_NODATA_NUMERIC
-    sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.NAN
+    sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
 
 
 def mapparm(old, new):
@@ -153,6 +153,7 @@ def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
     if nodata_to_nan:
         sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+
     # print(sp3_df.index.has_duplicates())
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df[sp3_df.index.get_level_values("PV_FLAG") == "P"]
