@@ -242,7 +242,7 @@ def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     return _pd.concat([sp3Df, _pd.concat([velDf], keys=["VELi"], axis=1)], axis=1)
 
 
-def getVelPoly(sp3Df: _pd.Dataframe, deg: int = 35):
+def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35):
     """
     Interpolates the positions for -1s and +1s in the sp3_df DataFrame and outputs velocities.
 
