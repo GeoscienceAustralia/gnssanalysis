@@ -2,6 +2,7 @@
 
 import numpy as _np
 import pandas as _pd
+from typing import Tuple
 
 from . import gn_aux as _gn_aux
 from . import gn_const as _gn_const
@@ -31,8 +32,16 @@ def gen_helm_aux(pt1, pt2):
     return A, rhs
 
 
-def get_helmert7(pt1: _np.ndarray, pt2: _np.ndarray, scale_in_ppm: bool = True):
-    """inversion of 7 Helmert parameters between 2 sets of points. pt1@hlm -> pt2"""
+def get_helmert7(pt1: _np.ndarray, pt2: _np.ndarray, scale_in_ppm: bool = True) -> Tuple[_np.ndarray, _np.ndarray]:
+    """Inversion of 7 Helmert parameters between 2 sets of points.
+
+    :param numpy.ndarray pt1: The first set of points.
+    :param numpy.ndarray pt2: The second set of points.
+    :param bool scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
+
+    :returns uple[np.ndarray, np.ndarray]: A tuple containing the Helmert parameters and the residuals.
+
+    """
     A, rhs = gen_helm_aux(pt1, pt2)
     sol = list(_np.linalg.lstsq(A, rhs, rcond=-1))  # parameters
     sol[0] = sol[0].flatten() * -1.0  # flattening the HLM params arr to [Tx, Ty, Tz, Rx, Ry, Rz, Scale/mu]
@@ -54,21 +63,22 @@ def gen_rot_matrix(v):
     return mat + _np.eye(3)
 
 
-def transform7(xyz_in, hlm_params, scale_in_ppm: bool = True):
-    """transformation of xyz vector with 7 helmert parameters. The helmert parameters array consists of the following:
-    Three transformations Tx, Ty, Tz usually in meters, or the coordinate units used for the computation of the hlm parameters.
-    Three rotations Rx, Ry and Rz in radians.
-    Scaling parameter in ppm
-    NOTE rotation values might be given in arcsec in literature and require conversion. In this case rotations need to be converted
-    to radians prior to use in transform7 with e.g. gn_aux.arcsec2rad function."""
+def transform7(xyz_in: _np.ndarray, hlm_params: _np.ndarray, scale_in_ppm: bool = True) -> _np.ndarray:
+    """
+    Transformation of xyz vector with 7 helmert parameters.
 
-    assert hlm_params.size == 7, "there must be exactly seven parameters"
+    :param xyz_in: The input xyz vector.
+    :param hlm_params: The 7 helmert parameters: [Tx, Ty, Tz, Rx, Ry, Rz, Scale].
+    :param scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
+    :return: The transformed xyz vector.
+    """
+    assert hlm_params.size == 7, "There must be exactly seven parameters"
 
     translation = hlm_params[0:3]
     rotation = gen_rot_matrix(hlm_params[3:6])
     scale = hlm_params[6]
     if scale_in_ppm:
-        scale *= 1e-6  # scaling in ppm thus multiplied by 1e-6
+        scale *= 1e-6  # Scaling in ppm, multiplied by 1e-6
     xyz_out = (xyz_in @ rotation) * (1 + scale) + translation
     return xyz_out
 

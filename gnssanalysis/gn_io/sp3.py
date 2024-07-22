@@ -242,7 +242,7 @@ def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     :note :The velocity is returned in the same units as the input dataframe, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard).
     """
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
-    datetime = sp3dfECI.index.get_level_values("J2000")
+    datetime = sp3dfECI.index.values
     spline = _interpolate.CubicSpline(datetime, sp3dfECI.values)
     velDf = _pd.DataFrame(data=spline.derivative(1)(datetime), index=sp3dfECI.index, columns=sp3dfECI.columns).stack(1)
     return _pd.concat([sp3Df, _pd.concat([velDf], keys=["VELi"], axis=1)], axis=1)
