@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch, mock_open
 
 import numpy as np
+import pandas as pd
 
 import gnssanalysis.gn_io.sp3 as sp3
 
@@ -57,3 +58,26 @@ class TestSp3(unittest.TestCase):
         result = sp3.read_sp3("mock_path", pOnly=False)
         self.assertTrue(len(result) == 12)
         self.assertEqual((np.isnan(result[("EST", "CLK")])).sum(), 10)
+
+    def test_sp3_clock_nodata_to_nan(self):
+        sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
+        sp3.sp3_clock_nodata_to_nan(sp3_df)
+        expected_result = pd.DataFrame({("EST", "CLK"): [np.nan, 123456.789, np.nan, 987654.321]})
+        print(expected_result)
+        print(sp3_df)
+        print(sp3_df.equals(expected_result))
+        self.assertTrue(sp3_df.equals(expected_result))
+
+    def test_sp3_pos_nodata_to_nan(self):
+        sp3_df = pd.DataFrame(
+            {("EST", "X"): [0.0, 1.0, 0.0, 2.0], ("EST", "Y"): [0.0, 0.0, 0.0, 2.0], ("EST", "Z"): [0.0, 1.0, 0.0, 0.0]}
+        )
+        sp3.sp3_pos_nodata_to_nan(sp3_df)
+        expected_result = pd.DataFrame(
+            {
+                ("EST", "X"): [np.nan, 1.0, np.nan, 2.0],
+                ("EST", "Y"): [np.nan, 0.0, np.nan, 2.0],
+                ("EST", "Z"): [np.nan, 1.0, np.nan, 0.0],
+            }
+        )
+        self.assertTrue(sp3_df.equals(expected_result))

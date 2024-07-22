@@ -2,7 +2,7 @@ import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Literal, Union
+from typing import Literal, Union, List
 
 import numpy as _np
 import pandas as _pd
@@ -78,8 +78,16 @@ def mapparm(old, new):
     return off, scl
 
 
-def _process_sp3_block(date, data, widths, names):
-    """Process a single block of SP3 data"""
+def _process_sp3_block(date: str, data: str, widths: List[int], names: List[str]) -> _pd.DataFrame:
+    """Process a single block of SP3 data.
+
+
+    :param    str date: The date of the SP3 data block.
+    :param    str data: The SP3 data block.
+    :param    List[int] widths: The widths of the columns in the SP3 data block.
+    :param    List[str] names: The names of the columns in the SP3 data block.
+    :return    _pd.DataFrame: The processed SP3 data as a DataFrame.
+    """
     if not data or len(data) == 0:
         return _pd.DataFrame()
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
@@ -92,10 +100,23 @@ def _process_sp3_block(date, data, widths, names):
     return temp_sp3
 
 
-def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
-    """Read SP3 file
-    Returns STD values converted to proper units (mm/ps) also if present.
-    by default leaves only P* values (positions), removing the P key itself
+def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _pd.DataFrame:
+    """Reads an SP3 file and returns the data as a pandas DataFrame.
+
+
+    :param str sp3_path: The path to the SP3 file.
+    :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
+    :param book nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
+            and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
+    :return pandas.DataFrame: The SP3 data as a DataFrame.
+    :raise FileNotFoundError: If the SP3 file specified by sp3_path does not exist.
+
+    :note: The SP3 file format is a standard format used for representing precise satellite ephemeris and clock data.
+        This function reads the SP3 file, parses the header information, and extracts the data into a DataFrame.
+        The DataFrame columns include PV_FLAG, PRN, x_coordinate, y_coordinate, z_coordinate, clock, and various
+        standard deviation values. The DataFrame is processed to convert the standard deviation values to proper units
+        (mm/ps) and remove unnecessary columns. If pOnly is True, only P* values are included in the DataFrame.
+        If nodata_to_nan is True, nodata values in the SP3 POS and CLK columns are converted to NaN.
     """
     content = _gn_io.common.path2bytes(str(sp3_path))
     header_end = content.find(b"/*")
@@ -153,7 +174,6 @@ def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
         sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
 
-    # print(sp3_df.index.has_duplicates())
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df[sp3_df.index.get_level_values("PV_FLAG") == "P"]
     sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
@@ -173,7 +193,13 @@ def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
     return sp3_df
 
 
-def parse_sp3_header(header):
+def parse_sp3_header(header: str) -> _pd.DataFrame:
+    """
+    Parse the header of an SP3 file and extract relevant information.
+
+    :param str header: The header string of the SP3 file.
+    :return pandas.DataFrame: A DataFrame containing the parsed information from the SP3 header.
+    """
     sp3_heading = _pd.Series(
         data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
             str
@@ -201,8 +227,14 @@ def parse_sp3_header(header):
     return _pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
 
 
-def getVelSpline(sp3Df):
-    """returns in the same units as intput, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard"""
+def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
+    """Returns the velocity spline of the input dataframe.
+
+    :param DataFrame sp3Df: The input dataframe containing position data.
+    :return DataFrame: The dataframe containing the velocity spline.
+
+    :note :The velocity is returned in the same units as the input dataframe, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard).
+    """
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
     datetime = sp3dfECI.index.get_level_values("J2000")
     spline = _interpolate.CubicSpline(datetime, sp3dfECI.values)
@@ -210,8 +242,15 @@ def getVelSpline(sp3Df):
     return _pd.concat([sp3Df, _pd.concat([velDf], keys=["VELi"], axis=1)], axis=1)
 
 
-def getVelPoly(sp3Df, deg=35):
-    """takes sp3_df, interpolates the positions for -1s and +1s and outputs velocities"""
+def getVelPoly(sp3Df: _pd.Dataframe, deg: int = 35):
+    """
+    Interpolates the positions for -1s and +1s in the sp3_df DataFrame and outputs velocities.
+
+    :param DataFrame sp3Df: A pandas DataFrame containing the sp3 data.
+    :param int deg: Degree of the polynomial fit. Default is 35.
+    :return DataFrame: A pandas DataFrame with the interpolated velocities added as a new column.
+
+    """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
     x = est.index.values
     y = est.values
@@ -240,6 +279,12 @@ def getVelPoly(sp3Df, deg=35):
 
 
 def gen_sp3_header(sp3_df):
+    """
+    Generate the header for an SP3 file based on the given DataFrame.
+
+    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :return str: The generated SP3 header as a string.
+    """
     sp3_j2000 = sp3_df.index.levels[0].values
     sp3_j2000_begin = sp3_j2000[0]
 
@@ -299,7 +344,13 @@ def gen_sp3_header(sp3_df):
 def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Union[None, _io.TextIOBase] = None):
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
-     it otherwise.
+    it otherwise.
+
+    Args:
+    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
+    :param io.TextIOBase  buf: The buffer to write the SP3 content to. Defaults to None.
+    :return str or None: The SP3 content if `buf` is None, otherwise None.
     """
     out_buf = buf if buf is not None else _io.StringIO()
     if sort_outputs:
@@ -473,7 +524,14 @@ def sp3merge(sp3paths, clkpaths=None, nodata_to_nan=False):
 
 
 def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, list]:
-    """Rotates sp3_b into sp3_a. Returns a tuple of updated sp3_b and HLM array with applied computed parameters and residuals"""
+    """
+     Rotates sp3_b into sp3_a.
+
+     :param DataFrame a: The sp3_a DataFrame.
+     :param DataFrame b : The sp3_b DataFrame.
+
+    :returntuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    """
     hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
     b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
     return b, hlm
