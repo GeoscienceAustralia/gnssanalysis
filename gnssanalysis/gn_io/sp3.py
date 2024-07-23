@@ -36,22 +36,44 @@ _RE_SP3_ACC = _re.compile(rb"^\+{2}[ ]+([\d\s]{50}\d)\W", _re.MULTILINE)
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
 # Nodata ie NaN constants for SP3 format
-SP3_CLOCK_NODATA_STRING  = " 999999.999999" # Not used for reading, as fractional components are optional
+SP3_CLOCK_NODATA_STRING = " 999999.999999"  # Not used for reading, as fractional components are optional
 SP3_CLOCK_NODATA_NUMERIC = 999999
-SP3_POS_NODATA_STRING    = "      0.000000"
-SP3_CLOCK_STD_NODATA     = -1000
-SP3_POS_STD_NODATA       = -100
+SP3_POS_NODATA_STRING = "      0.000000"
+SP3_POS_NODATA_NUMERIC = 0
+SP3_CLOCK_STD_NODATA = -1000
+SP3_POS_STD_NODATA = -100
 
 
-def sp3_clock_nodata_to_nan(sp3_df):
+def sp3_pos_nodata_to_nan(
+    sp3_df: _pd.DataFrame
+) -> None:
     """
-    Converts the SP3 Clock column's nodata value (999999 or 999999.999999 - the fractional component optional) to NaNs.
+    Converts the SP3 Positional column's nodata values (0.000000) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
+
+    :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
+    :return None
     """
-    nan_mask = sp3_df.iloc[:, 1:5].values >= SP3_CLOCK_NODATA_NUMERIC
-    nans = nan_mask.astype(float)
-    nans[nan_mask] = _np.NAN
-    sp3_df.iloc[:, 1:5] = sp3_df.iloc[:, 1:5].values + nans
+    nan_mask = (
+        (sp3_df[("EST", "X")] == SP3_POS_NODATA_NUMERIC)
+        & (sp3_df[("EST", "Y")] == SP3_POS_NODATA_NUMERIC)
+        & (sp3_df[("EST", "Z")] == SP3_POS_NODATA_NUMERIC)
+    )
+    sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.NAN
+
+
+def sp3_clock_nodata_to_nan(
+    sp3_df: _pd.DataFrame
+) -> None:
+    """
+    Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - the fractional component optional) to NaNs.
+    See https://files.igs.org/pub/data/format/sp3_docu.txt
+
+    :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
+    :return None
+    """
+    nan_mask = sp3_df[("EST", "CLK")] >= SP3_CLOCK_NODATA_NUMERIC
+    sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.NAN
 
 
 def mapparm(old, new):
@@ -63,7 +85,7 @@ def mapparm(old, new):
     return off, scl
 
 
-def read_sp3(sp3_path, pOnly=True):
+def read_sp3(sp3_path, pOnly=True, nodata_to_nan=True):
     """Read SP3 file
     Returns STD values converted to proper units (mm/ps) also if present.
     by default leaves only P* values (positions), removing the P key itself
@@ -144,7 +166,10 @@ def read_sp3(sp3_path, pOnly=True):
         ]
         sp3_df.STD = base_xyzc**sp3_df.STD.values
 
-    sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+    if nodata_to_nan:
+        sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
+        sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         pMask = series.astype("S1") == b"P"
         sp3_df = sp3_df[pMask].set_index([dt_index[pMask], series.str[1:4].values[pMask].astype(str).astype(object)])
@@ -159,15 +184,15 @@ def read_sp3(sp3_path, pOnly=True):
     sp3_df.attrs["path"] = sp3_path
 
     # Check for duplicate epochs, dedupe and log warning
-    if sp3_df.index.has_duplicates: # a literaly free check
-        duplicated_indexes = sp3_df.index.duplicated() # Typically sub ms time. Marks all but first instance as duped.
+    if sp3_df.index.has_duplicates:  # a literaly free check
+        duplicated_indexes = sp3_df.index.duplicated()  # Typically sub ms time. Marks all but first instance as duped.
         first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
         logging.warning(
             f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
             f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + gn_const.J2000_ORIGIN} "
             f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
         )
-        sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")] # Now dedupe them, keeping the first of any clashes
+        sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]  # Now dedupe them, keeping the first of any clashes
 
     return sp3_df
 
@@ -295,9 +320,7 @@ def gen_sp3_header(sp3_df):
     return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
 
 
-def gen_sp3_content(
-    sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Union[None, _io.TextIOBase] = None
-):
+def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Union[None, _io.TextIOBase] = None):
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
      it otherwise.
@@ -316,25 +339,27 @@ def gen_sp3_content(
         clk_base = 1.025
 
         def pos_log(x):
-            return _np.minimum( # Cap value at 99
-                        _np.nan_to_num( # If there is data, use the following formula. Else return NODATA value.
-                            _np.rint(_np.log(x) / _np.log(pos_base)), # Rounded to nearest int
-                            nan=SP3_POS_STD_NODATA
-                        ),
-                       99
-                   ).astype(int)
+            return _np.minimum(  # Cap value at 99
+                _np.nan_to_num(  # If there is data, use the following formula. Else return NODATA value.
+                    _np.rint(_np.log(x) / _np.log(pos_base)), nan=SP3_POS_STD_NODATA  # Rounded to nearest int
+                ),
+                99,
+            ).astype(int)
 
         def clk_log(x):
             return _np.minimum(
-                       _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA),
-                       999 # Cap at 999
-                  ).astype(int)
+                _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA), 999  # Cap at 999
+            ).astype(int)
 
-        std_df = (
-            sp3_df["STD"]
-            .transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
-            .rename(columns=lambda x: "STD" + x)
-        )
+        std_df = sp3_df["STD"]
+        #  Remove attribute data from this shallow copy of the Dataframe.
+        #  This works around an apparent bug in Pandas, due to the fact calling == on two Series produces a list
+        #  of element-wise comparisons, rather than a single boolean value. This list seems to break Pandas
+        #  concat() when it is invoked within transform() and tries to check if attributes match between columns
+        #  being concatenated.
+        std_df.attrs = {}
+        std_df = std_df.transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
+        std_df = std_df.rename(columns=lambda x: "STD_" + x)
         out_df = _pd.concat([out_df, std_df], axis="columns")
 
     def prn_formatter(x):
@@ -349,16 +374,16 @@ def gen_sp3_content(
     # Longer term we should maybe reimplement this again, maybe just processing groups line by line to format them?
 
     def pos_formatter(x):
-        if isinstance(x, str): # Presume an inf/NaN value, already formatted as nodata string. Pass through.
-            return x # Expected value "      0.000000"
-        return format(x, "13.6f") # Numeric value, format as usual
+        if isinstance(x, str):  # Presume an inf/NaN value, already formatted as nodata string. Pass through.
+            return x  # Expected value "      0.000000"
+        return format(x, "13.6f")  # Numeric value, format as usual
 
     def clk_formatter(x):
         # If this value (nominally a numpy float64) is actually a string, moreover containing the mandated part of the
         # clock nodata value (per the SP3 spec), we deduce nodata formatting has already been done, and return as is.
-        if isinstance(x, str) and x.strip(' ').startswith("999999."): # TODO performance: could do just type check
+        if isinstance(x, str) and x.strip(" ").startswith("999999."):  # TODO performance: could do just type check
             return x
-        return format(x, "13.6f") # Not infinite or NaN: proceed with normal formatting
+        return format(x, "13.6f")  # Not infinite or NaN: proceed with normal formatting
 
     # NOTE: the following formatters are fine, as the nodata value is actually a *numeric value*,
     # so DataFrame.to_string() will invoke them for those values.
@@ -377,14 +402,14 @@ def gen_sp3_content(
 
     formatters = {
         "PRN": prn_formatter,
-        "X": pos_formatter,   # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
+        "X": pos_formatter,  # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
         "Y": pos_formatter,
         "Z": pos_formatter,
-        "CLK": clk_formatter, # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
-        "STDX": pos_std_formatter,   # Nodata is represented as an integer, so can be handled here.
+        "CLK": clk_formatter,  # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
+        "STDX": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
         "STDY": pos_std_formatter,
         "STDZ": pos_std_formatter,
-        "STDCLK": clk_std_formatter, # ditto above
+        "STDCLK": clk_std_formatter,  # ditto above
     }
     for epoch, epoch_vals in out_df.reset_index("PRN").groupby(axis=0, level="J2000"):
         # Format and write out the epoch in the SP3 format
@@ -402,26 +427,25 @@ def gen_sp3_content(
         # NOTE: DataFrame.to_string() as called below, takes formatter functions per column. It does not, however
         # invoke them on NaN values!! As such, trying to handle NaNs in the formatter is a fool's errand.
         # Instead, we do it here, and get the formatters to recognise and skip over the already processed nodata values
-        
+
         # POS nodata formatting
         # Fill +/- infinity values with SP3 nodata value for POS columns
-        epoch_vals['X'].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals['Y'].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals['Z'].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["X"].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["Y"].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["Z"].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
         # Now do the same for NaNs
-        epoch_vals['X'].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals['Y'].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals['Z'].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["X"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["Y"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["Z"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
         # NOTE: we could use replace() for all this, though fillna() might be faster in some
         # cases: https://stackoverflow.com/a/76225227
         # replace() will also handle other types of nodata constants: https://stackoverflow.com/a/54738894
-    
 
         # CLK nodata formatting
         # Throw both +/- infinity, and NaN values to the SP3 clock nodata value.
         # See https://stackoverflow.com/a/17478495
-        epoch_vals['CLK'].replace(to_replace=[_np.inf, _np.NINF], value=SP3_CLOCK_NODATA_STRING, inplace=True)
-        epoch_vals['CLK'].fillna(value=SP3_CLOCK_NODATA_STRING, inplace=True)
+        epoch_vals["CLK"].replace(to_replace=[_np.inf, _np.NINF], value=SP3_CLOCK_NODATA_STRING, inplace=True)
+        epoch_vals["CLK"].fillna(value=SP3_CLOCK_NODATA_STRING, inplace=True)
 
         # Now invoke DataFrame to_string() to write out the values, leveraging our formatting functions for the
         # relevant columns.
@@ -459,9 +483,9 @@ def merge_attrs(df_list):
     return _pd.Series(_np.concatenate([head, sv_info]), index=df.index)
 
 
-def sp3merge(sp3paths, clkpaths=None):
+def sp3merge(sp3paths, clkpaths=None, nodata_to_nan=False):
     """Reads in a list of sp3 files and optianl list of clk file and merges them into a single sp3 file"""
-    sp3_dfs = [read_sp3(sp3_file) for sp3_file in sp3paths]
+    sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
     merged_sp3 = _pd.concat(sp3_dfs)
     merged_sp3.attrs["HEADER"] = merge_attrs(sp3_dfs)
 
@@ -519,9 +543,9 @@ def diff_sp3_rac(
     nd_rac = diff_eci.values[:, _np.newaxis] @ _gn_transform.eci2rac_rot(sp3_baseline_eci_vel)
     df_rac = _pd.DataFrame(
         nd_rac.reshape(-1, 3),
-        index=sp3_baseline.index, # Note that if the test and baseline have different SVs, this index will refer to
-                                  # data which is missing in the 'test' dataframe (and so is likely to be missing in
-                                  # the diff too).
+        index=sp3_baseline.index,  # Note that if the test and baseline have different SVs, this index will refer to
+        # data which is missing in the 'test' dataframe (and so is likely to be missing in
+        # the diff too).
         columns=[["EST_RAC"] * 3, ["Radial", "Along-track", "Cross-track"]],
     )
 
