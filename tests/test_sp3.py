@@ -63,9 +63,6 @@ class TestSp3(unittest.TestCase):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
         sp3.sp3_clock_nodata_to_nan(sp3_df)
         expected_result = pd.DataFrame({("EST", "CLK"): [np.nan, 123456.789, np.nan, 987654.321]})
-        print(expected_result)
-        print(sp3_df)
-        print(sp3_df.equals(expected_result))
         self.assertTrue(sp3_df.equals(expected_result))
 
     def test_sp3_pos_nodata_to_nan(self):
@@ -81,3 +78,15 @@ class TestSp3(unittest.TestCase):
             }
         )
         self.assertTrue(sp3_df.equals(expected_result))
+
+    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
+    def test_velinterpolation(self, mock_file):
+        """
+        Checking if the velocity interpolation works, right now there is no data to validate, the only thing done
+        is to check if the function runs without errors
+        """
+        result = sp3.read_sp3("mock_path", pOnly=True)
+        r = sp3.getVelSpline(result)
+        r2 = sp3.getVelPoly(result, 3)
+        self.assertIsNotNone(r)
+        self.assertIsNotNone(r2)

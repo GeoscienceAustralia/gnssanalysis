@@ -35,27 +35,27 @@ _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
 _SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1]
 _SP3_DEF_PV_NAME = [
-        "PV_FLAG",
-        "PRN",
-        "x_coordinate",
-        "y_coordinate",
-        "z_coordinate",
-        "clock",
-        "_Space1",
-        "x_sdev",
-        "_Space2",
-        "y_sdev",
-        "_Space3",
-        "z_sdev",
-        "_Space4",
-        "c_sdev",
-        "_Space5",
-        "Clock_Event_Flag",
-        "Clock_Pred_Flag",
-        "_Space6",
-        "Maneuver_Flag",
-        "Orbit_Pred_Flag",
-    ]
+    "PV_FLAG",
+    "PRN",
+    "x_coordinate",
+    "y_coordinate",
+    "z_coordinate",
+    "clock",
+    "_Space1",
+    "x_sdev",
+    "_Space2",
+    "y_sdev",
+    "_Space3",
+    "z_sdev",
+    "_Space4",
+    "c_sdev",
+    "_Space5",
+    "Clock_Event_Flag",
+    "Clock_Pred_Flag",
+    "_Space6",
+    "Maneuver_Flag",
+    "Orbit_Pred_Flag",
+]
 
 # Nodata ie NaN constants for SP3 format
 SP3_CLOCK_NODATA_STRING = " 999999.999999"  # Not used for reading, as fractional components are optional
@@ -109,8 +109,9 @@ def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, 
     return off, scl
 
 
- 
-def _process_sp3_block(date: str, data: str, widths: List[int] = _SP3_DEF_PV_WIDTH, names: List[str] = _SP3_DEF_PV_NAME) -> _pd.DataFrame:
+def _process_sp3_block(
+    date: str, data: str, widths: List[int] = _SP3_DEF_PV_WIDTH, names: List[str] = _SP3_DEF_PV_NAME
+) -> _pd.DataFrame:
     """Process a single block of SP3 data.
 
 
@@ -185,6 +186,7 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     sp3_df.attrs["path"] = sp3_path
     return sp3_df
 
+
 def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
     """
     Reformat the SP3 DataFrame for internal use
@@ -216,7 +218,7 @@ def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
     blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
     date_lines = blocks[1::2]
     data_blocks = _np.asarray(blocks[2::2])
-    return date_lines,data_blocks
+    return date_lines, data_blocks
 
 
 def parse_sp3_header(header: str) -> _pd.DataFrame:
@@ -262,7 +264,7 @@ def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     :note :The velocity is returned in the same units as the input dataframe, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard).
     """
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
-    datetime = sp3dfECI.index.values
+    datetime = sp3dfECI.index.get_level_values("J2000").values
     spline = _interpolate.CubicSpline(datetime, sp3dfECI.values)
     velDf = _pd.DataFrame(data=spline.derivative(1)(datetime), index=sp3dfECI.index, columns=sp3dfECI.columns).stack(1)
     return _pd.concat([sp3Df, _pd.concat([velDf], keys=["VELi"], axis=1)], axis=1)
@@ -278,7 +280,8 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
-    x = est.index.values
+    x = est.index.get_level_values("J2000").values
+    # x = est.index.values
     y = est.values
 
     off, scl = mapparm([x.min(), x.max()], [-1, 1])  # map from input scale to [-1,1]
