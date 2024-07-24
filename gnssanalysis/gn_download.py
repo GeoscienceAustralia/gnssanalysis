@@ -219,21 +219,24 @@ def generate_uncompressed_filename(filename: str) -> str:
     :param str filename: Original filename of compressed file
     :return str: The uncompressed filename based on input (returns input filename if compression not recognised)
     """
-    if filename.endswith(".tar.gz") or filename.endswith(".tar"):
-        with _tarfile.open(filename, "r") as tar:
-            # Get name of file inside tar.gz file (assuming only one file)
-            return tar.getmembers()[0].name
-    elif filename.endswith(".crx.gz"):
-        return filename[:-6] + "rnx"
-    elif filename.endswith(".gz"):
-        return filename[:-3]
-    elif filename.endswith(".Z"):
-        return filename[:-2]
-    elif filename.endswith(".bz2"):
-        return filename[:-4]
-    else:
-        logging.debug(f"{filename} not compressed - extension not a recognized compression format")
-        return filename
+    # Define a dictionary to map file extensions to their corresponding actions
+    actions = {
+        ".tar.gz": lambda f: _tarfile.open(f, "r").getmembers()[0].name,
+        ".tar": lambda f: _tarfile.open(f, "r").getmembers()[0].name,
+        ".crx.gz": lambda f: f[:-6] + "rnx",
+        ".gz": lambda f: f[:-3],
+        ".Z": lambda f: f[:-2],
+        ".bz2": lambda f: f[:-4],
+    }
+
+    # Iterate over the dictionary items
+    for ext, action in actions.items():
+        if filename.endswith(ext):
+            return action(filename)
+
+    # If no matching extension is found, log a debug message and return the original filename
+    logging.debug(f"{filename} not compressed - extension not a recognized compression format")
+    return filename
 
 
 def generate_content_type(file_ext: str, analysis_center: str) -> str:
@@ -331,10 +334,7 @@ def long_filename_cddis_cutoff(epoch: _datetime.datetime) -> bool:
     :return bool: Boolean of whether file would follow long filename convention on CDDIS
     """
     long_filename_cutoff = _datetime.datetime(2022, 11, 27)
-    if epoch >= long_filename_cutoff:
-        return True
-    else:
-        return False
+    return epoch >= long_filename_cutoff
 
 
 def generate_product_filename(
@@ -787,51 +787,11 @@ def download_file_from_cddis(
     filename: str,
     ftp_folder: str,
     output_folder: _Path,
-    ftps: _Optional[_FTP_TLS] = None,
-    max_retries: int = 3,
-    uncomp: bool = True,
-) -> None:
-    """Downloads a single file from the cddis ftp server.
-
-    :param filename: Name of the file to download
-    :ftp_folder: Folder where the file is stored on the remote
-    :output_folder: Folder to store the output file
-    :ftps: Optional active connection object which is reused
-    :max_retries: Number of retries before raising error
-    :uncomp: If true, uncompress files on download
-    """
-    with ftp_tls_cddis(ftps) as ftps:
-        ftps.cwd(ftp_folder)
-        retries = 0
-        download_done = False
-        while not download_done and retries <= max_retries:
-            try:
-                logging.info(f"Attempting Download of: {filename}")
-                check_n_download(filename, str(output_folder) + "/", ftps, uncomp=uncomp)
-                download_done = True
-                logging.info(f"Downloaded {filename}")
-            except _ftplib.all_errors as e:
-                retries += 1
-                if retries > max_retries:
-                    logging.warning(f"Failed to download {filename} and reached maximum retry count ({max_retries}).")
-                    if (output_folder / filename).is_file():
-                        (output_folder / filename).unlink()
-                    raise e
-
-                logging.debug(f"Received an error ({e}) while try to download {filename}, retrying({retries}).")
-                # Add some backoff time (exponential random as it appears to be contention based?)
-                _time.sleep(_random.uniform(0.0, 2.0**retries))
-
-
-def download_file_from_cddis(
-    filename: str,
-    ftp_folder: str,
-    output_folder: _Path,
     max_retries: int = 3,
     decompress: bool = True,
     if_file_present: str = "prompt_user",
     note_filetype: str = None,
-) -> None:
+) -> _Path:
     """Downloads a single file from the cddis ftp server.
 
     :param filename: Name of the file to download
