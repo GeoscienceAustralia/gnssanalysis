@@ -4,6 +4,7 @@ from pathlib import Path
 # Read the contents of README file
 this_directory = Path(__file__).parent
 readme_text = (this_directory / "README.md").read_text()
+requirements = (this_directory / "requirements.txt").read_text().splitlines()
 
 setuptools.setup(
     include_package_data=True,
@@ -14,22 +15,7 @@ setuptools.setup(
     author_email="GNSSAnalysis@ga.gov.au",
     package_data={"gnssanalysis": ["py.typed"]},
     packages=setuptools.find_packages(),
-    install_requires=[
-        "boto3",
-        "click",
-        "hatanaka",
-        "matplotlib",
-        "numpy",
-        "pandas",
-        "plotext==4.2",
-        "plotly",
-        "pymongo",
-        "pytest",
-        "scipy",
-        "tqdm",
-        "unlzw3",
-        "typing_extensions",
-    ],
+    install_requires=requirements,
     entry_points={
         "console_scripts": [
             "diffutil = gnssanalysis:gn_utils.diffutil",
