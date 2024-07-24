@@ -96,17 +96,17 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
 
 def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, float]:
     """
-    Maps values from the old range to the new range.
+    Evaluate the offset and scale factor needed to map values from the old range to the new range.
 
-    :param Tuple[float, float] old: The old range of values.
-    :param Tuple[float, float] new: The new range of values.
+    :param Tuple[float, float] old: The range of values to be mapped from.
+    :param Tuple[float, float] new: The range of values to be mapped to.
     :return Tuple[float, float]: The offset and scale factor for the mapping.
     """
-    oldlen = old[1] - old[0]
-    newlen = new[1] - new[0]
-    off = (old[1] * new[0] - old[0] * new[1]) / oldlen
-    scl = newlen / oldlen
-    return off, scl
+    old_range = old[1] - old[0]
+    new_range = new[1] - new[0]
+    offset = (old[1] * new[0] - old[0] * new[1]) / old_range
+    scale_factor = new_range / old_range
+    return offset, scale_factor
 
 
 def _process_sp3_block(
@@ -139,7 +139,7 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
 
     :param str sp3_path: The path to the SP3 file.
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
-    :param book nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
+    :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
     :return pandas.DataFrame: The SP3 data as a DataFrame.
     :raise FileNotFoundError: If the SP3 file specified by sp3_path does not exist.
@@ -160,7 +160,6 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
-    # Compile the regular expression pattern
     date_lines, data_blocks = _split_sp3_content(content)
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
