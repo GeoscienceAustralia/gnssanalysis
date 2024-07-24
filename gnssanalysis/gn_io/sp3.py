@@ -32,6 +32,31 @@ _RE_SP3_ACC = _re.compile(rb"^\+{2}[ ]+([\d\s]{50}\d)\W", _re.MULTILINE)
 # File descriptor and clock
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
+
+_SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1]
+_SP3_DEF_PV_NAME = [
+        "PV_FLAG",
+        "PRN",
+        "x_coordinate",
+        "y_coordinate",
+        "z_coordinate",
+        "clock",
+        "_Space1",
+        "x_sdev",
+        "_Space2",
+        "y_sdev",
+        "_Space3",
+        "z_sdev",
+        "_Space4",
+        "c_sdev",
+        "_Space5",
+        "Clock_Event_Flag",
+        "Clock_Pred_Flag",
+        "_Space6",
+        "Maneuver_Flag",
+        "Orbit_Pred_Flag",
+    ]
+
 # Nodata ie NaN constants for SP3 format
 SP3_CLOCK_NODATA_STRING = " 999999.999999"  # Not used for reading, as fractional components are optional
 SP3_CLOCK_NODATA_NUMERIC = 999999
@@ -84,7 +109,8 @@ def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, 
     return off, scl
 
 
-def _process_sp3_block(date: str, data: str, widths: List[int], names: List[str]) -> _pd.DataFrame:
+ 
+def _process_sp3_block(date: str, data: str, widths: List[int] = _SP3_DEF_PV_WIDTH, names: List[str] = _SP3_DEF_PV_NAME) -> _pd.DataFrame:
     """Process a single block of SP3 data.
 
 
@@ -133,49 +159,10 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
-    _RE_SP3 = _re.compile(rb"^\*(.+)\n(.+).+", _re.MULTILINE)
-    data_blocks = _np.asarray(_RE_SP3.findall(string=content[: content.rfind(b"EOF")]))
     # Compile the regular expression pattern
-    pattern = _re.compile(r"^\*(.+)$", _re.MULTILINE)
-    # Split the content by the lines starting with '*'
-    blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
-    date_lines = blocks[1::2]
-    data_blocks = _np.asarray(blocks[2::2])
-    # print(data_blocks)
-    widths = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1]
-    names = [
-        "PV_FLAG",
-        "PRN",
-        "x_coordinate",
-        "y_coordinate",
-        "z_coordinate",
-        "clock",
-        "Unused1",
-        "x_sdev",
-        "Unused2",
-        "y_sdev",
-        "Unused3",
-        "z_sdev",
-        "Unused4",
-        "c_sdev",
-        "Unused5",
-        "Clock_Event_Flag",
-        "Clock_Pred_Flag",
-        "Unused6",
-        "Maneuver_Flag",
-        "Orbit_Pred_Flag",
-    ]
-    name_float = ["x_coordinate", "y_coordinate", "z_coordinate", "clock", "x_sdev", "y_sdev", "z_sdev", "c_sdev"]
-    sp3_df = _pd.concat([_process_sp3_block(date, data, widths, names) for date, data in zip(date_lines, data_blocks)])
-    sp3_df[name_float] = sp3_df[name_float].apply(_pd.to_numeric, errors="coerce")
-    sp3_df = sp3_df.loc[:, ~sp3_df.columns.str.startswith("Unused")]
-    # remove PRN and PV_FLAG columns
-    sp3_df = sp3_df.drop(columns=["PRN", "PV_FLAG"])
-    # rename columsn x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
-    sp3_df.columns = [
-        ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
-        ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", "", "", ""],
-    ]
+    date_lines, data_blocks = _split_sp3_content(content)
+    sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
+    sp3_df = _reformat_df(sp3_df)
     if nodata_to_nan:
         sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
@@ -197,6 +184,39 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
     sp3_df.attrs["path"] = sp3_path
     return sp3_df
+
+def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
+    """
+    Reformat the SP3 DataFrame for internal use
+
+    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :return _pd.DataFrame: reformated SP3 data as a DataFrame.
+    """
+    name_float = ["x_coordinate", "y_coordinate", "z_coordinate", "clock", "x_sdev", "y_sdev", "z_sdev", "c_sdev"]
+    sp3_df[name_float] = sp3_df[name_float].apply(_pd.to_numeric, errors="coerce")
+    sp3_df = sp3_df.loc[:, ~sp3_df.columns.str.startswith("_")]
+    # remove PRN and PV_FLAG columns
+    sp3_df = sp3_df.drop(columns=["PRN", "PV_FLAG"])
+    # rename columsn x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
+    sp3_df.columns = [
+        ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
+        ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", "", "", ""],
+    ]
+    return sp3_df
+
+
+def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
+    """
+    Split the content of an SP3 file into date lines and data blocks.
+
+    :param bytes content: The content of the SP3 file.
+    :return Tuple[List[str], _np.ndarray]: The date lines and data blocks.
+    """
+    pattern = _re.compile(r"^\*(.+)$", _re.MULTILINE)
+    blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
+    date_lines = blocks[1::2]
+    data_blocks = _np.asarray(blocks[2::2])
+    return date_lines,data_blocks
 
 
 def parse_sp3_header(header: str) -> _pd.DataFrame:
