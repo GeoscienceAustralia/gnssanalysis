@@ -129,7 +129,7 @@ def _process_sp3_block(
     temp_sp3.set_index(dt_index, inplace=True)
     temp_sp3.index.name = "J2000"
     temp_sp3.set_index(temp_sp3.PRN.astype(str), append=True, inplace=True)
-    temp_sp3.set_index(temp_sp3.PV_FLAG.astype(str), append=True, inplace=True)
+    # temp_sp3.set_index(temp_sp3.PV_FLAG.astype(str), append=True, inplace=True)
     return temp_sp3
 
 
@@ -166,9 +166,10 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     if nodata_to_nan:
         sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
-
-    if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
-        sp3_df = sp3_df[sp3_df.index.get_level_values("PV_FLAG") == "P"]
+    # print(sp3_df)
+    # if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
+    #     sp3_df = sp3_df[sp3_df.PV_FLAG == "P"]
+    # sp3_df.drop(columns="PV_FLAG", inplace=True)
     sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
     sp3_df.attrs["path"] = sp3_path
     # Check for duplicate epochs, dedupe and log warning
