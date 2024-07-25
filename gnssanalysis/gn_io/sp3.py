@@ -166,7 +166,6 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     if nodata_to_nan:
         sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
-    print(sp3_df)
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
         sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
