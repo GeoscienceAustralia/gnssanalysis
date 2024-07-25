@@ -50,16 +50,23 @@ def sp3_pos_nodata_to_nan(
     """
     Converts the SP3 Positional column's nodata values (0.000000) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
+    Note: these values represent a vector giving the satellite's position relative to the centre of Earth.
+      It is theoretically possible for up to two of these values to be 0, and still represent a valid
+      position.
+      Therefore, we only consider a value to be nodata if ALL components of the vector (X,Y,Z) are 0.
 
     :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
     :return None
     """
+    #  Create a mask for the index values (rows if you will) where the *complete* POS vector (X, Y, Z) is nodata
+    #  Note the use of & here to logically AND together the three binary masks.
     nan_mask = (
         (sp3_df[("EST", "X")] == SP3_POS_NODATA_NUMERIC)
         & (sp3_df[("EST", "Y")] == SP3_POS_NODATA_NUMERIC)
         & (sp3_df[("EST", "Z")] == SP3_POS_NODATA_NUMERIC)
     )
-    sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.NAN
+    #  For all index values where the entire POS vector (X, Y and Z components) are 0, set all components to NaN.
+    sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.nan
 
 
 def sp3_clock_nodata_to_nan(
