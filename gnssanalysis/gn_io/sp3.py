@@ -166,11 +166,19 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     if nodata_to_nan:
         sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+    print(sp3_df)
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
         sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
     else:
-        raise NotImplementedError("Only P* values are currently supported.")
+        position_df = sp3_df.xs("P", level="PV_FLAG")
+        velocity_df = sp3_df.xs("V", level="PV_FLAG")
+        velocity_df.columns = [
+            ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
+            ["VX", "VY", "VZ", "VCLOCK", "VX", "VY", "VZ", "VCLOCK", "", "", "", ""],
+        ]
+        sp3_df = _pd.concat([position_df, velocity_df], axis=1)
+
     # sp3_df.drop(columns="PV_FLAG", inplace=True)
     sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
     sp3_df.attrs["path"] = sp3_path

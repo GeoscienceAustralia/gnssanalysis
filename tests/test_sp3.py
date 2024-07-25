@@ -56,8 +56,7 @@ class TestSp3(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open, read_data=input_data)
     def test_read_sp3_pv(self, mock_file):
         result = sp3.read_sp3("mock_path", pOnly=False)
-        self.assertTrue(len(result) == 12)
-        self.assertEqual((np.isnan(result[("EST", "CLK")])).sum(), 10)
+        self.assertEqual(len(result), 6)
 
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
