@@ -15,10 +15,31 @@ def _read_tro_solution(path: str, recenter: bool = True, trop_mode="Ginan") -> _
 
 
 def read_tro_solution(path: str, recenter: bool = True, trop_mode="Ginan") -> _pd.DataFrame:
-    """Parses tro snx file into a dataframe.
-    Enabling recenter overrides the default SOD values to 43200 s
-    `trop_mode` can be 'Ginan' or 'Bernese'"""
+    """
+    Parses tro snx file into a dataframe.
+
+    :param path: path to the `.tro` file
+    :param recenter: recenter overrides day seconds value to midday
+    :param trop_mode: format of the tropo solution, can be 'Ginan' or 'Bernese'
+
+    :raises ValueError: if `trop_mode` is unsupported
+    :returns: `pandas.DataFrame` containing the tropospheric solution section data
+    """
     snx_bytes = _gn_io.common.path2bytes(path)
+    return read_tro_solution_bytes(snx_bytes, recenter=recenter, trop_mode=trop_mode)
+
+
+def read_tro_solution_bytes(snx_bytes: bytes, recenter: bool = True, trop_mode="Ginan") -> _pd.DataFrame:
+    """
+    Parses tro snx file into a dataframe.
+
+    :param snx_bytes: contents of the `.tro` file
+    :param recenter: recenter overrides day seconds value to midday
+    :param trop_mode: format of the tropo solution, can be 'Ginan' or 'Bernese'
+
+    :raises ValueError: if `trop_mode` is unsupported
+    :returns: `pandas.DataFrame` containing the tropospheric solution section data
+    """
     tro_estimate = _gn_io.sinex._snx_extract_blk(snx_bytes=snx_bytes, blk_name="TROP/SOLUTION", remove_header=True)
     if tro_estimate is None:
         _tqdm.write(f"bounds not found in {path}. Skipping.", end=" | ")
