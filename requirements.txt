@@ -1,0 +1,14 @@
+boto3
+click
+hatanaka
+matplotlib
+numpy
+pandas
+plotext==4.2
+plotly
+pymongo
+pytest
+scipy
+tqdm
+unlzw3
+typing_extensions
