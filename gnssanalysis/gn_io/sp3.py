@@ -70,21 +70,28 @@ def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     """
     Converts the SP3 Positional column's nodata values (0.000000) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
+    Note: these values represent a vector giving the satellite's position relative to the centre of Earth.
+      It is theoretically possible for up to two of these values to be 0, and still represent a valid
+      position.
+      Therefore, we only consider a value to be nodata if ALL components of the vector (X,Y,Z) are 0.
 
     :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
     :return None
     """
+    #  Create a mask for the index values (rows if you will) where the *complete* POS vector (X, Y, Z) is nodata
+    #  Note the use of & here to logically AND together the three binary masks.
     nan_mask = (
         (sp3_df[("EST", "X")] == SP3_POS_NODATA_NUMERIC)
         & (sp3_df[("EST", "Y")] == SP3_POS_NODATA_NUMERIC)
         & (sp3_df[("EST", "Z")] == SP3_POS_NODATA_NUMERIC)
     )
+    #  For all index values where the entire POS vector (X, Y and Z components) are 0, set all components to NaN.
     sp3_df.loc[nan_mask, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]] = _np.nan
 
 
 def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     """
-    Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - the fractional component optional) to NaNs.
+    Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - fractional component optional) to NaNs.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
 
     :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
@@ -457,6 +464,8 @@ def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Unio
     # NOTE: the following formatters are fine, as the nodata value is actually a *numeric value*,
     # so DataFrame.to_string() will invoke them for those values.
 
+    # TODO A future improvement would be to use NaN rather than specific integer values, as this is an internal
+    # only representation.
     def pos_std_formatter(x):
         # We use -100 as our integer NaN/"missing" marker
         if x <= SP3_POS_STD_NODATA:
@@ -475,10 +484,10 @@ def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Unio
         "Y": pos_formatter,
         "Z": pos_formatter,
         "CLK": clk_formatter,  # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
-        "STDX": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
-        "STDY": pos_std_formatter,
-        "STDZ": pos_std_formatter,
-        "STDCLK": clk_std_formatter,  # ditto above
+        "STD_X": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
+        "STD_Y": pos_std_formatter,
+        "STD_Z": pos_std_formatter,
+        "STD_CLK": clk_std_formatter,  # ditto above
     }
     for epoch, epoch_vals in out_df.reset_index("PRN").groupby(axis=0, level="J2000"):
         # Format and write out the epoch in the SP3 format
