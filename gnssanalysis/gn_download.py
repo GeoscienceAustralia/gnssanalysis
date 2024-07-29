@@ -22,7 +22,6 @@ import gzip as _gzip
 import tarfile as _tarfile
 import hatanaka as _hatanaka
 import ftplib as _ftplib
-import sleep as _sleep
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
 from typing import Optional as _Optional, Union as _Union, Tuple as _Tuple
@@ -831,7 +830,7 @@ def download_file_from_cddis(
 
                 logging.debug(f"Received an error ({e}) while try to download {filename}, retrying({retries}).")
                 # Add some backoff time (exponential random as it appears to be contention based?)
-                _sleep(_random.uniform(0.0, 2.0**retries))
+                _time.sleep(_random.uniform(0.0, 2.0**retries))
     return download_filepath
 
 
