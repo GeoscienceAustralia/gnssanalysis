@@ -86,6 +86,6 @@ class TestSp3(unittest.TestCase):
         """
         result = sp3.read_sp3("mock_path", pOnly=True)
         r = sp3.getVelSpline(result)
-        r2 = sp3.getVelPoly(result, 3)
+        r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r)
         self.assertIsNotNone(r2)

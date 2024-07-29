@@ -275,7 +275,9 @@ def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
     datetime = sp3dfECI.index.get_level_values("J2000").values
     spline = _interpolate.CubicSpline(datetime, sp3dfECI.values)
-    velDf = _pd.DataFrame(data=spline.derivative(1)(datetime), index=sp3dfECI.index, columns=sp3dfECI.columns).stack(1)
+    velDf = _pd.DataFrame(data=spline.derivative(1)(datetime), index=sp3dfECI.index, columns=sp3dfECI.columns).stack(
+        1, future_stack=True
+    )
     return _pd.concat([sp3Df, _pd.concat([velDf], keys=["VELi"], axis=1)], axis=1)
 
 
@@ -309,7 +311,9 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 
     res_prev = coeff.T.dot(inputs_prev)
     res_next = coeff.T.dot(inputs_next)
-    vel_i = _pd.DataFrame((((y - res_prev.T) + (res_next.T - y)) / 2), columns=est.columns, index=est.index).stack()
+    vel_i = _pd.DataFrame((((y - res_prev.T) + (res_next.T - y)) / 2), columns=est.columns, index=est.index).stack(
+        future_stack=True
+    )
 
     vel_i.columns = [["VELi"] * 3] + [vel_i.columns.values.tolist()]
 
