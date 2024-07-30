@@ -579,13 +579,16 @@ def sp3merge(
     :return pd.DataFrame: The merged sp3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
+    # Create a new attrs dictionary to be used for the output DataFrame
+    merged_attrs = merge_attrs(sp3_dfs)
+    # If attrs of two DataFrames are different, pd.concat will fail - set them to empty dict instead
+    for df in sp3_dfs:
+        df.attrs = {}
     merged_sp3 = _pd.concat(sp3_dfs)
-    merged_sp3.attrs["HEADER"] = merge_attrs(sp3_dfs)
-
+    merged_sp3.attrs["HEADER"] = merged_attrs
     if clkpaths is not None:
         clk_dfs = [_gn_io.clk.read_clk(clk_file) for clk_file in clkpaths]
         merged_sp3.EST.CLK = _pd.concat(clk_dfs).EST.AS * 1000000
-
     return merged_sp3
 
 
