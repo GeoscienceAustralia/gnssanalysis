@@ -747,7 +747,7 @@ def determine_name_properties_from_filename(filename: str) -> Dict[str, Any]:
             "analysis_center": "IGS",
             "format_type": extension[0:3].upper(),
             "solution_type": "ULT",
-            # Do start epoch estimation eventually
+            # Do start epoch estimation eventually # TODO: looks like we're not doing start epoch estimation here at all...
         }
     elif analysis_center == "IGR":
         return {
@@ -770,25 +770,52 @@ def determine_name_properties_from_filename(filename: str) -> Dict[str, Any]:
     }
 
 
-def check_filename_and_contents_consistency(input_file: pathlib.Path) -> Mapping[str, tuple[str,str]]:
+def check_filename_and_contents_consistency(
+    input_file: pathlib.Path, ignore_single_epoch_short: bool = True
+) -> Mapping[str, tuple[str, str]] | None:
     """
     Checks that the content of the provided file matches what its filename says should be in it.
-    
-    E.g. if the filename specifies 01D for the timespan component, we expect to find 24 hours worth
-    of data in the file.
+
+    E.g. if the filename specifies 01D for the timespan component, we expect to find (approximately!) 24 hours worth
+    of data in the file. We say approximate in this case because it is valid (and common) for a file content timespan
+    to be one epoch (sampling_rate) interval less than the timespan implied by the filename, as a file will
+    e.g. start at 00:00 and end at 23:55.
+    The option ignore_single_epoch_short (on by default), tries subtracting one epoch from the filename timespan if
+    it is discrepant, and doesn't mark it as a discrepancy if this adjustment brings it into line.
+
     File properties which do not match are returned as a mapping of str -> tuple(str, str), taking the form
     property_name > filename_derived_value, file_contents_derived_value
     :param Path input_file: Path to the file to be checked.
-    :return Mapping[str, tuple[str,str]]: Empty map if properties agree, else a mapping
+    :return Mapping[str, tuple[str,str]]: Empty map if properties agree, else map of discrepancies, OR None on failure.
     of property_name > filename_derived_value, file_contents_derived_value.
     :raises NotImplementedError: if called with a file type not yet supported.
     """
     file_name_properties = determine_name_properties_from_filename(input_file.name)
-    file_content_properties = determine_file_properties(input_file) # Raises NotImplementedError on unhandled filetypes
+    # The following raises NotImplementedError on unhandled filetypes
+    file_content_properties = determine_file_properties(input_file)
+
+    epoch_interval = file_name_properties.get("sampling_rate", None)
+    if epoch_interval is None:
+        logging.warning(
+            f"Sampling rate couldn't be inferred from filename '{input_file.name}'. "
+            "Cannot generate name vs contents discrepancy list. Returning None."
+        )
+        return None
 
     discrepancies = {}
     for key in file_name_properties.keys():
-        if (file_val := file_name_properties[key]) != (content_val := file_content_properties[key]):
+        if (file_val := file_name_properties[key]) != (
+            content_val := file_content_properties[key]
+        ):
+            # If enabled, ignore a file content timespan discrepancy of -1 epoch interval. This is common and valid.
+            if ignore_single_epoch_short and key == "timespan":
+                # Does subtracting one epoch (sampling_rate interval) bring us to parity?
+                if content_val == (file_val - epoch_interval):
+                    logging.debug(
+                        "Timespan was discrepant between filename and file content, but only by one "
+                        f"epoch (sampling_rate). NOT marking as a discrepancy. Filename: {input_file.name}"
+                    )
+                    continue  # We're -1 epoch out, this is ok. Don't mark this as a discrepancy.
             discrepancies[key] = (file_val, content_val)
 
     return discrepancies
