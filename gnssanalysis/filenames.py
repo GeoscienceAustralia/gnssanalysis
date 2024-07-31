@@ -133,13 +133,14 @@ def determine_file_name(file_path: pathlib.Path,
         defaults = {}
     if overrides is None:
         overrides = {}
-    name_properties = determine_file_properties(file_path, defaults, overrides)
+    name_properties = determine_properties_from_contents(file_path, defaults, overrides)
     return generate_IGS_long_filename(**name_properties)
 
 
-def determine_file_properties(file_path: pathlib.Path,
-                              defaults: Optional[Mapping[str, Any]] = None,
-                              overrides: Optional[Mapping[str, Any]] = None
+def determine_properties_from_contents(
+    file_path: pathlib.Path,
+    defaults: Optional[Mapping[str, Any]] = None,
+    overrides: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Determine the properties of a file based on its contents
 
@@ -430,7 +431,7 @@ def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     try:
         logging.debug(f"Reading {file_path}")
         clk_df = gn_io.clk.read_clk(file_path)
-        props_from_existing_name = determine_name_properties_from_filename(file_path.name)
+        props_from_existing_name = determine_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # Could pull some analysis center from the file comments/header
         # But... read_clk doesn't currently read the header and this information
@@ -489,7 +490,7 @@ def determine_erp_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     name_props = {}
     try:
         erp_df = gn_io.erp.read_erp(file_path)
-        props_from_existing_name = determine_name_properties_from_filename(file_path.name)
+        props_from_existing_name = determine_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # ERP files have inconsistent enough headers that we can't attempt to extract the analysis center
         name_props["analysis_center"] = props_from_existing_name["analysis_center"]
@@ -543,7 +544,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     """
     name_props = {}
     try:
-        props_from_existing_name = determine_name_properties_from_filename(file_path.name)  # TODO: check sinex filenames
+        props_from_existing_name = determine_properties_from_filename(file_path.name)  # TODO: check sinex filenames
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         props_from_header_line = gn_io.sinex.get_header_dict(file_path)
         logging.debug(f"props_from_header_line =\n{props_from_header_line}")
@@ -636,7 +637,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     name_props = {}
     try:
         sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False)
-        props_from_existing_name = determine_name_properties_from_filename(file_path.name)
+        props_from_existing_name = determine_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3,"X")
         name_props["analysis_center"] = props_from_existing_name["analysis_center"]
@@ -689,7 +690,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     return name_props
 
 
-def determine_name_properties_from_filename(filename: str) -> Dict[str, Any]:
+def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
     """Determine IGS filename properties based purely on a filename
 
     This function does its best to support both IGS long filenames and old short filenames.
@@ -789,9 +790,9 @@ def check_filename_and_contents_consistency(
     of property_name > filename_derived_value, file_contents_derived_value.
     :raises NotImplementedError: if called with a file type not yet supported.
     """
-    file_name_properties = determine_name_properties_from_filename(input_file.name)
+    file_name_properties = determine_properties_from_filename(input_file.name)
     # The following raises NotImplementedError on unhandled filetypes
-    file_content_properties = determine_file_properties(input_file)
+    file_content_properties = determine_properties_from_contents(input_file)
 
     epoch_interval = file_name_properties.get("sampling_rate_seconds", None)
     if epoch_interval is None:
