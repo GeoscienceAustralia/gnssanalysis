@@ -1,4 +1,5 @@
 """Base functions for file reading"""
+
 import base64 as _base64
 import gzip as _gzip
 import hashlib as _hashlib
@@ -27,13 +28,19 @@ def path2bytes(path: _Union[_Path, str, bytes]) -> bytes:
 
     if isinstance(path, _Path):
         path = path.as_posix()
-
-    if path.endswith(".Z"):
-        databytes = _lzw2bytes(path)
-    elif path.endswith(".gz"):
-        databytes = _gz2bytes(path)
-    else:
-        databytes = _txt2bytes(path)
+    try:
+        if path.endswith(".Z"):
+            databytes = _lzw2bytes(path)
+        elif path.endswith(".gz"):
+            databytes = _gz2bytes(path)
+        else:
+            databytes = _txt2bytes(path)
+    except FileNotFoundError:
+        _logging.error(f"File {path} not found. Returning empty bytes.")
+        return None
+    except Exception as e:
+        _logging.error(f"Error reading file {path} with error {e}. Returning empty bytes.")
+        return None
     return databytes
 
 

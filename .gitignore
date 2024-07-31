@@ -10,5 +10,6 @@ __pycache__
 
 # IDE specific details
 .vscode
-
+.idea
 # Other files
+scratch/

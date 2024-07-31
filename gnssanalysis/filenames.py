@@ -636,7 +636,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     """
     name_props = {}
     try:
-        sp3_df = gn_io.sp3.read_sp3(file_path)
+        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False)
         props_from_existing_name = determine_name_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3,"X")

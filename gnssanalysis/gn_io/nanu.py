@@ -99,7 +99,7 @@ def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetim
         "UNUSABLE START TIME ZULU",
         "UNUSABLE START CALENDAR DATE",
         "LAUNCH JDAY",
-        "LAUNCH TIME ZULU"
+        "LAUNCH TIME ZULU",
         # 'DECOMMISSIONING TIME ZULU', 'DECOMMISSIONING CALENDAR DATE',
         # 'DECOMMISSIONING START TIME ZULU',
         # 'DECOMMISSIONING START CALENDAR DATE'
@@ -123,7 +123,7 @@ def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetim
     hhmm = np_time[na_time_mask].astype("U4").view("<U2").reshape(-1, 2)
 
     nd = _np.ndarray(shape=np_time.shape, dtype="timedelta64[s]")
-    nd.fill(_np.nan)
+    nd.fill(_np.timedelta64("nat"))
     nd[na_time_mask] = hhmm[:, 0].astype("timedelta64[h]") + hhmm[:, 1].astype("timedelta64[m]")
 
     dt_df = _pd.concat([df.drop(labels=columns_date + columns_time, axis=1), dates + nd], axis=1)
