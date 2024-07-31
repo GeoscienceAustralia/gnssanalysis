@@ -560,9 +560,23 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     """
     df = _pd.concat(list(map(lambda obj: obj.attrs["HEADER"], df_list)), axis=1)
     mask_mixed = ~_gn_aux.unique_cols(df.loc["HEAD"])
-    values_if_mixed = _np.asarray(["MIX", "MIX", "MIX", None, "M", None, "MIX", "P", "MIX", "d"])
+    heads = df.loc["HEAD"].values
+    # Determine earliest start epoch from input files (and format as output string) - DATETIME in heads[2]:
+    dt_objs = [_gn_datetime.rnxdt_to_datetime(dt_str) for dt_str in heads[2]]
+    out_dt_str = _gn_datetime.datetime_to_rnxdt(min(dt_objs))
+    # Version Spec, PV Flag, AC label when mixed
+    version_str = "X"  # To specify two different version, we use 'X'
+    pv_flag_str = "P"  # If both P and V files merged, specify minimum spec - POS only
+    ac_str = "".join([pv[:2] for pv in set(heads[7])])[:4] # Use all 4 chars assigned in spec - combine 2 char from each
+    # Assign values when mixed:
+    values_if_mixed = _np.asarray([version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX"])
     head = df[0].loc["HEAD"].values
     head[mask_mixed] = values_if_mixed[mask_mixed]
+    # total_num_epochs needs to be assigned manually - length can be the same but have different epochs in each file
+    # Determine number of epochs combined dataframe will contain) - N_EPOCHS in heads[3]:
+    first_set_of_epochs = set(df_list[0].index.get_level_values("J2000"))
+    total_num_epochs = len(first_set_of_epochs.union(*[set(df.index.get_level_values("J2000")) for df in df_list[1:]]))
+    head[3] = str(total_num_epochs)
     sv_info = df.loc["SV_INFO"].max(axis=1).values.astype(int)
     return _pd.Series(_np.concatenate([head, sv_info]), index=df.index)
 
