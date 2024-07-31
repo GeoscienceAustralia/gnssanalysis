@@ -25,10 +25,13 @@ _RE_SP3_HEAD = _re.compile(
                                     (\w+)(?:[ ]+(\w+)|)""",
     _re.VERBOSE,
 )
-# SV names. multiline, findall
+# Regex to extract Satellite Vehicle (SV) names (E.g. G02). Regex options/flags: multiline, findall
 _RE_SP3_HEAD_SV = _re.compile(rb"^\+[ ]+(?:[\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
-# orbits accuracy codes
-_RE_SP3_ACC = _re.compile(rb"^\+{2}[ ]+([\d\s]{50}\d)\W", _re.MULTILINE)
+
+# Regex for orbits accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
+# Note: header is padded with '  0' entries after the actual data, so empty fields are matched and then trimmed.
+_RE_SP3_ACC = _re.compile(rb"^\+{2}[ ]+([\d\s]{51})$", _re.MULTILINE)
+
 # File descriptor and clock
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
