@@ -7,8 +7,7 @@ import traceback
 
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections import Iterable
-from typing import Iterable, Mapping
-from typing import Any, Dict, Optional, Tuple, Union, overload
+from typing import Iterable, Mapping, Any, Dict, Optional, Tuple, Union, overload
 
 import click
 import pandas as pd
@@ -778,7 +777,7 @@ def check_filename_and_contents_consistency(
 
     E.g. if the filename specifies 01D for the timespan component, we expect to find (approximately!) 24 hours worth
     of data in the file. We say approximate in this case because it is valid (and common) for a file content timespan
-    to be one epoch (sampling_rate) interval less than the timespan implied by the filename, as a file will
+    to be one epoch (sampling_rate_seconds) less than the timespan implied by the filename, as a file will
     e.g. start at 00:00 and end at 23:55.
     The option ignore_single_epoch_short (on by default), tries subtracting one epoch from the filename timespan if
     it is discrepant, and doesn't mark it as a discrepancy if this adjustment brings it into line.
@@ -794,7 +793,7 @@ def check_filename_and_contents_consistency(
     # The following raises NotImplementedError on unhandled filetypes
     file_content_properties = determine_file_properties(input_file)
 
-    epoch_interval = file_name_properties.get("sampling_rate", None)
+    epoch_interval = file_name_properties.get("sampling_rate_seconds", None)
     if epoch_interval is None:
         logging.warning(
             f"Sampling rate couldn't be inferred from filename '{input_file.name}'. "
@@ -809,11 +808,11 @@ def check_filename_and_contents_consistency(
         ):
             # If enabled, ignore a file content timespan discrepancy of -1 epoch interval. This is common and valid.
             if ignore_single_epoch_short and key == "timespan":
-                # Does subtracting one epoch (sampling_rate interval) bring us to parity?
+                # Does subtracting one epoch (sampling_rate_seconds) bring us to parity?
                 if content_val == (file_val - epoch_interval):
                     logging.debug(
-                        "Timespan was discrepant between filename and file content, but only by one "
-                        f"epoch (sampling_rate). NOT marking as a discrepancy. Filename: {input_file.name}"
+                        "Timespan was discrepant between filename and file content, but by -1 "
+                        f"epoch (sampling_rate_seconds). NOT marking as a discrepancy. Filename: {input_file.name}"
                     )
                     continue  # We're -1 epoch out, this is ok. Don't mark this as a discrepancy.
             discrepancies[key] = (file_val, content_val)
