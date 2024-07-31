@@ -803,19 +803,20 @@ def check_filename_and_contents_consistency(
 
     discrepancies = {}
     for key in file_name_properties.keys():
-        if (file_val := file_name_properties[key]) != (
-            content_val := file_content_properties[key]
+        if (file_name_val := file_name_properties[key]) != (
+            file_content_val := file_content_properties[key]
         ):
-            # If enabled, ignore a file content timespan discrepancy of -1 epoch interval. This is common and valid.
+            # If enabled, ignore cases where the timespan of epochs in the file content, is one epoch shorter
+            # than the timespan the filename implies (e.g. 23:55 vs 1D i.e. 24:00). This is common and valid.
             if ignore_single_epoch_short and key == "timespan":
-                # Does subtracting one epoch (sampling_rate_seconds) bring us to parity?
-                if content_val == (file_val - epoch_interval):
+                # Does subtracting one epoch from the filename's timespan make it match the file contents one?
+                if (file_name_val - epoch_interval) == file_content_val:
                     logging.debug(
                         "Timespan was discrepant between filename and file content, but by -1 "
                         f"epoch (sampling_rate_seconds). NOT marking as a discrepancy. Filename: {input_file.name}"
                     )
                     continue  # We're -1 epoch out, this is ok. Don't mark this as a discrepancy.
-            discrepancies[key] = (file_val, content_val)
+            discrepancies[key] = (file_name_val, file_content_val)
 
     return discrepancies
 
