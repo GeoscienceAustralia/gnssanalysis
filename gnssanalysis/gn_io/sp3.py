@@ -567,7 +567,9 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     # Version Spec, PV Flag, AC label when mixed
     version_str = "X"  # To specify two different version, we use 'X'
     pv_flag_str = "P"  # If both P and V files merged, specify minimum spec - POS only
-    ac_str = "".join([pv[:2] for pv in set(heads[7])])[:4] # Use all 4 chars assigned in spec - combine 2 char from each
+    ac_str = "".join([pv[:2] for pv in sorted(set(heads[7]))])[
+        :4
+    ]  # Use all 4 chars assigned in spec - combine 2 char from each
     # Assign values when mixed:
     values_if_mixed = _np.asarray([version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX"])
     head = df[0].loc["HEAD"].values
