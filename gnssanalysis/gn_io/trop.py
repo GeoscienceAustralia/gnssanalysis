@@ -9,32 +9,25 @@ from .. import gn_datetime as _gn_datetime
 from .. import gn_io as _gn_io
 
 
-def _read_tro_solution(path: str, recenter: bool = True, trop_mode="Ginan") -> _pd.DataFrame:
-    """For backwards compatibility"""
-    return read_tro_solution(path, recenter=recenter, trop_mode=trop_mode)
-
-
-def read_tro_solution(path: str, recenter: bool = True, trop_mode="Ginan") -> _pd.DataFrame:
+def read_tro_solution(path: str, trop_mode="Ginan") -> _pd.DataFrame:
     """
     Parses tro snx file into a dataframe.
 
     :param path: path to the `.tro` file
-    :param recenter: recenter overrides day seconds value to midday
     :param trop_mode: format of the tropo solution, can be 'Ginan' or 'Bernese'
 
     :raises ValueError: if `trop_mode` is unsupported
     :returns: `pandas.DataFrame` containing the tropospheric solution section data
     """
     snx_bytes = _gn_io.common.path2bytes(path)
-    return read_tro_solution_bytes(snx_bytes, recenter=recenter, trop_mode=trop_mode)
+    return read_tro_solution_bytes(snx_bytes, trop_mode=trop_mode)
 
 
-def read_tro_solution_bytes(snx_bytes: bytes, recenter: bool = True, trop_mode="Ginan") -> _pd.DataFrame:
+def read_tro_solution_bytes(snx_bytes: bytes, trop_mode="Ginan") -> _pd.DataFrame:
     """
     Parses tro snx file into a dataframe.
 
     :param snx_bytes: contents of the `.tro` file
-    :param recenter: recenter overrides day seconds value to midday
     :param trop_mode: format of the tropo solution, can be 'Ginan' or 'Bernese'
 
     :raises ValueError: if `trop_mode` is unsupported
@@ -93,7 +86,7 @@ def read_tro_solution_bytes(snx_bytes: bytes, recenter: bool = True, trop_mode="
             _tqdm.write(f"{path} data corrupted. Skipping", end=" | ")
             return None
 
-    solution_df.REF_EPOCH = _gn_datetime.yydoysec2datetime(solution_df.REF_EPOCH, recenter=recenter, as_j2000=True)
+    solution_df.REF_EPOCH = solution_df.REF_EPOCH.apply(_gn_datetime.snx_time_to_pydatetime)
     solution_df.set_index(["CODE", "REF_EPOCH"], inplace=True)
     solution_df.columns = _pd.MultiIndex.from_product([product_headers, ["VAL", "STD"]])
     return solution_df
