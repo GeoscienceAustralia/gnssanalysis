@@ -338,7 +338,10 @@ def snx_time_to_pydatetime(snx_time: str) -> _datetime:
     """
     year_str, day_str, second_str = snx_time.split(":")
     year_int_2digit = int(year_str)
-    year = year_int_2digit + (2000 if year_int_2digit <= 50 else 1900)
+    if len(year_str) == 4:
+        year = int(year_str)
+    else:
+        year = year_int_2digit + (2000 if year_int_2digit <= 50 else 1900)
     return _datetime(year=year, month=1, day=1) + _timedelta(days=(int(day_str) - 1), seconds=int(second_str))
 
 
