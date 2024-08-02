@@ -27,7 +27,7 @@ _RE_SP3_HEAD = _re.compile(
 )
 
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
-# Regex to extract Satellite Vehicle (SV) names (E.g. G02).
+# Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
 _RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
 
@@ -246,7 +246,7 @@ def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
     sp3_df = sp3_df.loc[:, ~sp3_df.columns.str.startswith("_")]
     # remove PRN and PV_FLAG columns
     sp3_df = sp3_df.drop(columns=["PRN", "PV_FLAG"])
-    # rename columsn x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
+    # rename columns x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
     sp3_df.columns = [
         ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
         ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", "", "", ""],
@@ -323,6 +323,14 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values:bool=True) ->
                        f"List of SVs extracted: '{str(head_svs)}'"
                        )
 
+    # Use regex to extract the Orbit Accuracy Codes from the header. These correspond with the above
+    # Satellite Vehicle (SV) numbers. Values are left padded and each takes up three characters. E.g. ' 15'.
+    # The data structure itself is zero padded and spread over multiple lines. This comes out as e.g.:
+    # [b'15', b'15', b'15', b'0', b'0'...] if we had 3 SVs.
+    # We stick the byte string lines together, then trim it to the length of the array of SVs, given
+    # by head_svs.shape[0]
+    # Note: .view("S3") seems to present the data in chunks of three characters (I'm inferring this
+    # though, doco is unclear).
     head_svs_std = (
         _np.asarray(b"".join(_RE_SP3_HEADER_ACC.findall(header)))[_np.newaxis].view("S3")[: head_svs.shape[0]].astype(int)
     )
