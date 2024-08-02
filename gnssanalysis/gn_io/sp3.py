@@ -268,12 +268,12 @@ def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
     return date_lines, data_blocks
 
 
-def parse_sp3_header(header: str) -> _pd.DataFrame:
+def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values:bool=True) -> _pd.Series:
     """
     Parse the header of an SP3 file and extract relevant information.
 
-    :param str header: The header string of the SP3 file.
-    :return pandas.DataFrame: A DataFrame containing the parsed information from the SP3 header.
+    :param bytes header: The header of the SP3 file (as a byte string).
+    :return pandas.Series: A Series containing the parsed information from the SP3 header.
     """
     try:
         sp3_heading = _pd.Series(
@@ -327,6 +327,12 @@ def parse_sp3_header(header: str) -> _pd.DataFrame:
         _np.asarray(b"".join(_RE_SP3_HEADER_ACC.findall(header)))[_np.newaxis].view("S3")[: head_svs.shape[0]].astype(int)
     )
     sv_tbl = _pd.Series(head_svs_std, index=head_svs)
+
+    if warn_on_negative_sv_acc_values and any(acc<0 for acc in head_svs_std):
+        logger.warning("SP3 header contained orbit accuracy codes which were negative! These values represent "
+                       "error expressed as 2^x mm, so negative values are unrealistic and likely an error. "
+                       f"Parsed SVs and ACCs: {sv_tbl}"
+                       )
 
     return _pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
 
