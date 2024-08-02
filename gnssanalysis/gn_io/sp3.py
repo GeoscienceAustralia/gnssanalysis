@@ -29,7 +29,9 @@ _RE_SP3_HEAD = _re.compile(
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
 # Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
-_RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
+_RE_SP3_HEADER_SV = _re.compile(
+    rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE
+)
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
 # Note: header is padded with '  0' entries after the actual data, so empty fields are matched and then trimmed.
@@ -76,7 +78,7 @@ _SP3_DEF_PV_NAME = [
 ]
 
 # Nodata ie NaN constants for SP3 format
-SP3_CLOCK_NODATA_STRING = " 999999.999999"  # Not used for reading, as fractional components are optional
+SP3_CLOCK_NODATA_STRING = " 999999.999999"
 SP3_CLOCK_NODATA_NUMERIC = 999999
 SP3_POS_NODATA_STRING = "      0.000000"
 SP3_POS_NODATA_NUMERIC = 0
@@ -135,7 +137,10 @@ def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, 
 
 
 def _process_sp3_block(
-    date: str, data: str, widths: List[int] = _SP3_DEF_PV_WIDTH, names: List[str] = _SP3_DEF_PV_NAME
+    date: str,
+    data: str,
+    widths: List[int] = _SP3_DEF_PV_WIDTH,
+    names: List[str] = _SP3_DEF_PV_NAME,
 ) -> _pd.DataFrame:
     """Process a single block of SP3 data.
 
@@ -158,7 +163,9 @@ def _process_sp3_block(
     return temp_sp3
 
 
-def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _pd.DataFrame:
+def read_sp3(
+    sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True
+) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
 
@@ -179,7 +186,7 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     content = _gn_io.common.path2bytes(str(sp3_path))
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
-    comments:list = _RE_SP3_COMMENT_STRIP.findall(content)
+    comments: list = _RE_SP3_COMMENT_STRIP.findall(content)
     for comment in comments:
         content = content.replace(comment, b"")  # Not in place?? Really?
     # Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
@@ -190,7 +197,7 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     # %i is the last thing in the header, then epochs start.
     # Get the start of the last %i line, then scan forward to the next \n, then +1 for start of the following line.
     # We used to use the start of the first comment line. While simpler, that seemed risky.
-    header_end = content.find(b"\n", content.rindex(b"%i"))+1
+    header_end = content.find(b"\n", content.rindex(b"%i")) + 1
     header = content[:header_end]
     content = content[header_end:]
     parsed_header = parse_sp3_header(header)
@@ -202,8 +209,10 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
     if nodata_to_nan:
-        sp3_pos_nodata_to_nan(sp3_df)  # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
-        sp3_clock_nodata_to_nan(sp3_df)  # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+        # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
+        sp3_pos_nodata_to_nan(sp3_df)
+        # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+        sp3_clock_nodata_to_nan(sp3_df)
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
         sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
@@ -211,7 +220,20 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
         position_df = sp3_df.xs("P", level="PV_FLAG")
         velocity_df = sp3_df.xs("V", level="PV_FLAG")
         velocity_df.columns = [
-            ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
+            [
+                "EST",
+                "EST",
+                "EST",
+                "EST",
+                "STD",
+                "STD",
+                "STD",
+                "STD",
+                "a1",
+                "a2",
+                "a3",
+                "a4",
+            ],
             ["VX", "VY", "VZ", "VCLOCK", "VX", "VY", "VZ", "VCLOCK", "", "", "", ""],
         ]
         sp3_df = _pd.concat([position_df, velocity_df], axis=1)
@@ -221,15 +243,18 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     sp3_df.attrs["path"] = sp3_path
     # Check for duplicate epochs, dedupe and log warning
     if sp3_df.index.has_duplicates:  # a literaly free check
-        duplicated_indexes = sp3_df.index.duplicated()  # Typically sub ms time. Marks all but first instance as duped.
+        # This typically runs in sub ms time. Marks all but first instance as duped:
+        duplicated_indexes = sp3_df.index.duplicated()
         first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
         logging.warning(
             f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
             f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + gn_const.J2000_ORIGIN} "
             f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
         )
-        sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]  # Now dedupe them, keeping the first of any clashes
-    sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
+        # Now dedupe them, keeping the first of any clashes:
+        sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
+    # Write header data to dataframe attributes:
+    sp3_df.attrs["HEADER"] = parsed_header
     sp3_df.attrs["path"] = sp3_path
     return sp3_df
 
@@ -241,14 +266,36 @@ def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
     :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :return _pd.DataFrame: reformated SP3 data as a DataFrame.
     """
-    name_float = ["x_coordinate", "y_coordinate", "z_coordinate", "clock", "x_sdev", "y_sdev", "z_sdev", "c_sdev"]
+    name_float = [
+        "x_coordinate",
+        "y_coordinate",
+        "z_coordinate",
+        "clock",
+        "x_sdev",
+        "y_sdev",
+        "z_sdev",
+        "c_sdev",
+    ]
     sp3_df[name_float] = sp3_df[name_float].apply(_pd.to_numeric, errors="coerce")
     sp3_df = sp3_df.loc[:, ~sp3_df.columns.str.startswith("_")]
     # remove PRN and PV_FLAG columns
     sp3_df = sp3_df.drop(columns=["PRN", "PV_FLAG"])
     # rename columns x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
     sp3_df.columns = [
-        ["EST", "EST", "EST", "EST", "STD", "STD", "STD", "STD", "a1", "a2", "a3", "a4"],
+        [
+            "EST",
+            "EST",
+            "EST",
+            "EST",
+            "STD",
+            "STD",
+            "STD",
+            "STD",
+            "a1",
+            "a2",
+            "a3",
+            "a4",
+        ],
         ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", "", "", ""],
     ]
     return sp3_df
@@ -268,7 +315,9 @@ def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
     return date_lines, data_blocks
 
 
-def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values:bool=True) -> _pd.Series:
+def parse_sp3_header(
+    header: bytes, warn_on_negative_sv_acc_values: bool = True
+) -> _pd.Series:
     """
     Parse the header of an SP3 file and extract relevant information.
 
@@ -277,9 +326,10 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values:bool=True) ->
     """
     try:
         sp3_heading = _pd.Series(
-            data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
-                str
-            ),
+            data=_np.asarray(
+                _RE_SP3_HEAD.search(header).groups()
+                + _RE_SP3_HEAD_FDESCR.search(header).groups()
+            ).astype(str),
             index=[
                 "VERSION",
                 "PV_FLAG",
@@ -294,13 +344,15 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values:bool=True) ->
             ],
         )
     except AttributeError as e:  # Make the exception slightly clearer.
-        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
+        raise AttributeError(
+            "Failed to parse SP3 header. Regex likely returned no match.", e
+        )
 
     # Find all Satellite Vehicle (SV) entries
     # Updated to also extract the count of expected SVs from the header, and compare that to the number of SVs we get.
     # Tuple per match/line, containing the capture groups. I.e. [(group 1, group 2), (group 1, group 2)]
     # See https://docs.python.org/3/library/re.html#re.findall
-    sv_regex_matches:list[tuple] = _RE_SP3_HEADER_SV.findall(header)
+    sv_regex_matches: list[tuple] = _RE_SP3_HEADER_SV.findall(header)
 
     # How many SVs did the header say were there (start of first line of SV entries) E.g 30 here: +   30   G02G03...
     head_sv_expected_count = None
@@ -308,7 +360,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values:bool=True) ->
         head_sv_expected_count = int(sv_regex_matches[0][0])  # Line 1, group 1
     except Exception as e:
         logger.warning("Failed to extract count of expected SVs from SP3 header.", e)
-    
+
     # Get second capture group from each match, concat into byte string. These are the actual SVs. i.e. 'G02G03G04'...
     sv_id_matches = b"".join([x[1] for x in sv_regex_matches])
     # Now do some Numpy magic to present it chunked into three character strings (e.g. 'G02', 'G03', etc.)
@@ -316,12 +368,13 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values:bool=True) ->
 
     # Sanity check that the number of SVs the regex found, matches what the header said should be there.
     found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array.
-    if (head_sv_expected_count is not None) and (found_sv_count != head_sv_expected_count):
-        logger.warning("Number of Satellite Vehicle (SV) entries extracted from the SP3 header, did not match the "
-                       "number of SVs the header said were there! This might be a header writer or header parser bug! "
-                       f"SVs extracted: {found_sv_count}, SV count given by header: {head_sv_expected_count} "
-                       f"List of SVs extracted: '{str(head_svs)}'"
-                       )
+    if head_sv_expected_count is not None and found_sv_count != head_sv_expected_count:
+        logger.warning(
+            "Number of Satellite Vehicle (SV) entries extracted from the SP3 header, did not match the "
+            "number of SVs the header said were there! This might be a header writer or header parser bug! "
+            f"SVs extracted: {found_sv_count}, SV count given by header: {head_sv_expected_count} "
+            f"List of SVs extracted: '{str(head_svs)}'"
+        )
 
     # Use regex to extract the Orbit Accuracy Codes from the header. These correspond with the above
     # Satellite Vehicle (SV) numbers. Values are left padded and each takes up three characters. E.g. ' 15'.
@@ -332,15 +385,18 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values:bool=True) ->
     # Note: .view("S3") seems to present the data in chunks of three characters (I'm inferring this
     # though, doco is unclear).
     head_svs_std = (
-        _np.asarray(b"".join(_RE_SP3_HEADER_ACC.findall(header)))[_np.newaxis].view("S3")[: head_svs.shape[0]].astype(int)
+        _np.asarray(b"".join(_RE_SP3_HEADER_ACC.findall(header)))[_np.newaxis]
+        .view("S3")[: head_svs.shape[0]]
+        .astype(int)
     )
     sv_tbl = _pd.Series(head_svs_std, index=head_svs)
 
-    if warn_on_negative_sv_acc_values and any(acc<0 for acc in head_svs_std):
-        logger.warning("SP3 header contained orbit accuracy codes which were negative! These values represent "
-                       "error expressed as 2^x mm, so negative values are unrealistic and likely an error. "
-                       f"Parsed SVs and ACCs: {sv_tbl}"
-                       )
+    if warn_on_negative_sv_acc_values and any(acc < 0 for acc in head_svs_std):
+        logger.warning(
+            "SP3 header contained orbit accuracy codes which were negative! These values represent "
+            "error expressed as 2^x mm, so negative values are unrealistic and likely an error. "
+            f"Parsed SVs and ACCs: {sv_tbl}"
+        )
 
     return _pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
 
@@ -356,9 +412,11 @@ def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
     datetime = sp3dfECI.index.get_level_values("J2000").values
     spline = _interpolate.CubicSpline(datetime, sp3dfECI.values)
-    velDf = _pd.DataFrame(data=spline.derivative(1)(datetime), index=sp3dfECI.index, columns=sp3dfECI.columns).stack(
-        1, future_stack=True
-    )
+    velDf = _pd.DataFrame(
+        data=spline.derivative(1)(datetime),
+        index=sp3dfECI.index,
+        columns=sp3dfECI.columns,
+    ).stack(1, future_stack=True)
     return _pd.concat([sp3Df, _pd.concat([velDf], keys=["VELi"], axis=1)], axis=1)
 
 
@@ -392,9 +450,11 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 
     res_prev = coeff.T.dot(inputs_prev)
     res_next = coeff.T.dot(inputs_next)
-    vel_i = _pd.DataFrame((((y - res_prev.T) + (res_next.T - y)) / 2), columns=est.columns, index=est.index).stack(
-        future_stack=True
-    )
+    vel_i = _pd.DataFrame(
+        (((y - res_prev.T) + (res_next.T - y)) / 2),
+        columns=est.columns,
+        index=est.index,
+    ).stack(future_stack=True)
 
     vel_i.columns = [["VELi"] * 3] + [vel_i.columns.values.tolist()]
 
@@ -461,10 +521,22 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
 
     comment = ["/*\n"] * 4
 
-    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
+    return "".join(
+        line1
+        + line2
+        + sats_header.tolist()
+        + sv_orb_head.tolist()
+        + head_c
+        + head_fi
+        + comment
+    )
 
 
-def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Union[None, _io.TextIOBase] = None) -> str:
+def gen_sp3_content(
+    sp3_df: _pd.DataFrame,
+    sort_outputs: bool = False,
+    buf: Union[None, _io.TextIOBase] = None,
+) -> str:
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
     it otherwise.
@@ -634,7 +706,9 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     """
     df = _pd.concat(list(map(lambda obj: obj.attrs["HEADER"], df_list)), axis=1)
     mask_mixed = ~_gn_aux.unique_cols(df.loc["HEAD"])
-    values_if_mixed = _np.asarray(["MIX", "MIX", "MIX", None, "M", None, "MIX", "P", "MIX", "d"])
+    values_if_mixed = _np.asarray(
+        ["MIX", "MIX", "MIX", None, "M", None, "MIX", "P", "MIX", "d"]
+    )
     head = df[0].loc["HEAD"].values
     head[mask_mixed] = values_if_mixed[mask_mixed]
     sv_info = df.loc["SV_INFO"].max(axis=1).values.astype(int)
@@ -642,7 +716,9 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
 
 
 def sp3merge(
-    sp3paths: List[str], clkpaths: Union[List[str], None] = None, nodata_to_nan: bool = False
+    sp3paths: List[str],
+    clkpaths: Union[List[str], None] = None,
+    nodata_to_nan: bool = False,
 ) -> _pd.DataFrame:
     """Reads in a list of sp3 files and optional list of clk files and merges them into a single sp3 file.
 
