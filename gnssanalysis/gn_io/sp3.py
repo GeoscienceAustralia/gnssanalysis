@@ -25,10 +25,25 @@ _RE_SP3_HEAD = _re.compile(
                                     (\w+)(?:[ ]+(\w+)|)""",
     _re.VERBOSE,
 )
-# SV names. multiline, findall
+# Regex to extract Satellite Vehicle (SV) names (E.g. G02). Regex options/flags: multiline, findall
 _RE_SP3_HEAD_SV = _re.compile(rb"^\+[ ]+(?:[\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
-# orbits accuracy codes
-_RE_SP3_ACC = _re.compile(rb"^\+{2}[ ]+([\d\s]{50}\d)\W", _re.MULTILINE)
+
+# Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
+# Note: header is padded with '  0' entries after the actual data, so empty fields are matched and then trimmed.
+_RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})$", _re.MULTILINE)
+# This matches orbit accuracy codes which are three chars long, left padded with spaces, and always contain at
+# least one digit. They can be negative, though such values are unrealistic. Empty 'entries' are '0', so we have to
+# work out where to trim the data based on the number of SVs in the header.
+# Breakdown of regex:
+# - Match the accuracy code line start of '++' then arbitary spaces, then
+# - 17 columns of:
+#   [space or digit or - ] (times two), then [digit]
+# - Then end of line.
+
+# Most data matches whether or not we specify the end of line, as we are quite explicit about the format of
+# data we expect. However, using \W instead can be risky, as it fails to match the last line if there is no
+# newline following it. Note though that in SV parsing $ doesn't traverse multiline, the \W works...
+
 # File descriptor and clock
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
@@ -264,7 +279,7 @@ def parse_sp3_header(header: str) -> _pd.DataFrame:
 
     head_svs = _np.asarray(b"".join(_RE_SP3_HEAD_SV.findall(header)))[_np.newaxis].view("S3").astype(str)
     head_svs_std = (
-        _np.asarray(b"".join(_RE_SP3_ACC.findall(header)))[_np.newaxis].view("S3")[: head_svs.shape[0]].astype(int)
+        _np.asarray(b"".join(_RE_SP3_HEADER_ACC.findall(header)))[_np.newaxis].view("S3")[: head_svs.shape[0]].astype(int)
     )
     sv_tbl = _pd.Series(head_svs_std, index=head_svs)
 
@@ -508,9 +523,9 @@ def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Unio
 
         # POS nodata formatting
         # Fill +/- infinity values with SP3 nodata value for POS columns
-        epoch_vals["X"].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Y"].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Z"].replace(to_replace=[_np.inf, _np.NINF], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["X"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["Y"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
+        epoch_vals["Z"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
         # Now do the same for NaNs
         epoch_vals["X"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
         epoch_vals["Y"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
@@ -522,7 +537,7 @@ def gen_sp3_content(sp3_df: _pd.DataFrame, sort_outputs: bool = False, buf: Unio
         # CLK nodata formatting
         # Throw both +/- infinity, and NaN values to the SP3 clock nodata value.
         # See https://stackoverflow.com/a/17478495
-        epoch_vals["CLK"].replace(to_replace=[_np.inf, _np.NINF], value=SP3_CLOCK_NODATA_STRING, inplace=True)
+        epoch_vals["CLK"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_CLOCK_NODATA_STRING, inplace=True)
         epoch_vals["CLK"].fillna(value=SP3_CLOCK_NODATA_STRING, inplace=True)
 
         # Now invoke DataFrame to_string() to write out the values, leveraging our formatting functions for the
@@ -560,9 +575,25 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     """
     df = _pd.concat(list(map(lambda obj: obj.attrs["HEADER"], df_list)), axis=1)
     mask_mixed = ~_gn_aux.unique_cols(df.loc["HEAD"])
-    values_if_mixed = _np.asarray(["MIX", "MIX", "MIX", None, "M", None, "MIX", "P", "MIX", "d"])
+    heads = df.loc["HEAD"].values
+    # Determine earliest start epoch from input files (and format as output string) - DATETIME in heads[2]:
+    dt_objs = [_gn_datetime.rnxdt_to_datetime(dt_str) for dt_str in heads[2]]
+    out_dt_str = _gn_datetime.datetime_to_rnxdt(min(dt_objs))
+    # Version Spec, PV Flag, AC label when mixed
+    version_str = "X"  # To specify two different version, we use 'X'
+    pv_flag_str = "P"  # If both P and V files merged, specify minimum spec - POS only
+    ac_str = "".join([pv[:2] for pv in sorted(set(heads[7]))])[
+        :4
+    ]  # Use all 4 chars assigned in spec - combine 2 char from each
+    # Assign values when mixed:
+    values_if_mixed = _np.asarray([version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX"])
     head = df[0].loc["HEAD"].values
     head[mask_mixed] = values_if_mixed[mask_mixed]
+    # total_num_epochs needs to be assigned manually - length can be the same but have different epochs in each file
+    # Determine number of epochs combined dataframe will contain) - N_EPOCHS in heads[3]:
+    first_set_of_epochs = set(df_list[0].index.get_level_values("J2000"))
+    total_num_epochs = len(first_set_of_epochs.union(*[set(df.index.get_level_values("J2000")) for df in df_list[1:]]))
+    head[3] = str(total_num_epochs)
     sv_info = df.loc["SV_INFO"].max(axis=1).values.astype(int)
     return _pd.Series(_np.concatenate([head, sv_info]), index=df.index)
 
@@ -579,13 +610,16 @@ def sp3merge(
     :return pd.DataFrame: The merged sp3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
+    # Create a new attrs dictionary to be used for the output DataFrame
+    merged_attrs = merge_attrs(sp3_dfs)
+    # If attrs of two DataFrames are different, pd.concat will fail - set them to empty dict instead
+    for df in sp3_dfs:
+        df.attrs = {}
     merged_sp3 = _pd.concat(sp3_dfs)
-    merged_sp3.attrs["HEADER"] = merge_attrs(sp3_dfs)
-
+    merged_sp3.attrs["HEADER"] = merged_attrs
     if clkpaths is not None:
         clk_dfs = [_gn_io.clk.read_clk(clk_file) for clk_file in clkpaths]
         merged_sp3.EST.CLK = _pd.concat(clk_dfs).EST.AS * 1000000
-
     return merged_sp3
 
 
