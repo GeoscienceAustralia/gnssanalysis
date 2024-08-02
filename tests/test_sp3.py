@@ -109,6 +109,9 @@ class TestSp3(unittest.TestCase):
         sv_count = sv_info.shape[0]  # Effectively len()
         self.assertEqual(sv_count, 30, msg="There should be 30 SVs parsed from the test data")
 
+        # Ensure no SVs are read as empty
+        self.assertFalse(any(len(sv.strip())==0 for sv in sv_info.index), msg="No SV name should be empty")
+
         # Focus on potential line wraparound issues
         first_sv = sv_info.index[0]
         self.assertEqual(first_sv, 'G02', msg="First SV in test data should be G02")
