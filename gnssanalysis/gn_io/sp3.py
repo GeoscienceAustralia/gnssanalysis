@@ -25,6 +25,9 @@ _RE_SP3_HEAD = _re.compile(
                                     (\w+)(?:[ ]+(\w+)|)""",
     _re.VERBOSE,
 )
+
+_RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
+# Regex to extract Satellite Vehicle (SV) names (E.g. G02).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
 _RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
 
@@ -174,7 +177,20 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
         If nodata_to_nan is True, nodata values in the SP3 POS and CLK columns are converted to NaN.
     """
     content = _gn_io.common.path2bytes(str(sp3_path))
-    header_end = content.find(b"/*")
+
+    # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
+    comments:list = _RE_SP3_COMMENT_STRIP.findall(content)
+    for comment in comments:
+        content = content.replace(comment, b"")  # Not in place?? Really?
+    # Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
+    # immediately followed by the mandatory 4+ comment lines.
+    # It is unclear from the specification whether comment lines can appear anywhere else. For robustness we
+    # strip them from the data before continuing parsing.
+
+    # %i is the last thing in the header, then epochs start.
+    # Get the start of the last %i line, then scan forward to the next \n, then +1 for start of the following line.
+    # We used to use the start of the first comment line. While simpler, that seemed risky.
+    header_end = content.find(b"\n", content.rindex(b"%i"))+1
     header = content[:header_end]
     content = content[header_end:]
     parsed_header = parse_sp3_header(header)
