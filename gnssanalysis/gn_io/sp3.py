@@ -239,8 +239,6 @@ def read_sp3(
         sp3_df = _pd.concat([position_df, velocity_df], axis=1)
 
     # sp3_df.drop(columns="PV_FLAG", inplace=True)
-    sp3_df.attrs["HEADER"] = parsed_header  # writing header data to dataframe attributes
-    sp3_df.attrs["path"] = sp3_path
     # Check for duplicate epochs, dedupe and log warning
     if sp3_df.index.has_duplicates:  # a literaly free check
         # This typically runs in sub ms time. Marks all but first instance as duped:
