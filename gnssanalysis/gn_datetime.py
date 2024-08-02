@@ -1,4 +1,5 @@
 """Base time conversion functions"""
+
 from datetime import datetime as _datetime
 from datetime import timedelta as _timedelta
 from io import StringIO as _StringIO
@@ -293,6 +294,27 @@ def j20002rnxdt(j2000secs: _np.ndarray) -> _np.ndarray:
     return date_y + date_m + date_d + time_h + time_m + time_s
 
 
+def rnxdt_to_datetime(rnxdt: str) -> _datetime:
+    """
+    Transform str in RNX / SP3 format to datetime object
+
+    :param str rnxdt: String of the datetime in RNX / SP3 format: "YYYY MM DD HH mm ss.ssssssss"
+    :return _datetime: Tranformed python datetime object: equivalent of input rnxdt string
+    """
+    return _datetime.strptime(rnxdt, "%Y %m %d %H %M %S.00000000")
+
+
+def datetime_to_rnxdt(dt: _datetime) -> str:
+    """
+    Transform datetime object to str of RNX / SP3 format
+
+    :param _datetime dt: Python datetime object to be transformed
+    :return str: Transformed str of RNX / SP3 format: "YYYY MM DD HH mm ss.ssssssss"
+    """
+    zero_padded_str = dt.strftime("%Y %m %d %H %M %S.00000000")  # Initially str is zero padded - removed in next line
+    return " ".join([(" " + block[1:]) if block[0] == "0" else block for block in zero_padded_str.split(" ")])
+
+
 def strdatetime2datetime(dt_arr, as_j2000=True):
     """conversion of IONEX map headers ndarray Y M D h m s to datetime64"""
     datetime = (
@@ -323,15 +345,13 @@ def snx_time_to_pydatetime(snx_time: str) -> _datetime:
 @_overload
 def round_timedelta(
     delta: _timedelta, roundto: _timedelta, *, tol: float = ..., abs_tol: _Optional[_timedelta]
-) -> _timedelta:
-    ...
+) -> _timedelta: ...
 
 
 @_overload
 def round_timedelta(
     delta: _np.timedelta64, roundto: _np.timedelta64, *, tol: float = ..., abs_tol: _Optional[_np.timedelta64]
-) -> _np.timedelta64:
-    ...
+) -> _np.timedelta64: ...
 
 
 def round_timedelta(delta, roundto, *, tol=0.5, abs_tol=None):
