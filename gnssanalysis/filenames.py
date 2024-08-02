@@ -7,8 +7,7 @@ import traceback
 
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections import Iterable
-from typing import Iterable
-from typing import Any, Dict, Optional, Tuple, Union, overload
+from typing import Iterable, Mapping, Any, Dict, Optional, Tuple, Union, overload
 
 import click
 import pandas as pd
@@ -99,7 +98,10 @@ def determine_file_name_main(
             logging.warning(f"Skipping {f.name} as {f.suffix} files are not yet supported.")
 
 
-def determine_file_name(file_path: pathlib.Path, defaults: Dict[str, Any], overrides: Dict[str, Any]) -> str:
+def determine_file_name(file_path: pathlib.Path,
+                        defaults: Optional[Mapping[str, Any]] = None,
+                        overrides: Optional[Mapping[str, Any]] = None
+) -> str:
     """Determine the IGS long filename of a file based on its contents
 
     This function determines what it thinks the filename of a GNSS file should be given the IGS long
@@ -121,13 +123,59 @@ def determine_file_name(file_path: pathlib.Path, defaults: Dict[str, Any], overr
      - version: str
      - project: str
 
+     Note that generate_IGS_long_filename() also takes sampling_rate_seconds, though this is not used, it is simply
+     defined as a parameter to maintain syntactic simplicity when calling.
+
     :param pathlib.Path file_path: Path to the file for which to determine name
     :param Dict[str, Any] defaults: Default name properties to use when properties can't be determined
     :param Dict[str, Any] overrides: Name properties that should override anything detected in the file
     :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
     :return str: Proposed IGS long filename
     """
-    logging.debug(f"determine_file_name for {file_path}")
+    if defaults is None:
+        defaults = {}
+    if overrides is None:
+        overrides = {}
+    name_properties = determine_properties_from_contents(file_path, defaults, overrides)
+    return generate_IGS_long_filename(**name_properties)
+
+
+def determine_properties_from_contents(
+    file_path: pathlib.Path,
+    defaults: Optional[Mapping[str, Any]] = None,
+    overrides: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Determine the properties of a file based on its contents
+
+    The function reads both the existing filename of the provided file as well as
+    its contents and does its best to determine appropriate name properties.
+    In addition to these extracted properties, defaults and overrides can be manually provided via
+    dictionaries. Defaults apply if the corresponding properties can't be extracted from the file.
+    Overrides instead force properties to always take certain the provided values.
+    The possible key value pairs are the arguments to :func: `filenames.generate_IGS_long_filename`,
+    namely:
+     - analysis_center: str
+     - content_type: str
+     - format_type: str
+     - start_epoch: datetime.datetime
+     - end_epoch: datetime.datetime
+     - timespan: datetime.timedelta
+     - solution_type: str
+     - sampling_rate: str
+     - version: str
+     - project: str
+
+    :param pathlib.Path file_path: Path to the file for which to determine properties
+    :param Dict[str, Any] defaults: Default name properties to use when properties can't be determined
+    :param Dict[str, Any] overrides: Name properties that should override anything detected in the file
+    :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
+    :return str: Dictionary of file properties
+    """
+    if defaults is None:
+        defaults = {}
+    if overrides is None:
+        overrides = {}
+    logging.debug(f"determine_file_props for {file_path}")
     file_ext = file_path.suffix.lower()
     logging.debug(f"Matching file extension: {file_ext}")
     if file_ext == ".bia":
@@ -165,7 +213,7 @@ def determine_file_name(file_path: pathlib.Path, defaults: Dict[str, Any], overr
     name_properties.update(file_properties)
     name_properties.update(overrides)
     logging.debug(f"name_properties =\n{name_properties}")
-    return generate_IGS_long_filename(**name_properties)
+    return name_properties
 
 
 @overload
@@ -179,6 +227,7 @@ def generate_IGS_long_filename(
     timespan: Union[datetime.timedelta, str, None] = ...,
     solution_type: str = ...,
     sampling_rate: str = ...,
+    sampling_rate_seconds: Optional[int] = ...,
     version: str = ...,
     project: str = ...,
     variable_datetime: bool = ...,
@@ -197,6 +246,7 @@ def generate_IGS_long_filename(
     timespan: Union[datetime.timedelta, str],
     solution_type: str = ...,
     sampling_rate: str = ...,
+    sampling_rate_seconds: Optional[int] = ...,
     version: str = ...,
     project: str = ...,
     variable_datetime: bool = ...,
@@ -214,6 +264,7 @@ def generate_IGS_long_filename(
     timespan: Union[datetime.timedelta, str, None] = None,
     solution_type: str = "",  # TTT
     sampling_rate: str = "15M",  # SMP
+    sampling_rate_seconds: Optional[int] = None,  # Not used here, but passed for structural consistency
     version: str = "0",  # V
     project: str = "EXP",  # PPP, e.g. EXP, OPS
     variable_datetime=False,
@@ -238,6 +289,7 @@ def generate_IGS_long_filename(
         defaults to None
     :param str solution_type: Three letter solution type identifier, defaults to ""
     :param str sampling_rate: Three letter sampling rate string, defaults to "15M"
+    :param Optional[int] sampling_rate_seconds: Not used, passed only for structural consistency
     :param str version: Single character version identifier, defaults to "0"
     :param str project: Three letter project identifier, defaults to "EXP"
     :param bool variable_datetime: If true, force the start epoch to a placeholder value
@@ -386,7 +438,7 @@ def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     try:
         logging.debug(f"Reading {file_path}")
         clk_df = gn_io.clk.read_clk(file_path)
-        props_from_existing_name = determine_name_props_from_filename(file_path.name)
+        props_from_existing_name = determine_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # Could pull some analysis center from the file comments/header
         # But... read_clk doesn't currently read the header and this information
@@ -408,12 +460,13 @@ def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         # The pandas stubs seem to assume .index returns an Index (not MultiIndex), so we need to ignore the typing for now
         sampling_rate = np.median(np.diff(clk_df.index.levels[1]))  # type: ignore
         # Alternatively:
-        sampling_rate = np.median(np.diff(clk_df.index.get_level_values("J2000").unique()))
+        # sampling_rate = np.median(np.diff(clk_df.index.get_level_values("J2000").unique()))
         end_epoch = gn_datetime.j2000_to_pydatetime(end_j2000sec + sampling_rate)
         timespan = end_epoch - start_epoch
         name_props["start_epoch"] = start_epoch
         name_props["end_epoch"] = end_epoch
         name_props["timespan"] = timespan
+        name_props["sampling_rate_seconds"] = sampling_rate
         name_props["sampling_rate"] = nominal_span_string(sampling_rate)
         logging.debug(f"name_props prior to adding props extracted from name = {name_props}")
         # If we extracted solution type from the name we keep it
@@ -444,7 +497,7 @@ def determine_erp_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     name_props = {}
     try:
         erp_df = gn_io.erp.read_erp(file_path)
-        props_from_existing_name = determine_name_props_from_filename(file_path.name)
+        props_from_existing_name = determine_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # ERP files have inconsistent enough headers that we can't attempt to extract the analysis center
         name_props["analysis_center"] = props_from_existing_name["analysis_center"]
@@ -468,6 +521,7 @@ def determine_erp_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         name_props["start_epoch"] = start_epoch
         name_props["end_epoch"] = end_epoch
         name_props["timespan"] = timespan
+        name_props["sampling_rate_seconds"] = sampling_rate.total_seconds()
         name_props["sampling_rate"] = nominal_span_string(sampling_rate.total_seconds())
         logging.debug(f"name_props prior to adding props extracted from name = {name_props}")
         # If we extracted solution type from the name we keep it
@@ -497,7 +551,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     """
     name_props = {}
     try:
-        props_from_existing_name = determine_name_props_from_filename(file_path.name)  # TODO: check sinex filenames
+        props_from_existing_name = determine_properties_from_filename(file_path.name)  # TODO: check sinex filenames
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         props_from_header_line = gn_io.sinex.get_header_dict(file_path)
         logging.debug(f"props_from_header_line =\n{props_from_header_line}")
@@ -559,6 +613,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
                 sampling_rate = name_props["timespan"]
         else:
             sampling_rate = name_props["timespan"]
+        name_props["sampling_rate_seconds"] = sampling_rate.total_seconds()
         name_props["sampling_rate"] = nominal_span_string(sampling_rate.total_seconds())
         logging.debug(f"name_props prior to adding props extracted from name = {name_props}")
         # If we extracted solution type from the name we keep it
@@ -589,7 +644,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     name_props = {}
     try:
         sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False)
-        props_from_existing_name = determine_name_props_from_filename(file_path.name)
+        props_from_existing_name = determine_properties_from_filename(file_path.name)
         logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
         # name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3,"X")
         name_props["analysis_center"] = props_from_existing_name["analysis_center"]
@@ -615,6 +670,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         name_props["start_epoch"] = start_epoch
         name_props["end_epoch"] = end_epoch
         name_props["timespan"] = timespan
+        name_props["sampling_rate_seconds"] = sampling_rate
         name_props["sampling_rate"] = nominal_span_string(sampling_rate)
         # Solution type can be estimated based on data duration or pulled from filename
         if "solution_type" in props_from_existing_name:
@@ -641,7 +697,7 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     return name_props
 
 
-def determine_name_props_from_filename(filename: str) -> Dict[str, Any]:
+def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
     """Determine IGS filename properties based purely on a filename
 
     This function does its best to support both IGS long filenames and old short filenames.
@@ -650,7 +706,6 @@ def determine_name_props_from_filename(filename: str) -> Dict[str, Any]:
 
     :param str filename: filename to examine for naming properties
     :return Dict[str, Any]: dictionary containing the extracted name properties
-    """ """
     """
     basename, _, extension = filename.rpartition(".")
     # Long filenames
@@ -699,7 +754,7 @@ def determine_name_props_from_filename(filename: str) -> Dict[str, Any]:
             "analysis_center": "IGS",
             "format_type": extension[0:3].upper(),
             "solution_type": "ULT",
-            # Do start epoch estimation eventually
+            # Do start epoch estimation eventually # TODO: looks like we're not doing start epoch estimation here at all...
         }
     elif analysis_center == "IGR":
         return {
@@ -720,6 +775,58 @@ def determine_name_props_from_filename(filename: str) -> Dict[str, Any]:
         "format_type": extension[0:3].upper(),
         # Do start epoch estimation eventually
     }
+
+
+def check_filename_and_contents_consistency(
+    input_file: pathlib.Path, ignore_single_epoch_short: bool = True
+) -> Mapping[str, tuple[str, str]] | None:
+    """
+    Checks that the content of the provided file matches what its filename says should be in it.
+
+    E.g. if the filename specifies 01D for the timespan component, we expect to find (approximately!) 24 hours worth
+    of data in the file. We say approximate in this case because it is valid (and common) for a file content timespan
+    to be one epoch (sampling_rate_seconds) less than the timespan implied by the filename, as a file will
+    e.g. start at 00:00 and end at 23:55.
+    The option ignore_single_epoch_short (on by default), tries subtracting one epoch from the filename timespan if
+    it is discrepant, and doesn't mark it as a discrepancy if this adjustment brings it into line.
+
+    File properties which do not match are returned as a mapping of str -> tuple(str, str), taking the form
+    property_name > filename_derived_value, file_contents_derived_value
+    :param Path input_file: Path to the file to be checked.
+    :return Mapping[str, tuple[str,str]]: Empty map if properties agree, else map of discrepancies, OR None on failure.
+    of property_name > filename_derived_value, file_contents_derived_value.
+    :raises NotImplementedError: if called with a file type not yet supported.
+    """
+    file_name_properties = determine_properties_from_filename(input_file.name)
+    # The following raises NotImplementedError on unhandled filetypes
+    file_content_properties = determine_properties_from_contents(input_file)
+
+    epoch_interval = file_name_properties.get("sampling_rate_seconds", None)
+    if epoch_interval is None:
+        logging.warning(
+            f"Sampling rate couldn't be inferred from filename '{input_file.name}'. "
+            "Cannot generate name vs contents discrepancy list. Returning None."
+        )
+        return None
+
+    discrepancies = {}
+    for key in file_name_properties.keys():
+        if (file_name_val := file_name_properties[key]) != (
+            file_content_val := file_content_properties[key]
+        ):
+            # If enabled, ignore cases where the timespan of epochs in the file content, is one epoch shorter
+            # than the timespan the filename implies (e.g. 23:55 vs 1D i.e. 24:00). This is common and valid.
+            if ignore_single_epoch_short and key == "timespan":
+                # Does subtracting one epoch from the filename's timespan make it match the file contents one?
+                if (file_name_val - epoch_interval) == file_content_val:
+                    logging.debug(
+                        "Timespan was discrepant between filename and file content, but by -1 "
+                        f"epoch (sampling_rate_seconds). NOT marking as a discrepancy. Filename: {input_file.name}"
+                    )
+                    continue  # We're -1 epoch out, this is ok. Don't mark this as a discrepancy.
+            discrepancies[key] = (file_name_val, file_content_val)
+
+    return discrepancies
 
 
 def subset_dictupdate(dest: dict, source: dict, keys: Iterable):
