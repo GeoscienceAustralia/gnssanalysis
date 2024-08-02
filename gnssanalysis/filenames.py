@@ -123,6 +123,9 @@ def determine_file_name(file_path: pathlib.Path,
      - version: str
      - project: str
 
+     Note that generate_IGS_long_filename() also takes sampling_rate_seconds, though this is not used, it is simply
+     defined as a parameter to maintain syntactic simplicity when calling.
+
     :param pathlib.Path file_path: Path to the file for which to determine name
     :param Dict[str, Any] defaults: Default name properties to use when properties can't be determined
     :param Dict[str, Any] overrides: Name properties that should override anything detected in the file
@@ -224,6 +227,7 @@ def generate_IGS_long_filename(
     timespan: Union[datetime.timedelta, str, None] = ...,
     solution_type: str = ...,
     sampling_rate: str = ...,
+    sampling_rate_seconds: Optional[int] = ...,
     version: str = ...,
     project: str = ...,
     variable_datetime: bool = ...,
@@ -242,6 +246,7 @@ def generate_IGS_long_filename(
     timespan: Union[datetime.timedelta, str],
     solution_type: str = ...,
     sampling_rate: str = ...,
+    sampling_rate_seconds: Optional[int] = ...,
     version: str = ...,
     project: str = ...,
     variable_datetime: bool = ...,
@@ -259,6 +264,7 @@ def generate_IGS_long_filename(
     timespan: Union[datetime.timedelta, str, None] = None,
     solution_type: str = "",  # TTT
     sampling_rate: str = "15M",  # SMP
+    sampling_rate_seconds: Optional[int] = None,  # Not used here, but passed for structural consistency
     version: str = "0",  # V
     project: str = "EXP",  # PPP, e.g. EXP, OPS
     variable_datetime=False,
@@ -283,6 +289,7 @@ def generate_IGS_long_filename(
         defaults to None
     :param str solution_type: Three letter solution type identifier, defaults to ""
     :param str sampling_rate: Three letter sampling rate string, defaults to "15M"
+    :param Optional[int] sampling_rate_seconds: Not used, passed only for structural consistency
     :param str version: Single character version identifier, defaults to "0"
     :param str project: Three letter project identifier, defaults to "EXP"
     :param bool variable_datetime: If true, force the start epoch to a placeholder value
