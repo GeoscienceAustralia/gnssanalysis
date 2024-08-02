@@ -25,8 +25,8 @@ _RE_SP3_HEAD = _re.compile(
                                     (\w+)(?:[ ]+(\w+)|)""",
     _re.VERBOSE,
 )
-# Regex to extract Satellite Vehicle (SV) names (E.g. G02). Regex options/flags: multiline, findall
-_RE_SP3_HEAD_SV = _re.compile(rb"^\+[ ]+(?:[\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
+# Regex options/flags: multiline, findall. Updated to extract expected SV count too.
+_RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
 # Note: header is padded with '  0' entries after the actual data, so empty fields are matched and then trimmed.
@@ -259,25 +259,54 @@ def parse_sp3_header(header: str) -> _pd.DataFrame:
     :param str header: The header string of the SP3 file.
     :return pandas.DataFrame: A DataFrame containing the parsed information from the SP3 header.
     """
-    sp3_heading = _pd.Series(
-        data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
-            str
-        ),
-        index=[
-            "VERSION",
-            "PV_FLAG",
-            "DATETIME",
-            "N_EPOCHS",
-            "DATA_USED",
-            "COORD_SYS",
-            "ORB_TYPE",
-            "AC",
-            "FILE_TYPE",
-            "TIME_SYS",
-        ],
-    )
+    try:
+        sp3_heading = _pd.Series(
+            data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
+                str
+            ),
+            index=[
+                "VERSION",
+                "PV_FLAG",
+                "DATETIME",
+                "N_EPOCHS",
+                "DATA_USED",
+                "COORD_SYS",
+                "ORB_TYPE",
+                "AC",
+                "FILE_TYPE",
+                "TIME_SYS",
+            ],
+        )
+    except AttributeError as e:  # Make the exception slightly clearer.
+        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
-    head_svs = _np.asarray(b"".join(_RE_SP3_HEAD_SV.findall(header)))[_np.newaxis].view("S3").astype(str)
+    # Find all Satellite Vehicle (SV) entries
+    # Updated to also extract the count of expected SVs from the header, and compare that to the number of SVs we get.
+    # Tuple per match/line, containing the capture groups. I.e. [(group 1, group 2), (group 1, group 2)]
+    # See https://docs.python.org/3/library/re.html#re.findall
+    sv_regex_matches:list[tuple] = _RE_SP3_HEADER_SV.findall(header)
+
+    # How many SVs did the header say were there (start of first line of SV entries) E.g 30 here: +   30   G02G03...
+    head_sv_expected_count = None
+    try:
+        head_sv_expected_count = int(sv_regex_matches[0][0])  # Line 1, group 1
+    except Exception as e:
+        logger.warning("Failed to extract count of expected SVs from SP3 header.", e)
+    
+    # Get second capture group from each match, concat into byte string. These are the actual SVs. i.e. 'G02G03G04'...
+    sv_id_matches = b"".join([x[1] for x in sv_regex_matches])
+    # Now do some Numpy magic to present it chunked into three character strings (e.g. 'G02', 'G03', etc.)
+    head_svs = _np.asarray(sv_id_matches)[_np.newaxis].view("S3").astype(str)
+
+    # Sanity check that the number of SVs the regex found, matches what the header said should be there.
+    found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array.
+    if (head_sv_expected_count is not None) and (found_sv_count != head_sv_expected_count):
+        logger.warning("Number of Satellite Vehicle (SV) entries extracted from the SP3 header, did not match the "
+                       "number of SVs the header said were there! This might be a header writer or header parser bug! "
+                       f"SVs extracted: {found_sv_count}, SV count given by header: {head_sv_expected_count} "
+                       f"List of SVs extracted: '{str(head_svs)}'"
+                       )
+
     head_svs_std = (
         _np.asarray(b"".join(_RE_SP3_HEADER_ACC.findall(header)))[_np.newaxis].view("S3")[: head_svs.shape[0]].astype(int)
     )
