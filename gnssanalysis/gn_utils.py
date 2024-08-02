@@ -309,7 +309,7 @@ def snxmap(sinexpaths, outdir):
 @_click.option(
     "-o",
     "--output",
-    type=_click.Path(exists=True),
+    type=_click.Path(),
     help="output path",
     default=_os.curdir + "/merge.sp3",
 )
@@ -326,6 +326,8 @@ def sp3merge(sp3paths, clkpaths, output, nodata_to_nan):
     from .gn_io import sp3
 
     _logging.info(msg=output)
+    if clkpaths == ():
+        clkpaths = None  # clkpaths = None is a conditional used in sp3.sp3merge
     merged_df = sp3.sp3merge(sp3paths=sp3paths, clkpaths=clkpaths, nodata_to_nan=nodata_to_nan)
     sp3.write_sp3(sp3_df=merged_df, path=output)
 
@@ -556,11 +558,25 @@ def trace2mongo(trace_paths, db_name):
     default=None,
     show_default=True,
 )
-def orbq(input, output_path, format, csv_separation, json_format, nodata_to_nan, hlm_mode, satellite, constellation, header, index, reject_re):
+def orbq(
+    input,
+    output_path,
+    format,
+    csv_separation,
+    json_format,
+    nodata_to_nan,
+    hlm_mode,
+    satellite,
+    constellation,
+    header,
+    index,
+    reject_re,
+):
     """
     A simple utility to assess pairs of sp3 files
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux
+
     _logging.basicConfig(level="INFO")  # seems that logging can only be configured before the first logging call
     logger = _logging.getLogger()
     # if verbose:

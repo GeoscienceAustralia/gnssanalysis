@@ -6,6 +6,7 @@ numpy
 pandas
 plotext==4.2
 plotly
+pyfakefs
 pymongo
 pytest
 scipy
