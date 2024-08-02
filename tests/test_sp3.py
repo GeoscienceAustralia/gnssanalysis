@@ -213,3 +213,4 @@ class TestMergeSP3(TestCase):
         self.assertEqual(result.attrs["HEADER"].HEAD.VERSION, "d")
         self.assertEqual(result.attrs["HEADER"].HEAD.AC, "AIES")
         self.assertEqual(result.attrs["HEADER"].HEAD.COORD_SYS, None)
+        self.assertEqual(result.attrs["HEADER"].HEAD.PV_FLAG, "P")
