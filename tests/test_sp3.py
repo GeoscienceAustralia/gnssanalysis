@@ -47,6 +47,28 @@ VG02 -12578.915944  -7977.396362  26581.116225 999999.999999
 EOF"""
 
 
+# Minimal (and artifically modified) header for testing SV and SV accuracy code reading part of header parser.
+# Note that comment line stripping happens before the header parser, so it is not expected to deal with comment lines.
+sample_header_svs = b"""#dP2024  1 27  0  0  0.0000000      289 ORBIT IGS14 FIT  GAA
+## 2298 518400.00000000   300.00000000 60336 0.0000000000000
++   30   G02G03G04G05G06G07G08G09G10G11G12G13G14G15G16G17G18
++        G19G20G21G22G23G24G25G26G28G29G30G31G32  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10 15 15 15 15 15 15 15 15 15 15 15 15 15 15 15-14
+++        11 15 15 15 15 15 15 15 15 15 15 15 18  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c G  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+"""
+
 class TestSp3(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open, read_data=input_data)
     def test_read_sp3_pOnly(self, mock_file):
@@ -57,6 +79,55 @@ class TestSp3(unittest.TestCase):
     def test_read_sp3_pv(self, mock_file):
         result = sp3.read_sp3("mock_path", pOnly=False)
         self.assertEqual(len(result), 6)
+        # Ensure first epoch is correct / not skipped by incorrect detection of data start.
+        # Check output of both header and data section.
+        self.assertEqual(result.attrs["HEADER"]["HEAD"]["DATETIME"], "2007  4 12  0  0  0.00000000")
+        self.assertEqual(result.index[0][0], 229608000)  # Same date, as J2000
+
+    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
+    def test_read_sp3_header_svs_basic(self, mock_file):
+        """
+        Minimal test of reading SVs from header
+        """
+        result = sp3.read_sp3("mock_path", pOnly=False)
+        self.assertEqual(result.attrs["HEADER"]["SV_INFO"].shape[0], 2, "Should be two SVs in data")
+        self.assertEqual(result.attrs["HEADER"]["SV_INFO"].index[1], "G02", "Second SV should be G02")
+        self.assertEqual(result.attrs["HEADER"]["SV_INFO"].iloc[1], 8, "Second ACC should be 8")
+    
+    def test_read_sp3_header_svs_detailed(self):
+        """
+        Test header parser's ability to read SVs and their accuracy codes correctly. Uses separate, artificial
+        test header data.
+        Does NOT currently test handling of large numbers of SV entries. According to SP3-d (2016), up to 999
+        satellites are allowed!
+        """
+        # We check that negative values parse correctly, but override the default behaviour of warning about them,
+        # to keep the output clean.
+        result = sp3.parse_sp3_header(sample_header_svs, warn_on_negative_sv_acc_values=False)
+        # Pull out SV info header section, which contains SVs and their accuracy codes
+        sv_info = result["SV_INFO"]  # .attrs['HEADER'] nesting gets added by parent function.
+        sv_count = sv_info.shape[0]  # Effectively len()
+        self.assertEqual(sv_count, 30, msg="There should be 30 SVs parsed from the test data")
+
+        # Focus on potential line wraparound issues
+        first_sv = sv_info.index[0]
+        self.assertEqual(first_sv, 'G02', msg="First SV in test data should be G02")
+        end_line1_sv = sv_info.index[16]
+        self.assertEqual(end_line1_sv, 'G18', msg="Last SV on test line 1 (pos 17) should be G18")
+        start_line2_sv = sv_info.index[17]
+        self.assertEqual(start_line2_sv, 'G19', msg="First SV on test line 2 (pos 18) should be G19")
+        end_line2_sv = sv_info.index[29]
+        self.assertEqual(end_line2_sv, 'G32', msg="Last SV on test line 2 (pos 30) should be G32")
+
+        # Ensure first, wrap around, and last accuracy codes came out correctly. Data is artificial to differentiate.
+        first_acc = sv_info.iloc[0]
+        self.assertEqual(first_acc, 10, msg="First accuracy code in test data should be 10")
+        end_line1_acc = sv_info.iloc[16]
+        self.assertEqual(end_line1_acc, -14, msg="Accuracy code end line 1 in test data should be -14")
+        start_line2_acc = sv_info.iloc[17]
+        self.assertEqual(start_line2_acc, 11, msg="First ACC on test line 2 (pos 18) should be 11")
+        end_line2_acc = sv_info.iloc[29]
+        self.assertEqual(end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18")
 
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
@@ -65,6 +136,13 @@ class TestSp3(unittest.TestCase):
         self.assertTrue(sp3_df.equals(expected_result))
 
     def test_sp3_pos_nodata_to_nan(self):
+        """
+        This test data represents four 'rows' of data, each with an X, Y and Z component of the Position vector.
+        Nodata position values are indicated by all vector components being 0, as up to two components being 0 can
+        represent true (if extremely improbable) values (e.g. a satellite directly below the pole would be 0,0,z
+        with z being quite large).
+        The expected results are arranged by column not row (the second entry is 1.0, 0.0, 1.0).
+        """
         sp3_df = pd.DataFrame(
             {("EST", "X"): [0.0, 1.0, 0.0, 2.0], ("EST", "Y"): [0.0, 0.0, 0.0, 2.0], ("EST", "Z"): [0.0, 1.0, 0.0, 0.0]}
         )
