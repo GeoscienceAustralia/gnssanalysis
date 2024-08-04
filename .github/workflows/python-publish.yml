@@ -9,20 +9,16 @@
 name: Publish Python distributions to PyPI
 
 on:
-  push:
-    tags:
-      - "*"
-  workflow_run:
-    workflows: ["python-cicd-units.yml"]
+  release:
     types:
-      - completed
+      - published
 
 permissions:
   contents: read
 
 jobs:
   build-publish:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'release' }}
     name: Build and publish Python distributions to PyPI
     runs-on: ubuntu-latest
     steps:
@@ -39,8 +35,7 @@ jobs:
           pip install setuptools
           pip install versionner
       - name: Build a binary wheel
-        run: >-
-          python setup.py sdist bdist_wheel
+        run: python setup.py sdist bdist_wheel
       - name: Build package
         run: python -m build
       - name: Publish package
