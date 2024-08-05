@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build-publish:
-    if: ${{ github.event_name == 'release' }}
+    # if: ${{ github.event_name == 'release' }}
     name: Build and publish Python distributions to PyPI
     runs-on: ubuntu-latest
     steps:
