@@ -17,6 +17,7 @@ setuptools.setup(
     author_email="GNSSAnalysis@ga.gov.au",
     package_data={"gnssanalysis": ["py.typed"]},
     packages=setuptools.find_packages(),
+    # Consider switching to pyproject-toml and referencing a requirements file as per: https://stackoverflow.com/a/73600610
     install_requires=requirements,
     entry_points={
         "console_scripts": [
