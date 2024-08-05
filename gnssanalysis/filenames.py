@@ -98,9 +98,8 @@ def determine_file_name_main(
             logging.warning(f"Skipping {f.name} as {f.suffix} files are not yet supported.")
 
 
-def determine_file_name(file_path: pathlib.Path,
-                        defaults: Optional[Mapping[str, Any]] = None,
-                        overrides: Optional[Mapping[str, Any]] = None
+def determine_file_name(
+    file_path: pathlib.Path, defaults: Optional[Mapping[str, Any]] = None, overrides: Optional[Mapping[str, Any]] = None
 ) -> str:
     """Determine the IGS long filename of a file based on its contents
 
@@ -136,11 +135,11 @@ def determine_file_name(file_path: pathlib.Path,
         defaults = {}
     if overrides is None:
         overrides = {}
-    name_properties = determine_properties_from_contents(file_path, defaults, overrides)
+    name_properties = determine_properties_from_contents_and_filename(file_path, defaults, overrides)
     return generate_IGS_long_filename(**name_properties)
 
 
-def determine_properties_from_contents(
+def determine_properties_from_contents_and_filename(
     file_path: pathlib.Path,
     defaults: Optional[Mapping[str, Any]] = None,
     overrides: Optional[Mapping[str, Any]] = None,
@@ -231,8 +230,7 @@ def generate_IGS_long_filename(
     version: str = ...,
     project: str = ...,
     variable_datetime: bool = ...,
-) -> str:
-    ...
+) -> str: ...
 
 
 @overload
@@ -250,8 +248,7 @@ def generate_IGS_long_filename(
     version: str = ...,
     project: str = ...,
     variable_datetime: bool = ...,
-) -> str:
-    ...
+) -> str: ...
 
 
 def generate_IGS_long_filename(
@@ -746,6 +743,11 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
             "version": long_match["version"],
             "project": long_match["project"],
         }
+    else:
+        logging.warning(
+            "Extracting long filename properties (via regex) failed. "
+            f"Check if the following is a valid filename: {filename}"
+        )
     # Short filenames
     # At the moment we'll return data even if the format doesn't really matter
     analysis_center = basename[0:3].upper()
@@ -779,7 +781,7 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
 
 def check_filename_and_contents_consistency(
     input_file: pathlib.Path, ignore_single_epoch_short: bool = True
-) -> Mapping[str, tuple[str, str]] | None:
+) -> Mapping[str, tuple[str, str]]:
     """
     Checks that the content of the provided file matches what its filename says should be in it.
 
@@ -798,27 +800,35 @@ def check_filename_and_contents_consistency(
     :raises NotImplementedError: if called with a file type not yet supported.
     """
     file_name_properties = determine_properties_from_filename(input_file.name)
-    # The following raises NotImplementedError on unhandled filetypes
-    file_content_properties = determine_properties_from_contents(input_file)
-
-    epoch_interval = file_name_properties.get("sampling_rate_seconds", None)
-    if epoch_interval is None:
+    # If parsing of a long filename fails, Project will not be present. In this case we have with minimal (and
+    # maybe incorrect) properties to compare. So we raise a warning.
+    if "project" not in file_name_properties:
         logging.warning(
-            f"Sampling rate couldn't be inferred from filename '{input_file.name}'. "
-            "Cannot generate name vs contents discrepancy list. Returning None."
+            f"Failed to parse filename according to the long filename format: '{input_file.name}'. "
+            "As a result few useful properties are available to compare with the file contents, so the "
+            "detailed consistency check will be skipped!"
         )
-        return None
+        return {}
+
+    # The following raises NotImplementedError on unhandled filetypes
+    file_content_properties = determine_properties_from_contents_and_filename(input_file)
+
+    contents_epoch_interval = file_content_properties.get("sampling_rate_seconds", None)
+    if contents_epoch_interval is None:
+        logging.warning(
+            f"Sampling rate couldn't be inferred from file contents '{input_file.name}'. "
+            "Cannot allow for timespan discrepancies of one epoch interval, so an error may follow."
+        )
 
     discrepancies = {}
     for key in file_name_properties.keys():
-        if (file_name_val := file_name_properties[key]) != (
-            file_content_val := file_content_properties[key]
-        ):
-            # If enabled, ignore cases where the timespan of epochs in the file content, is one epoch shorter
-            # than the timespan the filename implies (e.g. 23:55 vs 1D i.e. 24:00). This is common and valid.
-            if ignore_single_epoch_short and key == "timespan":
+        if (file_name_val := file_name_properties[key]) != (file_content_val := file_content_properties[key]):
+            # If enabled, and epoch interval successfully extracted, ignore cases where the timespan of epochs in the
+            # file content, is one epoch shorter than the timespan the filename implies (e.g. 23:55 vs 1D i.e. 24:00).
+            # This is common and valid.
+            if ignore_single_epoch_short and contents_epoch_interval is not None and key == "timespan":
                 # Does subtracting one epoch from the filename's timespan make it match the file contents one?
-                if (file_name_val - epoch_interval) == file_content_val:
+                if (file_name_val - datetime.timedelta(seconds=contents_epoch_interval)) == file_content_val:
                     logging.debug(
                         "Timespan was discrepant between filename and file content, but by -1 "
                         f"epoch (sampling_rate_seconds). NOT marking as a discrepancy. Filename: {input_file.name}"
