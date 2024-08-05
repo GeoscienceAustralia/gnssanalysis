@@ -8,12 +8,16 @@ import traceback
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections import Iterable
 from typing import Iterable, Mapping, Any, Dict, Optional, Tuple, Union, overload
+import warnings
 
 import click
 import pandas as pd
 import numpy as np
 
 from . import gn_datetime, gn_io, gn_const
+
+# May be unnecessary, but for safety explicitly enable it
+logging.captureWarnings(True)
 
 
 @click.command()
@@ -744,9 +748,15 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
             "project": long_match["project"],
         }
     else:
+        logging.captureWarnings(True)  # Probably unnecessary, but for safety's sake...
+        warnings.warn(
+            "(Via warnings system) Extracting long filename properties (via regex) failed. "
+            f"Check if the following is a valid filename: {filename}",
+        )
+        # Temporary, until we confirm that warnings are coming out in main logs
         logging.warning(
-            "Extracting long filename properties (via regex) failed. "
-            f"Check if the following is a valid filename: {filename}"
+            "(Via standard logging) Extracting long filename properties (via regex) failed. "
+            f"Check if the following is a valid filename: {filename}",
         )
     # Short filenames
     # At the moment we'll return data even if the format doesn't really matter

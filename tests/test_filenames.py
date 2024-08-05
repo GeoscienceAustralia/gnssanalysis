@@ -1,4 +1,5 @@
 import datetime
+import logging
 from pathlib import Path
 from pyfakefs.fake_filesystem_unittest import TestCase
 
@@ -39,7 +40,13 @@ class TestPropsFromNameAndContent(TestCase):
         sp3_compliant_filename = Path(path_string_compliant)
 
         # Run
-        derived_from_noncompliant = filenames.determine_properties_from_contents_and_filename(sp3_noncompliant_filename)
+        with self.assertWarns(Warning):
+            # Temporary, until we confirm warnings are appearing in standard logs. Then logging.warning() call can go.
+            logging.disable(logging.WARNING)
+            derived_from_noncompliant = filenames.determine_properties_from_contents_and_filename(
+                sp3_noncompliant_filename
+            )
+            logging.disable(logging.NOTSET)
         derived_from_compliant = filenames.determine_properties_from_contents_and_filename(sp3_compliant_filename)
 
         # Verify
@@ -101,7 +108,13 @@ class TestPropsFromNameAndContent(TestCase):
         sp3_noncompliant_filename = Path(fake_path_noncompliant)
         sp3_compliant_filename = Path(fake_path_compliant)
 
-        derived_filename_noncompliant_input = filenames.determine_file_name(sp3_noncompliant_filename)
+        # Require a warning. Also silences warning (would normally be routed to logging) while running the test.
+        with self.assertWarns(Warning):
+            # Temporary, until we confirm warnings are appearing in standard logs. Then logging.warning() call can go.
+            logging.disable(logging.WARNING)
+            derived_filename_noncompliant_input = filenames.determine_file_name(sp3_noncompliant_filename)
+            logging.disable(logging.NOTSET)
+
         derived_filename_compliant_input = filenames.determine_file_name(sp3_compliant_filename)
 
         expected_filename_noncompliant_input = "FIL0EXP_20242010000_05M_05M_ORB.SP3"
