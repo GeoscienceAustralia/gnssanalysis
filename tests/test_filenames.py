@@ -5,8 +5,13 @@ from pyfakefs.fake_filesystem_unittest import TestCase
 import gnssanalysis.filenames as filenames
 from test_datasets.sp3_test_data import (
     # This is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
-    sp3_test_data_truncated_cod_final as test_sp3_data
+    sp3_test_data_truncated_cod_final as test_sp3_data,
 )
+
+# Verbatim copy of a real SP3 file with a mismatched name and contents timerange.
+# Stored in a separate file for now as it is quite large, and could potentially be
+# reworked to only contain one satellite.
+from test_datasets.sp3_incorrect_timerange import sp3_test_inconsistent_timerange
 
 
 class TestPropsFromNameAndContent(TestCase):
@@ -14,24 +19,32 @@ class TestPropsFromNameAndContent(TestCase):
     Tests for functions deriving file properties from either file content, or filename.
     TODO: add unit tests to cover other filetypes. Currently only SP3 is tested here.
     """
+
     def setUp(self):
         self.setUpPyfakefs()
-
 
     def test_determine_properties_from_contents(self):
         # Setup
         # TODO extend to run over multiple filetypes here
         # file_names = ["/fake/dir/file1.sp3", "/fake/dir/file1.clk", "/fake/dir/file1.orb", "/fake/dir/file1.rnx"]
-        fake_path_string = "/fake/dir/file1.sp3"
-        self.fs.create_file(fake_path_string, contents=test_sp3_data)
-        test_sp3_file = Path(fake_path_string)
+
+        # In the first instance we give no assistance to the filename determination function (leading to a warning).
+        # In practice the known filename would be passed in, and the result is a combination of things inferred from
+        # the filename and the file contents (as tested in the second case).
+        path_string_noncompliant = "/fake/dir/file1.sp3"
+        path_string_compliant = "/fake/dir/COD0OPSFIN_20242010000_01D_05M_ORB.SP3"
+        self.fs.create_file(path_string_noncompliant, contents=test_sp3_data)
+        self.fs.create_file(path_string_compliant, contents=test_sp3_data)
+        sp3_noncompliant_filename = Path(path_string_noncompliant)
+        sp3_compliant_filename = Path(path_string_compliant)
 
         # Run
-        derived_props = filenames.determine_properties_from_contents(test_sp3_file)
+        derived_from_noncompliant = filenames.determine_properties_from_contents_and_filename(sp3_noncompliant_filename)
+        derived_from_compliant = filenames.determine_properties_from_contents_and_filename(sp3_compliant_filename)
 
         # Verify
         # These are computed values at time of wrting:
-        known_props = {
+        known_props_noncompliant = {
             "analysis_center": "FIL",  # TODO CHECK
             "content_type": "ORB",  # TODO CHECK
             "format_type": "SP3",
@@ -41,8 +54,21 @@ class TestPropsFromNameAndContent(TestCase):
             "sampling_rate_seconds": 300.0,
             "sampling_rate": "05M",
         }
-        self.assertEqual(derived_props, known_props)
-
+        known_props_compliant = {
+            "analysis_center": "COD",
+            "content_type": "ORB",
+            "format_type": "SP3",
+            "project": "OPS",
+            "start_epoch": datetime.datetime(2024, 7, 19, 0, 0),
+            "end_epoch": datetime.datetime(2024, 7, 19, 0, 5),
+            "timespan": datetime.timedelta(seconds=300),
+            "sampling_rate_seconds": 300.0,
+            "sampling_rate": "05M",
+            "solution_type": "FIN",
+            "version": "0",
+        }
+        self.assertEqual(derived_from_noncompliant, known_props_noncompliant)
+        self.assertEqual(derived_from_compliant, known_props_compliant)
 
     def test_determine_properties_from_filename(self):
         # Run
@@ -63,18 +89,36 @@ class TestPropsFromNameAndContent(TestCase):
         }
         self.assertEqual(derived_props, known_props)
 
-
     def test_determine_file_name(self):
         """
         Test of the filename generation function that leverages determine_properties_from_contents()
         """
         # Create fake file, and real path object pointing at it.
-        fake_path_string = "/fake/dir/file1.sp3"
-        self.fs.create_file(fake_path_string, contents=test_sp3_data)
+        fake_path_noncompliant = "/fake/dir/file2.sp3"
+        fake_path_compliant = "/fake/dir/COD0OPSFIN_20242010000_01D_05M_ORB.sp3"
+        self.fs.create_file(fake_path_noncompliant, contents=test_sp3_data)
+        self.fs.create_file(fake_path_compliant, contents=test_sp3_data)
+        sp3_noncompliant_filename = Path(fake_path_noncompliant)
+        sp3_compliant_filename = Path(fake_path_compliant)
+
+        derived_filename_noncompliant_input = filenames.determine_file_name(sp3_noncompliant_filename)
+        derived_filename_compliant_input = filenames.determine_file_name(sp3_compliant_filename)
+
+        expected_filename_noncompliant_input = "FIL0EXP_20242010000_05M_05M_ORB.SP3"
+        expected_filename_compliant_input = "COD0OPSFIN_20242010000_05M_05M_ORB.SP3"
+        self.assertEqual(derived_filename_noncompliant_input, expected_filename_noncompliant_input)
+        self.assertEqual(derived_filename_compliant_input, expected_filename_compliant_input)
+
+    def test_check_discrepancies(self):
+        """
+        Test of the filename vs contents discrepancy checker
+        """
+        # Create fake file, and real path object pointing at it. But importantly in this case, use a real filename.
+        fake_path_string = "/fake/dir/GAG0EXPULT_20240270000_02D_05M_ORB.SP3"
+        self.fs.create_file(fake_path_string, contents=sp3_test_inconsistent_timerange)
         test_sp3_file = Path(fake_path_string)
 
-        derived_filename = filenames.determine_file_name(test_sp3_file)
+        discrepant_properties = filenames.check_filename_and_contents_consistency(test_sp3_file)
+        expected_discrepant_properties = {"timespan": (datetime.timedelta(days=2), datetime.timedelta(days=1))}
 
-        # Computed at time of wrting. Seems valid, but FIL and EXP are a bit odd.
-        expected_filename = "FIL0EXP_20242010000_05M_05M_ORB.SP3"
-        self.assertEqual(derived_filename, expected_filename)
+        self.assertEqual(discrepant_properties, expected_discrepant_properties)
