@@ -1,5 +1,6 @@
 import unittest
 from gnssanalysis import gn_datetime
+from datetime import datetime as _datetime
 import numpy as np
 
 
@@ -26,3 +27,22 @@ class TestGPSDate(unittest.TestCase):
         np.testing.assert_array_equal(yds_datetime, np.asarray(["2000-01-01T00:00:00"], dtype="datetime64[s]"))
         yds_yds = gn_datetime.datetime2yydoysec(yds_datetime)
         np.testing.assert_array_equal(yds_yds, yds)
+
+
+class TestSNXTimeConversion(unittest.TestCase):
+
+    def test_conversion(self):
+        # Test cases in the format (snx_time, expected_datetime)
+        test_cases = [
+            ('24:001:00000', _datetime(2024, 1, 1, 0, 0, 0)),
+            ('99:365:86399', _datetime(1999, 12, 31, 23, 59, 59)),
+            ('00:001:00000', _datetime(2000, 1, 1, 0, 0, 0)),
+            ('2024:185:11922', _datetime(2024, 7, 3, 3, 18, 42)),
+            ('1970:001:00000', _datetime(1970, 1, 1, 0, 0, 0)),
+            ('75:365:86399', _datetime(1975, 12, 31, 23, 59, 59)),
+        ]
+
+        for snx_time, expected in test_cases:
+            with self.subTest(snx_time=snx_time):
+                self.assertEqual(gn_datetime.snx_time_to_pydatetime(snx_time), expected)
+
