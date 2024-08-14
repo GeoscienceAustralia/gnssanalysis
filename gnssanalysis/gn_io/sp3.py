@@ -146,7 +146,8 @@ SP3_VELOCITY_COLUMNS = [
 # on adding a space between columns (so this cancels out the missing space here).
 # For the POS value, no leading spaces are required by the SP3 spec, but we need the total width to be 13 chars,
 # not 14 (the official width of the column i.e. F14.6), again because Pandas insists on adding a further space.
-# See comment in gen_sp3_content() line ~622 for further discussion.
+# See comment in gen_sp3_content() line ~645 for further discussion.
+# Another related 'hack' can be found at line ~602, handling the FLAGS columns.
 SP3_CLOCK_NODATA_STRING = "999999.999999"
 SP3_CLOCK_NODATA_NUMERIC = 999999
 SP3_POS_NODATA_STRING = "     0.000000"
@@ -597,6 +598,16 @@ def gen_sp3_content(
         sp3_df = sp3_df.sort_index(ascending=True)
     out_df = sp3_df["EST"]
     flags_df = sp3_df["FLAGS"]  # Prediction, maneuver, etc.
+
+    # (Another) Pandas output hack to ensure we don't get extra spaces between flags columns.
+    # Squish all the flag columns into a single string with the required amount of space (or none), so that
+    # DataFrame.to_string() can't mess it up for us by adding a compulsory space between columns that aren't meant
+    # to have one.
+    flags_squished_df = _pd.DataFrame(
+        flags_df["Clock_Event"] + flags_df["Clock_Pred"] + "  " + flags_df["Maneuver"] + flags_df["Orbit_Pred"]
+    )
+    flags_squished_df.columns = ["FLAGS_MERGED"]  # Give it a meaningful name (not needed for output)
+
     # If we have STD information transform it to the output format (integer exponents) and add to dataframe
     if "STD" in sp3_df:
         # In future we should pull this information from the header on read and store it in the dataframe attributes
@@ -626,7 +637,8 @@ def gen_sp3_content(
         std_df.attrs = {}
         std_df = std_df.transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
         std_df = std_df.rename(columns=lambda x: "STD_" + x)
-        out_df = _pd.concat([out_df, std_df, flags_df], axis="columns")
+        out_df = _pd.concat([out_df, std_df], axis="columns")
+        out_df["FLAGS_MERGED"] = flags_squished_df  # Re-inject the pre-concatenated flags column.
 
     def prn_formatter(x):
         return f"P{x}"
