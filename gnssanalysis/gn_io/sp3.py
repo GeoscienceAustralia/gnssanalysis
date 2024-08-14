@@ -35,7 +35,7 @@ _RE_SP3_HEADER_SV = _re.compile(
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
 # Note: header is padded with '  0' entries after the actual data, so empty fields are matched and then trimmed.
-_RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})$", _re.MULTILINE)
+_RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})\W", _re.MULTILINE)
 # This matches orbit accuracy codes which are three chars long, left padded with spaces, and always contain at
 # least one digit. They can be negative, though such values are unrealistic. Empty 'entries' are '0', so we have to
 # work out where to trim the data based on the number of SVs in the header.
@@ -43,11 +43,12 @@ _RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})$", _re.MUL
 # - Match the accuracy code line start of '++' then arbitary spaces, then
 # - 17 columns of:
 #   [space or digit or - ] (times two), then [digit]
-# - Then end of line.
+# - Then non-word char, to match end of line / space.
 
-# Most data matches whether or not we specify the end of line, as we are quite explicit about the format of
-# data we expect. However, using \W instead can be risky, as it fails to match the last line if there is no
-# newline following it. Note though that in SV parsing $ doesn't traverse multiline, the \W works...
+# NOTE: looking for the *end of the line* (i.e. with '$') immediately following the data, would fail to handle files
+# which pad the remainder with spaces.
+# Using \W fails to match the last line if there isn't a newline following, but given the next line should be the %c
+# line, this should never be an issue.
 
 # File descriptor and clock
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
