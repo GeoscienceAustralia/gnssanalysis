@@ -691,7 +691,7 @@ def gen_sp3_content(
         "STD_Z": pos_std_formatter,
         "STD_CLK": clk_std_formatter,  # ditto above
     }
-    for epoch, epoch_vals in out_df.reset_index("PRN").groupby(axis=0, level="J2000"):
+    for epoch, epoch_vals in out_df.reset_index("PRN").groupby(level="J2000"):
         # Format and write out the epoch in the SP3 format
         epoch_datetime = _gn_datetime.j2000_to_pydatetime(epoch)
         frac_seconds = epoch_datetime.second + (epoch_datetime.microsecond * 1e-6)
