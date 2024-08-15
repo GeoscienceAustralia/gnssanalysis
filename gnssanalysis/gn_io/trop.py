@@ -73,7 +73,7 @@ def read_tro_solution_bytes(snx_bytes: bytes, trop_mode="Ginan") -> _pd.DataFram
     try:
         solution_df = _pd.read_csv(
             _BytesIO(tro_estimate),
-            sep='\s+',
+            sep=r"\s+",
             comment=b"*",
             index_col=False,
             header=None,
