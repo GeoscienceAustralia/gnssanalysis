@@ -9,7 +9,7 @@ from .common import path2bytes
 
 
 def llh_from_blq(path_or_bytes):
-    _RE_LLH = _re.compile(b"lon\/lat\:\s+([\d\.]+)+\s+([\d\.\-]+)\s+([\d\.\-]+)")
+    _RE_LLH = _re.compile(rb"lon\/lat\:\s+([\d\.]+)+\s+([\d\.\-]+)\s+([\d\.\-]+)")
     llh = _np.asarray(_RE_LLH.findall(path2bytes(path_or_bytes)))
     llh[llh == b""] = 0  # height may be missing, e.g. interpolate_loading's output
     return llh.astype(float)

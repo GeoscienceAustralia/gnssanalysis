@@ -35,7 +35,7 @@ _RE_SP3_HEADER_SV = _re.compile(
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
 # Note: header is padded with '  0' entries after the actual data, so empty fields are matched and then trimmed.
-_RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})$", _re.MULTILINE)
+_RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})\W", _re.MULTILINE)
 # This matches orbit accuracy codes which are three chars long, left padded with spaces, and always contain at
 # least one digit. They can be negative, though such values are unrealistic. Empty 'entries' are '0', so we have to
 # work out where to trim the data based on the number of SVs in the header.
@@ -43,17 +43,18 @@ _RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})$", _re.MUL
 # - Match the accuracy code line start of '++' then arbitary spaces, then
 # - 17 columns of:
 #   [space or digit or - ] (times two), then [digit]
-# - Then end of line.
+# - Then non-word char, to match end of line / space.
 
-# Most data matches whether or not we specify the end of line, as we are quite explicit about the format of
-# data we expect. However, using \W instead can be risky, as it fails to match the last line if there is no
-# newline following it. Note though that in SV parsing $ doesn't traverse multiline, the \W works...
+# NOTE: looking for the *end of the line* (i.e. with '$') immediately following the data, would fail to handle files
+# which pad the remainder with spaces.
+# Using \W fails to match the last line if there isn't a newline following, but given the next line should be the %c
+# line, this should never be an issue.
 
 # File descriptor and clock
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
 
-_SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 1, 1, 1]
+_SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 2, 1, 1]
 _SP3_DEF_PV_NAME = [
     "PV_FLAG",
     "PRN",
@@ -77,10 +78,80 @@ _SP3_DEF_PV_NAME = [
     "Orbit_Pred_Flag",
 ]
 
+SP3_POSITION_COLUMNS = [
+    [
+        "EST",
+        "EST",
+        "EST",
+        "EST",
+        "STD",
+        "STD",
+        "STD",
+        "STD",
+        "FLAGS",
+        "FLAGS",
+        "FLAGS",
+        "FLAGS",
+    ],
+    [
+        "X",
+        "Y",
+        "Z",
+        "CLK",
+        "X",
+        "Y",
+        "Z",
+        "CLK",
+        "Clock_Event",
+        "Clock_Pred",
+        "Maneuver",
+        "Orbit_Pred",
+    ],
+]
+
+SP3_VELOCITY_COLUMNS = [
+    [
+        "EST",
+        "EST",
+        "EST",
+        "EST",
+        "STD",
+        "STD",
+        "STD",
+        "STD",
+        "FLAGS",
+        "FLAGS",
+        "FLAGS",
+        "FLAGS",
+    ],
+    [
+        "VX",
+        "VY",
+        "VZ",
+        "VCLOCK",
+        "VX",
+        "VY",
+        "VZ",
+        "VCLOCK",
+        "Clock_Event",
+        "Clock_Pred",
+        "Maneuver",
+        "Orbit_Pred",
+    ],
+]
+
 # Nodata ie NaN constants for SP3 format
-SP3_CLOCK_NODATA_STRING = " 999999.999999"
+
+# NOTE: the CLOCK and POS NODATA strings below are technicaly incorrect.
+# The specification requires a leading space on the CLOCK value, but Pandas DataFrame.to_string() (and others?) insist
+# on adding a space between columns (so this cancels out the missing space here).
+# For the POS value, no leading spaces are required by the SP3 spec, but we need the total width to be 13 chars,
+# not 14 (the official width of the column i.e. F14.6), again because Pandas insists on adding a further space.
+# See comment in gen_sp3_content() line ~645 for further discussion.
+# Another related 'hack' can be found at line ~602, handling the FLAGS columns.
+SP3_CLOCK_NODATA_STRING = "999999.999999"
 SP3_CLOCK_NODATA_NUMERIC = 999999
-SP3_POS_NODATA_STRING = "      0.000000"
+SP3_POS_NODATA_STRING = "     0.000000"
 SP3_POS_NODATA_NUMERIC = 0
 SP3_CLOCK_STD_NODATA = -1000
 SP3_POS_STD_NODATA = -100
@@ -155,6 +226,12 @@ def _process_sp3_block(
         return _pd.DataFrame()
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
     temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
+    # TODO set datatypes per column in advance
+    temp_sp3["Clock_Event_Flag"] = temp_sp3["Clock_Event_Flag"].fillna(" ")
+    temp_sp3["Clock_Pred_Flag"] = temp_sp3["Clock_Pred_Flag"].fillna(" ")
+    temp_sp3["Maneuver_Flag"] = temp_sp3["Maneuver_Flag"].fillna(" ")
+    temp_sp3["Orbit_Pred_Flag"] = temp_sp3["Orbit_Pred_Flag"].fillna(" ")
+
     dt_index = _np.repeat(a=_gn_datetime.datetime2j2000(epochs_dt.values), repeats=len(temp_sp3))
     temp_sp3.set_index(dt_index, inplace=True)
     temp_sp3.index.name = "J2000"
@@ -216,26 +293,12 @@ def read_sp3(
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
         sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
+        # TODO consider exception handling if EP rows encountered
     else:
         position_df = sp3_df.xs("P", level="PV_FLAG")
         velocity_df = sp3_df.xs("V", level="PV_FLAG")
-        velocity_df.columns = [
-            [
-                "EST",
-                "EST",
-                "EST",
-                "EST",
-                "STD",
-                "STD",
-                "STD",
-                "STD",
-                "a1",
-                "a2",
-                "a3",
-                "a4",
-            ],
-            ["VX", "VY", "VZ", "VCLOCK", "VX", "VY", "VZ", "VCLOCK", "", "", "", ""],
-        ]
+        # TODO consider exception handling if EV rows encountered
+        velocity_df.columns = SP3_VELOCITY_COLUMNS
         sp3_df = _pd.concat([position_df, velocity_df], axis=1)
 
     # sp3_df.drop(columns="PV_FLAG", inplace=True)
@@ -279,23 +342,7 @@ def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
     # remove PRN and PV_FLAG columns
     sp3_df = sp3_df.drop(columns=["PRN", "PV_FLAG"])
     # rename columns x_coordinate -> [EST, X], y_coordinate -> [EST, Y]
-    sp3_df.columns = [
-        [
-            "EST",
-            "EST",
-            "EST",
-            "EST",
-            "STD",
-            "STD",
-            "STD",
-            "STD",
-            "a1",
-            "a2",
-            "a3",
-            "a4",
-        ],
-        ["X", "Y", "Z", "CLK", "X", "Y", "Z", "CLK", "", "", "", ""],
-    ]
+    sp3_df.columns = SP3_POSITION_COLUMNS
     return sp3_df
 
 
@@ -551,6 +598,17 @@ def gen_sp3_content(
         # options that .sort_index() provides
         sp3_df = sp3_df.sort_index(ascending=True)
     out_df = sp3_df["EST"]
+    flags_df = sp3_df["FLAGS"]  # Prediction, maneuver, etc.
+
+    # (Another) Pandas output hack to ensure we don't get extra spaces between flags columns.
+    # Squish all the flag columns into a single string with the required amount of space (or none), so that
+    # DataFrame.to_string() can't mess it up for us by adding a compulsory space between columns that aren't meant
+    # to have one.
+    flags_squished_df = _pd.DataFrame(
+        flags_df["Clock_Event"] + flags_df["Clock_Pred"] + "  " + flags_df["Maneuver"] + flags_df["Orbit_Pred"]
+    )
+    flags_squished_df.columns = ["FLAGS_MERGED"]  # Give it a meaningful name (not needed for output)
+
     # If we have STD information transform it to the output format (integer exponents) and add to dataframe
     if "STD" in sp3_df:
         # In future we should pull this information from the header on read and store it in the dataframe attributes
@@ -581,6 +639,7 @@ def gen_sp3_content(
         std_df = std_df.transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
         std_df = std_df.rename(columns=lambda x: "STD_" + x)
         out_df = _pd.concat([out_df, std_df], axis="columns")
+        out_df["FLAGS_MERGED"] = flags_squished_df  # Re-inject the pre-concatenated flags column.
 
     def prn_formatter(x):
         return f"P{x}"
@@ -633,7 +692,7 @@ def gen_sp3_content(
         "STD_Z": pos_std_formatter,
         "STD_CLK": clk_std_formatter,  # ditto above
     }
-    for epoch, epoch_vals in out_df.reset_index("PRN").groupby(axis=0, level="J2000"):
+    for epoch, epoch_vals in out_df.reset_index("PRN").groupby(level="J2000"):
         # Format and write out the epoch in the SP3 format
         epoch_datetime = _gn_datetime.j2000_to_pydatetime(epoch)
         frac_seconds = epoch_datetime.second + (epoch_datetime.microsecond * 1e-6)
@@ -673,6 +732,8 @@ def gen_sp3_content(
         # relevant columns.
         # NOTE: NaN and infinity values do NOT invoke the formatter, though you can put a string in a primarily numeric
         # column, so we format the nodata values ahead of time, above.
+        # NOTE: you CAN'T mix datatypes as described above, in Pandas 3 and above, so this approach will need to be
+        # updated to use chained calls to format().
         epoch_vals.to_string(
             buf=out_buf,
             index=False,

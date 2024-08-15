@@ -23,7 +23,7 @@ def read_tro_solution(path: str, trop_mode="Ginan") -> _pd.DataFrame:
     return read_tro_solution_bytes(snx_bytes, trop_mode=trop_mode)
 
 
-def read_tro_solution_bytes(snx_bytes: bytes, trop_mode="Ginan") -> _pd.DataFrame:
+def read_tro_solution_bytes(snx_bytes: bytes, trop_mode: str = "Ginan") -> _pd.DataFrame:
     """
     Parses tro snx file into a dataframe.
 
@@ -35,8 +35,8 @@ def read_tro_solution_bytes(snx_bytes: bytes, trop_mode="Ginan") -> _pd.DataFram
     """
     tro_estimate = _gn_io.sinex._snx_extract_blk(snx_bytes=snx_bytes, blk_name="TROP/SOLUTION", remove_header=True)
     if tro_estimate is None:
-        _tqdm.write(f"bounds not found in {path}. Skipping.", end=" | ")
-        return None
+        _tqdm.write(f"bounds not found in input bytes beginning '{snx_bytes[:50]}'. Skipping.", end=" | ")
+        return None  # TODO this probably should be an exception
     tro_estimate = tro_estimate[0]  # only single block is in tro so bytes only
 
     if trop_mode == "Ginan":
@@ -73,7 +73,7 @@ def read_tro_solution_bytes(snx_bytes: bytes, trop_mode="Ginan") -> _pd.DataFram
     try:
         solution_df = _pd.read_csv(
             _BytesIO(tro_estimate),
-            sep='\s+',
+            sep=r"\s+",
             comment=b"*",
             index_col=False,
             header=None,
@@ -83,8 +83,8 @@ def read_tro_solution_bytes(snx_bytes: bytes, trop_mode="Ginan") -> _pd.DataFram
 
     except ValueError as _e:
         if _e.args[0][:33] == "could not convert string to float":
-            _tqdm.write(f"{path} data corrupted. Skipping", end=" | ")
-            return None
+            _tqdm.write(f"Input bytes beginning '{tro_estimate[:50]}': data corrupted. Skipping", end=" | ")
+            return None  # TODO this probably should be an exception
 
     solution_df.REF_EPOCH = solution_df.REF_EPOCH.apply(_gn_datetime.snx_time_to_pydatetime)
     solution_df.set_index(["CODE", "REF_EPOCH"], inplace=True)
