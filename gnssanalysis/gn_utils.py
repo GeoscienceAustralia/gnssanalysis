@@ -52,17 +52,16 @@ def get_filetype(path):
     return suffix
 
 
-def configure_logging(verbose: bool) -> None:
-    """Set up the logger object to use for encoding logging strings
-
-    :param bool verbose: Flag to increase level of detail to print to screen - True: DEBUG, False: INFO
-    """
+def configure_logging(verbose: bool, output_logger: bool = False) -> None:
     if verbose:
         logging_level = _logging.DEBUG
     else:
         logging_level = _logging.INFO
     _logging.basicConfig(format="%(asctime)s [%(funcName)s] %(levelname)s: %(message)s")
-    _logging.getLogger().setLevel(logging_level)
+    if output_logger:
+        return _logging.getLogger().setLevel(logging_level)
+    else:
+        _logging.getLogger().setLevel(logging_level)
 
 
 def ensure_folders(paths: _List[_pathlib.Path]):
@@ -602,12 +601,7 @@ def orbq(
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux
 
-    _logging.basicConfig(level="INFO")  # seems that logging can only be configured before the first logging call
-    logger = _logging.getLogger()
-    # if verbose:
-    #     logger.setLevel(_logging.INFO)
-    # else:
-    #     _logging.disable()
+    logger = configure_logging(verbose=True, output_logger=True)
 
     sp3_a = gn_io.sp3.read_sp3(input[0], nodata_to_nan=nodata_to_nan)
     sp3_b = gn_io.sp3.read_sp3(input[1], nodata_to_nan=nodata_to_nan)
@@ -795,12 +789,8 @@ def clkq(
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux, gn_const
 
-    _logging.basicConfig(level="INFO")  # seems that logging can only be configured before the first logging call
-    logger = _logging.getLogger()
-    if verbose:
-        logger.setLevel(_logging.INFO)
-    else:
-        _logging.disable()
+    logger = configure_logging(verbose=verbose, output_logger=True)
+
     clk_a, clk_b = gn_io.clk.read_clk(input_clk_paths[0]), gn_io.clk.read_clk(input_clk_paths[1])
     if reject_re is not None:
         logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
