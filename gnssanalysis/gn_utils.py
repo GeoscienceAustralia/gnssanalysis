@@ -5,7 +5,7 @@ import pathlib as _pathlib
 
 import click as _click
 
-from typing import List
+from typing import List as _List
 
 
 def diffutil_verify_input(input):
@@ -50,6 +50,31 @@ def get_filetype(path):
     elif suffix[:2].isdigit and suffix[2] == "i":
         return "ionex"
     return suffix
+
+
+def configure_logging(verbose: bool) -> None:
+    """Set up the logger object to use for encoding logging strings
+
+    :param bool verbose: Flag to increase level of detail to print to screen - True: DEBUG, False: INFO
+    """
+    if verbose:
+        logging_level = _logging.DEBUG
+    else:
+        logging_level = _logging.INFO
+    _logging.basicConfig(format="%(asctime)s [%(funcName)s] %(levelname)s: %(message)s")
+    _logging.getLogger().setLevel(logging_level)
+
+
+def ensure_folders(paths: _List[_pathlib.Path]):
+    """Ensures the folders in the input list exist in the file system - if not, create them
+
+    :param _List[_pathlib.Path] paths: list of pathlib.Path/s to check
+    """
+    for path in paths:
+        if not isinstance(path, _pathlib.Path):
+            path = _pathlib.Path(path)
+        if not path.is_dir():
+            path.mkdir(parents=True, exist_ok=True)
 
 
 @_click.group(invoke_without_command=True)
