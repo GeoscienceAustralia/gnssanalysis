@@ -883,7 +883,7 @@ def download_product_from_cddis(
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
     """
-    # DZ: Download the correct IGS FIN ERP files
+    # Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
         start_epoch = GPSDate(str(start_epoch))
         start_epoch = gpswkD2dt(f"{start_epoch.gpswk}0")
