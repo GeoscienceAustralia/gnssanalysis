@@ -406,7 +406,7 @@ def check_whether_to_download(
 
     :param str filename: Filename of the downloaded file
     :param _Path download_dir: Path obj to download directory
-    :param str if_file_present: How to handle files that are already present ["replace","dont_replace","prompt_user"], defaults to "prompt_user"
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :return _Union[_Path, None]: Path obj to the downloaded file if file should be downloaded, otherwise returns None
     """
     # Flag to determine whether to download:
@@ -461,7 +461,7 @@ def attempt_ftps_download(
     :param _ftplib.FTP_TLS ftps: FTP_TLS client pointed at download source
     :param str filename: Filename to assign for the downloaded file
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
-    :param str if_file_present: How to handle files that are already present ["replace","dont_replace","prompt_user"], defaults to "prompt_user"
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :return _Path: Path obj to the downloaded file
     """
     ""
@@ -486,7 +486,7 @@ def attempt_url_download(
     :param str url: URL to download
     :param str filename: Filename to assign for the downloaded file, defaults to None
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
-    :param str if_file_present: How to handle files that are already present ["replace","dont_replace","prompt_user"], defaults to "prompt_user"
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :return Path: Path obj to the downloaded file
     """
     # If the filename is not provided, use the filename from the URL
@@ -874,9 +874,9 @@ def download_product_from_cddis(
     :param str solution_type: Which solution type to download (e.g. ULT, RAP, FIN), defaults to "ULT"
     :param str sampling_rate: Sampling rate of file to download, defaults to "15M"
     :param str project_type: Project type of file to download (e.g. ), defaults to "OPS"
-    :param _datetime.timedelta timespan: _description_, defaults to _datetime.timedelta(days=2)
-    :param str if_file_present: _description_, defaults to "prompt_user"
-    :raises FileNotFoundError: _description_
+    :param _datetime.timedelta timespan: Timespan of the file/s to download, defaults to _datetime.timedelta(days=2)
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
     """
     # DZ: Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
