@@ -64,10 +64,11 @@ def configure_logging(verbose: bool, output_logger: bool = False) -> _Union[_log
     else:
         logging_level = _logging.INFO
     _logging.basicConfig(format="%(asctime)s [%(funcName)s] %(levelname)s: %(message)s")
+    _logging.getLogger().setLevel(logging_level)
     if output_logger:
-        return _logging.getLogger().setLevel(logging_level)
+        return _logging.getLogger()
     else:
-        _logging.getLogger().setLevel(logging_level)
+        return None
 
 
 def ensure_folders(paths: _List[_pathlib.Path]):
