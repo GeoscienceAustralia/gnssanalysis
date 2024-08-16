@@ -1010,15 +1010,12 @@ def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user"
     """
     ensure_folders([download_dir])
     download_filepaths = []
-    targets = ["bds_yaw_modes.snx.gz", "qzss_yaw_modes.snx.gz", "sat_yaw_bias_rate.snx.gz"]
-    urls = [PRODUCT_BASE_URL + target for target in targets]
-
-    for url, target in zip(urls, targets):
-
+    files = ["bds_yaw_modes.snx.gz", "qzss_yaw_modes.snx.gz", "sat_yaw_bias_rate.snx.gz"]
+    for filename in files:
         download_filepath = attempt_url_download(
             download_dir=download_dir,
-            url=url,
-            filename=target,
+            url=PRODUCT_BASE_URL + filename,
+            filename=filename,
             type_of_file="Yaw Model SNX",
             if_file_present=if_file_present,
         )
