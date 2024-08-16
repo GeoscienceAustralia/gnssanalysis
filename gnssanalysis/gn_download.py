@@ -40,6 +40,8 @@ from .gn_utils import ensure_folders
 MB = 1024 * 1024
 
 CDDIS_FTP = "gdc.cddis.eosdis.nasa.gov"
+PRODUCT_BASE_URL = "https://peanpod.s3.ap-southeast-2.amazonaws.com/aux/products/"
+IGS_FILES_URL = "https://files.igs.org/pub/"
 
 # s3client = boto3.client('s3', region_name='eu-central-1')
 
@@ -793,14 +795,17 @@ def download_file_from_cddis(
     if_file_present: str = "prompt_user",
     note_filetype: str = None,
 ) -> _Path:
-    """Downloads a single file from the cddis ftp server.
+    """Downloads a single file from the CDDIS ftp server
 
-    :param filename: Name of the file to download
-    :ftp_folder: Folder where the file is stored on the remote
-    :output_folder: Folder to store the output file
-    :ftps: Optional active connection object which is reused
-    :max_retries: Number of retries before raising error
-    :uncomp: If true, uncompress files on download
+    :param str filename: Name of the file to download
+    :param str ftp_folder: Folder where the file is stored on the remote server
+    :param _Path output_folder: Local folder to store the output file
+    :param int max_retries: Number of retries before raising error, defaults to 3
+    :param bool decompress: If true, decompresses files on download, defaults to True
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :param str note_filetype: How to label the file for STDOUT messages, defaults to None
+    :raises e: Raise any error that is run into by ftplib
+    :return _Path: Return the local Path of the file downloaded
     """
     with ftp_tls("gdc.cddis.eosdis.nasa.gov") as ftps:
         ftps.cwd(ftp_folder)
@@ -836,7 +841,7 @@ def download_file_from_cddis(
     return download_filepath
 
 
-def download_multiple_files_from_cddis(files: [str], ftp_folder: str, output_folder: _Path) -> None:
+def download_multiple_files_from_cddis(files: _List[str], ftp_folder: str, output_folder: _Path) -> None:
     """Downloads multiple files in a single folder from cddis in a thread pool.
 
     :param files: List of str filenames
@@ -854,7 +859,7 @@ def download_product_from_cddis(
     end_epoch: _datetime,
     file_ext: str,
     limit: int = None,
-    long_filename: bool = None,
+    long_filename: Optional[bool] = None,
     analysis_center: str = "IGS",
     solution_type: str = "ULT",
     sampling_rate: str = "15M",
@@ -878,7 +883,7 @@ def download_product_from_cddis(
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
     """
-    # DZ: Download the correct IGS FIN ERP files
+    # Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
         start_epoch = GPSDate(str(start_epoch))
         start_epoch = gpswkD2dt(f"{start_epoch.gpswk}0")
@@ -972,7 +977,7 @@ def download_atx(download_dir: _Path, long_filename: bool = False, if_file_prese
     else:
         atx_filename = "igs14.atx"
     ensure_folders([download_dir])
-    url = f"https://files.igs.org/pub/station/general/{atx_filename}"
+    url = IGS_FILES_URL + f"station/general/{atx_filename}"
     attempt_url_download(
         download_dir=download_dir, url=url, filename=atx_filename, type_of_file="ATX", if_file_present=if_file_present
     )
@@ -988,7 +993,7 @@ def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = 
     ensure_folders([download_dir])
     download_filepath = attempt_url_download(
         download_dir=download_dir,
-        url="https://files.igs.org/pub/station/general/igs_satellite_metadata.snx",
+        url=IGS_FILES_URL + "station/general/igs_satellite_metadata.snx",
         filename="igs_satellite_metadata.snx",
         type_of_file="IGS satellite metadata",
         if_file_present=if_file_present,
@@ -1004,13 +1009,9 @@ def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user"
     :return _List[_Path]: Return list of download files
     """
     ensure_folders([download_dir])
-    urls = [
-        "https://peanpod.s3.ap-southeast-2.amazonaws.com/aux/products/tables/bds_yaw_modes.snx.gz",
-        "https://peanpod.s3.ap-southeast-2.amazonaws.com/aux/products/tables/qzss_yaw_modes.snx.gz",
-        "https://peanpod.s3.ap-southeast-2.amazonaws.com/aux/products/tables/sat_yaw_bias_rate.snx.gz",
-    ]
     download_filepaths = []
     targets = ["bds_yaw_modes.snx.gz", "qzss_yaw_modes.snx.gz", "sat_yaw_bias_rate.snx.gz"]
+    urls = [PRODUCT_BASE_URL + target for target in targets]
 
     for url, target in zip(urls, targets):
 
