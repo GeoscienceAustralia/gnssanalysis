@@ -660,7 +660,7 @@ def connect_cddis(verbose=False):
     if verbose:
         logging.info("\nConnecting to CDDIS server...")
 
-    ftps = _FTP_TLS("gdc.cddis.eosdis.nasa.gov")
+    ftps = _FTP_TLS(CDDIS_FTP)
     ftps.login()
     ftps.prot_p()
 
@@ -684,108 +684,6 @@ def ftp_tls(url: str, **kwargs) -> None:
         ftps.quit()
 
 
-@_contextmanager
-def ftp_tls_cddis(connection: _FTP_TLS = None, **kwargs) -> None:
-    """Establish an ftp tls connection to CDDIS. Opens a new connection if one does not already exist.
-
-    :param connection: Active connection which is passed through to allow reuse
-    """
-    if connection is None:
-        with ftp_tls(CDDIS_FTP, **kwargs) as ftps:
-            yield ftps
-    else:
-        yield connection
-
-
-def select_mr_file(mr_files, f_typ, ac):
-    """
-    Given a list of most recent files, find files matching type and AC of interest
-    """
-    if ac == "any":
-        search_str = f".{f_typ}.Z"
-        mr_typ_files = [f for f in mr_files if f.endswith(search_str)]
-    else:
-        search_str_end = f".{f_typ}.Z"
-        search_str_sta = f"{ac}"
-        mr_typ_files = [f for f in mr_files if ((f.startswith(search_str_sta)) & (f.endswith(search_str_end)))]
-
-    return mr_typ_files
-
-
-def find_mr_file(dt, f_typ, ac, ftps):
-    """Given connection to the ftps server, find the most recent file of type f_typ and analysis centre ac"""
-    c_gpswk = dt2gpswk(dt)
-
-    ftps.cwd(f"gnss/products/{c_gpswk}")
-    mr_files = ftps.nlst()
-    mr_typ_files = select_mr_file(mr_files, f_typ, ac)
-
-    if mr_typ_files == []:
-        while mr_typ_files == []:
-            logging.info(f"GPS Week {c_gpswk} too recent")
-            logging.info(f"No {ac} {f_typ} files found in GPS week {c_gpswk}")
-            logging.info(f"Moving to GPS week {int(c_gpswk) - 1}")
-            c_gpswk = str(int(c_gpswk) - 1)
-            ftps.cwd(f"../{c_gpswk}")
-            mr_files = ftps.nlst()
-            mr_typ_files = select_mr_file(mr_files, f_typ, ac)
-    mr_file = mr_typ_files[-1]
-    return mr_file, ftps, c_gpswk
-
-
-def download_most_recent(
-    dest, f_type, ftps=None, ac="any", dwn_src="cddis", f_dict_out=False, gpswkD_out=False, ftps_out=False
-):
-    """
-    Download the most recent version of a product file
-    """
-    # File types should be converted to lists if not already a list
-    if isinstance(f_type, list):
-        f_types = f_type
-    else:
-        f_types = [f_type]
-
-    # Create directory if doesn't exist:
-    if not _Path(dest).is_dir():
-        _Path(dest).mkdir(parents=True)
-
-    # Create list to hold filenames that will be downloaded:
-    if f_dict_out:
-        f_dict = {f_typ: [] for f_typ in f_types}
-    if gpswkD_out:
-        gpswk_dict = {f_typ + "_gpswkD": [] for f_typ in f_types}
-    # Connect to ftps if not already:
-    if not ftps:
-        # Connect to chosen server
-        if dwn_src == "cddis":
-            ftps = connect_cddis()
-
-            for f_typ in f_types:
-                logging.info(f"\nSearching for most recent {ac} {f_typ}...\n")
-
-                dt = (_np.datetime64("today") - 1).astype(_datetime.datetime)
-                mr_file, ftps, c_gpswk = find_mr_file(dt, f_typ, ac, ftps)
-                check_n_download(mr_file, dwndir=dest, ftps=ftps, uncomp=True)
-                ftps.cwd(f"/")
-                if f_dict_out:
-                    f_uncomp = gen_uncomp_filename(mr_file)
-                    if f_uncomp not in f_dict[f_typ]:
-                        f_dict[f_typ].append(f_uncomp)
-                c_gpswkD = mr_file[3:8]
-                if gpswkD_out:
-                    gpswk_dict[f_typ + "_gpswkD"].append(c_gpswkD)
-
-            ret_vars = []
-            if f_dict_out:
-                ret_vars.append(f_dict)
-            if gpswkD_out:
-                ret_vars.append(gpswk_dict)
-            if ftps_out:
-                ret_vars.append(ftps)
-
-            return ret_vars
-
-
 def download_file_from_cddis(
     filename: str,
     ftp_folder: str,
@@ -807,7 +705,7 @@ def download_file_from_cddis(
     :raises e: Raise any error that is run into by ftplib
     :return _Path: Return the local Path of the file downloaded
     """
-    with ftp_tls("gdc.cddis.eosdis.nasa.gov") as ftps:
+    with ftp_tls(CDDIS_FTP) as ftps:
         ftps.cwd(ftp_folder)
         retries = 0
         download_done = False
@@ -909,7 +807,7 @@ def download_product_from_cddis(
     logging.debug(
         f"Generated filename: {product_filename}, with GPS Date: {gps_date.gpswkD} and reference: {reference_start}"
     )
-    with ftp_tls("gdc.cddis.eosdis.nasa.gov") as ftps:
+    with ftp_tls(CDDIS_FTP) as ftps:
         try:
             ftps.cwd(f"gnss/products/{gps_date.gpswk}")
         except _ftplib.all_errors as e:
