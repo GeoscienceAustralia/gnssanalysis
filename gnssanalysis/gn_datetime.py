@@ -249,10 +249,8 @@ def j20002j2000days(array: _np.ndarray) -> _np.ndarray:
     return (array - _gn_const.SEC_IN_12_HOURS) // _gn_const.SEC_IN_DAY
 
 
-def mjd2datetime(mjd: _np.ndarray, seconds_frac: _np.ndarray, pea_partials=False) -> _np.ndarray:
-    seconds = (
-        (86400 * seconds_frac).astype("int64") if not pea_partials else seconds_frac.astype("int64")
-    )  # pod orb_partials file has a custom mjd date format with frac being seconds
+def mjd2datetime(mjd: _np.ndarray, seconds_frac: _np.ndarray) -> _np.ndarray:
+    seconds = seconds_frac.astype("int64")
     dt = _gn_const.MJD_ORIGIN + mjd.astype("timedelta64[D]") + seconds
     return dt
 
@@ -267,8 +265,8 @@ def mjd_to_pydatetime(mjd: float) -> _datetime:
     return mjd_epoch_dt + _timedelta(days=mjd - 51544.00)
 
 
-def mjd2j2000(mjd: _np.ndarray, seconds_frac: _np.ndarray, pea_partials=False) -> _np.ndarray:
-    datetime = mjd2datetime(mjd=mjd, seconds_frac=seconds_frac, pea_partials=pea_partials)
+def mjd2j2000(mjd: _np.ndarray, seconds_frac: _np.ndarray) -> _np.ndarray:
+    datetime = mjd2datetime(mjd=mjd, seconds_frac=seconds_frac)
     return datetime2j2000(datetime)
 
 
