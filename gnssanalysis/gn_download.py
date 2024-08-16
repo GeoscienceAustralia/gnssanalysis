@@ -854,7 +854,7 @@ def download_product_from_cddis(
     end_epoch: _datetime,
     file_ext: str,
     limit: int = None,
-    long_filename: bool = False,
+    long_filename: bool = None,
     analysis_center: str = "IGS",
     solution_type: str = "ULT",
     sampling_rate: str = "15M",
@@ -862,9 +862,21 @@ def download_product_from_cddis(
     timespan: _datetime.timedelta = _datetime.timedelta(days=2),
     if_file_present: str = "prompt_user",
 ) -> None:
-    """
-    Download the file/s from CDDIS based on start and end epoch, to the
-    provided the download directory (download_dir)
+    """Download the file/s from CDDIS based on start and end epoch, to the download directory (download_dir)
+
+    :param _Path download_dir: Where to download files
+    :param _datetime start_epoch: Start date/time of files to find and download
+    :param _datetime end_epoch: End date/time of files to find and download
+    :param str file_ext: Extension of files to download (e.g. SP3, CLK, ERP, etc)
+    :param int limit: Variable to limit the number of files downloaded, defaults to None
+    :param bool long_filename: Search for IGS long filename, if None use start_epoch to determine, defaults to None
+    :param str analysis_center: Which analysis center's files to download (e.g. COD, GFZ, WHU, etc), defaults to "IGS"
+    :param str solution_type: Which solution type to download (e.g. ULT, RAP, FIN), defaults to "ULT"
+    :param str sampling_rate: Sampling rate of file to download, defaults to "15M"
+    :param str project_type: Project type of file to download (e.g. ), defaults to "OPS"
+    :param _datetime.timedelta timespan: _description_, defaults to _datetime.timedelta(days=2)
+    :param str if_file_present: _description_, defaults to "prompt_user"
+    :raises FileNotFoundError: _description_
     """
     # DZ: Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
@@ -875,6 +887,8 @@ def download_product_from_cddis(
     logging.debug("Attempting CDDIS Product download/s")
     logging.debug(f"Start Epoch - {start_epoch}")
     logging.debug(f"End Epoch - {end_epoch}")
+    if long_filename == None:
+        long_filename = long_filename_cddis_cutoff(start_epoch)
 
     reference_start = _deepcopy(start_epoch)
     product_filename, gps_date, reference_start = generate_product_filename(
@@ -901,7 +915,7 @@ def download_product_from_cddis(
                 file_ext,
                 shift=-6,
                 long_filename=long_filename,
-                AC=analysis_center,
+                analysis_center=analysis_center,
                 timespan=timespan,
                 solution_type=solution_type,
                 sampling_rate=sampling_rate,
@@ -927,7 +941,7 @@ def download_product_from_cddis(
                     file_ext,
                     shift=24,  # Shift at the start of the loop - speeds up total download time
                     long_filename=long_filename,
-        analysis_center=analysis_center,
+                    analysis_center=analysis_center,
                     timespan=timespan,
                     solution_type=solution_type,
                     sampling_rate=sampling_rate,
@@ -983,11 +997,11 @@ def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = 
 
 
 def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> _List[_Path]:
-    """_summary_
+    """Download yaw rate / bias files needed to for Ginan's PEA
 
     :param _Path download_dir: Directory to store the file in
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _List[_Path]: _description_
+    :return _List[_Path]: Return list of download files
     """
     ensure_folders([download_dir])
     urls = [
