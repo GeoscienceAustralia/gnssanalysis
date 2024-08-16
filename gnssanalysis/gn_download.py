@@ -927,7 +927,7 @@ def download_product_from_cddis(
                     file_ext,
                     shift=24,  # Shift at the start of the loop - speeds up total download time
                     long_filename=long_filename,
-                    AC=analysis_center,
+        analysis_center=analysis_center,
                     timespan=timespan,
                     solution_type=solution_type,
                     sampling_rate=sampling_rate,
