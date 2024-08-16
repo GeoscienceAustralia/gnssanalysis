@@ -564,26 +564,6 @@ def diffsp3(
     return status
 
 
-def diffpodout(pod_out_a_path, pod_out_b_path, tol, log_lvl):
-    pod_out_a, pod_out_b = _gn_io.pod.read_pod_out(pod_out_a_path), _gn_io.pod.read_pod_out(pod_out_b_path)
-    status = 0
-    diff_pod_out = pod_out_a - pod_out_b
-
-    bad_rac_vals = _diff2msg(diff_pod_out.unstack(1), tol=tol)
-    if bad_rac_vals is not None:
-        _logging.log(
-            msg=f':diffutil found estimates diffs above {"the extracted STDs" if tol is None else f"{tol:.1E} tolerance"}:\n{bad_rac_vals.to_string(justify="center")}\n',
-            level=log_lvl,
-        )
-        status = -1
-    else:
-        _logging.log(
-            msg=f':diffutil [OK] estimates diffs within {"the extracted STDs" if tol is None else f"{tol:.1E} tolerance"}',
-            level=_logging.INFO,
-        )
-    return status
-
-
 def diffblq(blq_a_path, blq_b_path, tol, log_lvl):
     if tol is None:
         _logging.error(":diffutil STD [tol=None] is not supported for the blq files")

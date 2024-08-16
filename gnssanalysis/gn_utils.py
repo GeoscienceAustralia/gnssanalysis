@@ -253,21 +253,6 @@ def sp3(ctx, aux1, aux2, nodata_to_nan, hlm_mode, rac):  # no coef
 
 @diffutil.command()
 @_click.pass_context
-def pod(ctx):  # no coef
-    from .gn_diffaux import diffpodout
-
-    diffutil_verify_input(ctx.parent.params["input"])
-    status = diffpodout(
-        pod_out_a_path=ctx.parent.params["input"][0],
-        pod_out_b_path=ctx.parent.params["input"][1],
-        tol=ctx.parent.params["atol"],
-        log_lvl=ctx.parent.params["log_lvl"],
-    )
-    diffutil_verify_status(status=status, passthrough=ctx.parent.params["passthrough"])
-
-
-@diffutil.command()
-@_click.pass_context
 def blq(ctx):  # no coef
     from .gn_diffaux import diffblq
 
