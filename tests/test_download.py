@@ -40,7 +40,7 @@ class TestDownload(TestCase):
     def test_download_atx(self):
 
         # Test download of ATX file
-        downloaded_file = ga_download.download_atx(download_dir=Path(self.test_dir), long_filename=True)
+        downloaded_file = ga_download.download_atx(download_dir=Path(self.test_dir), reference_frame="IGS20")
 
         # Verify
         self.assertEqual(type(downloaded_file), PosixPath)
@@ -48,7 +48,7 @@ class TestDownload(TestCase):
 
         # Re-try download - do not re-download
         downloaded_file = ga_download.download_atx(
-            download_dir=Path(self.test_dir), long_filename=True, if_file_present="dont_replace"
+            download_dir=Path(self.test_dir), reference_frame="IGS20", if_file_present="dont_replace"
         )
 
         # Verify
