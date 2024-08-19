@@ -432,7 +432,7 @@ def attempt_ftps_download(
     :param str filename: Filename to assign for the downloaded file
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path: Return the pathlib.Path of the downloaded file
+    :return _Path: The pathlib.Path of the downloaded file
     """
     ""
     logging.info(f"Attempting FTPS Download of {type_of_file} file - {filename} to {download_dir}")
@@ -671,7 +671,7 @@ def download_file_from_cddis(
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :param str note_filetype: How to label the file for STDOUT messages, defaults to None
     :raises e: Raise any error that is run into by ftplib
-    :return _Path: Return the pathlib.Path of the downloaded file
+    :return _Path: The pathlib.Path of the downloaded file
     """
     with ftp_tls(CDDIS_FTP) as ftps:
         ftps.cwd(ftp_folder)
@@ -839,7 +839,7 @@ def download_atx(download_dir: _Path, long_filename: bool = False, if_file_prese
     :param _Path download_dir: Where to download files (local directory)
     :param bool long_filename: Download ATX file relevant after 2022-11-27? True: igs20, False:igs14, defaults to False
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path: Return the pathlib.Path of the downloaded file
+    :return _Path: The pathlib.Path of the downloaded file
     """
     if long_filename:
         atx_filename = "igs20.atx"
@@ -858,7 +858,7 @@ def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = 
 
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path: Return the pathlib.Path of the downloaded file
+    :return _Path: The pathlib.Path of the downloaded file
     """
     ensure_folders([download_dir])
     download_filepath = attempt_url_download(
