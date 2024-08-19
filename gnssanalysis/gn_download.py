@@ -916,7 +916,7 @@ def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user"
     for filename in files:
         download_filepath = attempt_url_download(
             download_dir=download_dir,
-            url=PRODUCT_BASE_URL + filename,
+            url=PRODUCT_BASE_URL + +"tables/" + filename,
             filename=filename,
             type_of_file="Yaw Model SNX",
             if_file_present=if_file_present,
