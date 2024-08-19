@@ -184,38 +184,6 @@ def gen_uncomp_filename(comp_filename: str) -> str:
         return comp_filename
 
 
-def gen_prod_filename(dt, pref, suff, f_type, wkly_file=False, repro3=False):
-    """
-    Generate a product filename based on the inputs
-    """
-    gpswk, gpswkD = dt2gpswk(dt, both=True)
-
-    if repro3:
-        if f_type == "erp":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_01D_{f_type.upper()}.{f_type.upper()}.gz'
-        elif f_type == "clk":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_30S_{f_type.upper()}.{f_type.upper()}.gz'
-        elif f_type == "bia":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_01D_OSB.{f_type.upper()}.gz'
-        elif f_type == "sp3":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_05M_ORB.{f_type.upper()}.gz'
-        elif f_type == "snx":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_01D_SOL.{f_type.upper()}.gz'
-        elif f_type == "rnx":
-            f = f'BRDC00{pref.upper()}_R_{dt.year}{dt.strftime("%j")}0000_01D_MN.rnx.gz'
-    elif (pref == "igs") & (f_type == "snx") & wkly_file:
-        f = f"{pref}{str(dt.year)[2:]}P{gpswk}.{f_type}.Z"
-    elif (pref == "igs") & (f_type == "snx"):
-        f = f"{pref}{str(dt.year)[2:]}P{gpswkD}.{f_type}.Z"
-    elif f_type == "rnx":
-        f = f'BRDC00{pref.upper()}_R_{dt.year}{dt.strftime("%j")}0000_01D_MN.rnx.gz'
-    elif wkly_file:
-        f = f"{pref}{gpswk}{suff}.{f_type}.Z"
-    else:
-        f = f"{pref}{gpswkD}{suff}.{f_type}.Z"
-    return f, gpswk
-
-
 def generate_uncompressed_filename(filename: str) -> str:
     """Returns a string of the uncompressed filename given the [assumed compressed] filename
 
