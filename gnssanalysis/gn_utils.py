@@ -53,9 +53,9 @@ def get_filetype(path):
 
 
 def configure_logging(verbose: bool, output_logger: bool = False) -> _Union[_logging.Logger, None]:
-    """_summary_
+    """Configure the logger object with the level of verbosity requested and output if desired
 
-    :param bool verbose: Set up the logger object to use for encoding logging strings
+    :param bool verbose: Verbosity of logger object to use for encoding logging strings, True: DEBUG, False: INFO
     :param bool output_logger: Flag to indicate whether to output the Logger object, defaults to False
     :return _Union[_logging.Logger, None]: Return the logger object or None (based on output_logger)
     """

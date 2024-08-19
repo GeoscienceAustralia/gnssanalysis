@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch, mock_open
 from pyfakefs.fake_filesystem_unittest import TestCase
 from pathlib import Path, PosixPath
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -22,9 +23,23 @@ class TestDownload(TestCase):
         if Path(self.test_dir).is_dir():
             delete_entire_directory(Path(self.test_dir))
 
-    def test_download_atx_file(self):
+    def test_download_product_from_cddis(self):
 
-        # Test download of yaw files
+        # Test download of file from CDDIS (in this case an IGS ULT)
+        ga_download.download_product_from_cddis(
+            download_dir=Path(self.test_dir),
+            start_epoch=datetime(2024, 8, 10),
+            end_epoch=datetime(2024, 8, 12),
+            file_ext="SP3",
+        )
+
+        # Verify
+        self.assertEqual(type(next(Path(self.test_dir).glob("*.SP3"))), PosixPath)
+        self.assertEqual(next(Path(self.test_dir).glob("*.SP3")).name, "IGS0OPSULT_20242230000_02D_15M_ORB.SP3")
+
+    def test_download_atx(self):
+
+        # Test download of ATX file
         downloaded_file = ga_download.download_atx(download_dir=Path(self.test_dir), long_filename=True)
 
         # Verify
@@ -32,7 +47,24 @@ class TestDownload(TestCase):
         self.assertEqual(downloaded_file.name, "igs20.atx")
 
         # Re-try download - do not re-download
-        downloaded_file = ga_download.download_yaw_files(
+        downloaded_file = ga_download.download_atx(
+            download_dir=Path(self.test_dir), long_filename=True, if_file_present="dont_replace"
+        )
+
+        # Verify
+        self.assertEqual(downloaded_file, None)
+
+    def test_download_satellite_metadata_snx(self):
+
+        # Test download of satellite metadata SNX file
+        downloaded_file = ga_download.download_satellite_metadata_snx(download_dir=Path(self.test_dir))
+
+        # Verify
+        self.assertEqual(type(downloaded_file), PosixPath)
+        self.assertEqual(downloaded_file.name, "igs_satellite_metadata.snx")
+
+        # Re-try download - do not re-download
+        downloaded_file = ga_download.download_satellite_metadata_snx(
             download_dir=Path(self.test_dir), if_file_present="dont_replace"
         )
 
@@ -50,7 +82,7 @@ class TestDownload(TestCase):
         self.assertEqual(downloaded_files[1].name, "qzss_yaw_modes.snx")
         self.assertEqual(downloaded_files[2].name, "sat_yaw_bias_rate.snx")
 
-        # Re-try download - do re-download
+        # Re-try download
         downloaded_files = ga_download.download_yaw_files(download_dir=Path(self.test_dir), if_file_present="replace")
 
         # Verify
