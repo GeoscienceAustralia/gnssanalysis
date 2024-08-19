@@ -83,6 +83,23 @@ def ensure_folders(paths: _List[_pathlib.Path]):
             path.mkdir(parents=True, exist_ok=True)
 
 
+def delete_entire_directory(directory: _pathlib.Path):
+    """Recursively delete a directory, including all subdirectories and files in subdirectories
+
+    :param Path directory: Directory to recursively delete
+    """
+    # First, iterate through all the files and subdirectories
+    for item in directory.iterdir():
+        if item.is_dir():
+            # Recursively delete subdirectories
+            delete_entire_directory(item)
+        else:
+            # Delete files
+            item.unlink()
+    # Finally, delete the empty directory itself
+    directory.rmdir()
+
+
 @_click.group(invoke_without_command=True)
 @_click.option(
     "-i",
