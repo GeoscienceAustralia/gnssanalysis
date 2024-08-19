@@ -833,18 +833,19 @@ def download_product_from_cddis(
                 remain = end_epoch - reference_start
 
 
-def download_atx(download_dir: _Path, long_filename: bool = False, if_file_present: str = "prompt_user") -> _Path:
+def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_present: str = "prompt_user") -> _Path:
     """Download the ATX file necessary for running the PEA provided the download directory (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
-    :param bool long_filename: Download ATX file relevant after 2022-11-27? True: igs20, False:igs14, defaults to False
+    :param str reference_frame: Coordinate reference frame file to download, defaults to "IGS20"
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :return _Path: The pathlib.Path of the downloaded file
     """
-    if long_filename:
-        atx_filename = "igs20.atx"
-    else:
-        atx_filename = "igs14.atx"
+    match reference_frame:
+        case "IGS20":
+            atx_filename = "igs20.atx"
+        case "IGb14":
+            atx_filename = "igs14.atx"
     ensure_folders([download_dir])
     url = IGS_FILES_URL + f"station/general/{atx_filename}"
     download_filepath = attempt_url_download(
