@@ -847,20 +847,30 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
             atx_filename = "igs20.atx"
         case "IGb14":
             atx_filename = "igs14.atx"
-    
+        case _:
+            raise ValueError("Invalid value passed for reference_frame var. Must be either 'IGS20' or 'IGb14'")
+
     ensure_folders([download_dir])
-    
+
     url_igs = IGS_FILES_URL + f"station/general/{atx_filename}"
     url_bern = BERN_URL + "BSWUSER54/REF/I20.ATX"
-    
+
     try:
         download_filepath = attempt_url_download(
-            download_dir=download_dir, url=url_igs, filename=atx_filename, type_of_file="ATX", if_file_present=if_file_present
+            download_dir=download_dir,
+            url=url_igs,
+            filename=atx_filename,
+            type_of_file="ATX",
+            if_file_present=if_file_present,
         )
     except:
         download_filepath = attempt_url_download(
-            download_dir=download_dir, url=url_bern, filename=atx_filename, type_of_file="ATX", if_file_present=if_file_present
-        )        
+            download_dir=download_dir,
+            url=url_bern,
+            filename=atx_filename,
+            type_of_file="ATX",
+            if_file_present=if_file_present,
+        )
     return download_filepath
 
 
