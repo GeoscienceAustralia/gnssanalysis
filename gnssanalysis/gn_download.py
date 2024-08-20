@@ -25,7 +25,7 @@ import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Optional as _Optional, Union as _Union, Tuple as _Tuple, List as _List
+from typing import Optional as _Optional, Tuple as _Tuple, List as _List
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError
 
@@ -147,7 +147,7 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
     return None
 
 
-def download_url(url: str, destfile: _Union[str, _os.PathLike], max_retries: int = 5) -> _Optional[_Path]:
+def download_url(url: str, destfile: str | _os.PathLike, max_retries: int = 5) -> _Optional[_Path]:
     logging.info(f'requesting "{url}"')
     for retry in range(1, max_retries + 1):
         try:
@@ -369,16 +369,14 @@ def generate_product_filename(
     return product_filename, gps_date, reference_start
 
 
-def check_whether_to_download(
-    filename: str, download_dir: _Path, if_file_present: str = "prompt_user"
-) -> _Union[_Path, None]:
+def check_whether_to_download(filename: str, download_dir: _Path, if_file_present: str = "prompt_user") -> _Path | None:
     """Determine whether to download given file (filename) to the desired location (download_dir) based on whether it is
     already present and what action to take if it is (if_file_present)
 
     :param str filename: Filename of the downloaded file
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Union[_Path, None]: Path obj to the downloaded file if file should be downloaded, otherwise returns None
+    :return _Path | None: Path obj to the downloaded file if file should be downloaded, otherwise returns None
     """
     # Flag to determine whether to download:
     download = None
@@ -840,6 +838,7 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
     :param _Path download_dir: Where to download files (local directory)
     :param str reference_frame: Coordinate reference frame file to download, defaults to "IGS20"
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :raises ValueError: If an invalid option is given for reference_frame variable
     :return _Path: The pathlib.Path of the downloaded file
     """
     match reference_frame:

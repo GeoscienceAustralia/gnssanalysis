@@ -5,7 +5,7 @@ import pathlib as _pathlib
 
 import click as _click
 
-from typing import List as _List, Union as _Union
+from typing import List as _List
 
 
 def diffutil_verify_input(input):
@@ -52,12 +52,12 @@ def get_filetype(path):
     return suffix
 
 
-def configure_logging(verbose: bool, output_logger: bool = False) -> _Union[_logging.Logger, None]:
+def configure_logging(verbose: bool, output_logger: bool = False) -> _logging.Logger | None:
     """Configure the logger object with the level of verbosity requested and output if desired
 
     :param bool verbose: Verbosity of logger object to use for encoding logging strings, True: DEBUG, False: INFO
     :param bool output_logger: Flag to indicate whether to output the Logger object, defaults to False
-    :return _Union[_logging.Logger, None]: Return the logger object or None (based on output_logger)
+    :return _logging.Logger | None: Return the logger object or None (based on output_logger)
     """
     if verbose:
         logging_level = _logging.DEBUG
