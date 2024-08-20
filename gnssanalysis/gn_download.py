@@ -42,6 +42,7 @@ MB = 1024 * 1024
 CDDIS_FTP = "gdc.cddis.eosdis.nasa.gov"
 PRODUCT_BASE_URL = "https://peanpod.s3.ap-southeast-2.amazonaws.com/aux/products/"
 IGS_FILES_URL = "https://files.igs.org/pub/"
+BERN_URL = "http://ftp.aiub.unibe.ch/"
 
 # s3client = boto3.client('s3', region_name='eu-central-1')
 
@@ -846,11 +847,20 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
             atx_filename = "igs20.atx"
         case "IGb14":
             atx_filename = "igs14.atx"
+    
     ensure_folders([download_dir])
-    url = IGS_FILES_URL + f"station/general/{atx_filename}"
-    download_filepath = attempt_url_download(
-        download_dir=download_dir, url=url, filename=atx_filename, type_of_file="ATX", if_file_present=if_file_present
-    )
+    
+    url_igs = IGS_FILES_URL + f"station/general/{atx_filename}"
+    url_bern = BERN_URL + "BSWUSER54/REF/I20.ATX"
+    
+    try:
+        download_filepath = attempt_url_download(
+            download_dir=download_dir, url=url_igs, filename=atx_filename, type_of_file="ATX", if_file_present=if_file_present
+        )
+    except:
+        download_filepath = attempt_url_download(
+            download_dir=download_dir, url=url_bern, filename=atx_filename, type_of_file="ATX", if_file_present=if_file_present
+        )        
     return download_filepath
 
 
