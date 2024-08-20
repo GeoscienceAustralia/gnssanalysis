@@ -376,7 +376,7 @@ def check_whether_to_download(filename: str, download_dir: _Path, if_file_presen
     :param str filename: Filename of the downloaded file
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path | None: Path obj to the downloaded file if file should be downloaded, otherwise returns None
+    :return _Path | None: pathlib.Path to the downloaded file if file should be downloaded, otherwise returns None
     """
     # Flag to determine whether to download:
     download = None
@@ -451,12 +451,12 @@ def attempt_url_download(
 ) -> _Path:
     """Attempt download of file given URL (url) to chosen location (download_dir)
 
-    :param Path download_dir: Path obj to download directory
+    :param _Path download_dir: Where to download files (local directory)
     :param str url: URL to download
     :param str filename: Filename to assign for the downloaded file, defaults to None
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return Path: Path obj to the downloaded file
+    :return _Path: The pathlib.Path of the downloaded file
     """
     # If the filename is not provided, use the filename from the URL
     if not filename:
