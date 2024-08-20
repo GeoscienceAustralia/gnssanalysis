@@ -1,3 +1,8 @@
+import logging
+from typing import Optional
+
+logging.basicConfig(format="%(asctime)s [%(funcName)s] %(levelname)s: %(message)s")
+
 class SolutionType:
     _name: str
     _long_name: str
@@ -24,6 +29,10 @@ class SolutionType:
         """
         Override default equality check
         """
+        # If we're the unknown shorthand "UNK", consider None equivalent. Both are expressions of unknown solution type
+        if self._name == "UNK" and other is None:
+            return True
+
         if not isinstance(other, SolutionType):
             return False
         return self._name == other._name
@@ -45,15 +54,23 @@ class SolutionTypes:
     SNX = SolutionType("SNX", "sinex combination")  # SINEX Combination product
     ULT = SolutionType("ULT", "ultra-rapid")  # Ultra-rapid products (every 6 hours)
 
+    # Internal representation of unknown, for contexts where defaults are passed as strings.
+    UNK = SolutionType("UNK", "unknown solution type")
+
     # To support search function below
-    _all: list[SolutionType] = [FIN, NRT, PRD, RAP, RTS, SNX, ULT]
+    _all: list[SolutionType] = [FIN, NRT, PRD, RAP, RTS, SNX, ULT, UNK]
 
     @staticmethod
-    def from_name(name: str):
+    def from_name(name: Optional[str]):
         """
-        Returns the relevant static SolutionType object, given the solution type's short name.
-        :param str name: The short name of the solution type e.g. 'RAP', 'ULT', 'FIN', 'SNX'
+        Returns the relevant static SolutionType object, given the solution type's short name (case insensitive).
+        :param str name: The short name of the solution type e.g. 'RAP', 'ULT', 'FIN', 'SNX'. Also accepts unknwon, as
+         either UNK or None
         """
+        if name is None:  # None is analogous to UNK
+            logging.debug("Converted solution type value of None, to SolutionTypes.UNK")
+            return SolutionTypes.UNK
+
         name = name.upper()
         for solution_type in SolutionTypes._all:
             if name == solution_type.name:
