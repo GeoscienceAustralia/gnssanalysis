@@ -20,6 +20,16 @@ class SolutionType:
     def __repr__(self) -> str:
         return self._name
 
+    def __eq__(self, other):
+        """
+        Override default equality check
+        """
+        if not isinstance(other, SolutionType):
+            return False
+        return self._name == other._name
+        # Note that in Python, there is both an equality and an inequality check.
+        # But in Python 3 the inequality check leverages 'not __eq__()' by default.
+
 
 class SolutionTypes:
     """
