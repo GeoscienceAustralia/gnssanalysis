@@ -858,8 +858,8 @@ def diff_sp3_rac(
     hlm = None  # init hlm var
     if hlm_mode == "ECF":
         sp3_test, hlm = sp3_hlm_trans(sp3_baseline, sp3_test)
-    sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline)
-    sp3_test_eci = _gn_transform.ecef2eci(sp3_test)
+    sp3_baseline_eci = _gn_transform.ecef_to_eci(sp3_baseline)
+    sp3_test_eci = _gn_transform.ecef_to_eci(sp3_test)
     if hlm_mode == "ECI":
         sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci)
 

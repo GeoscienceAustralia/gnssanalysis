@@ -352,7 +352,7 @@ def xyz2enu(xyz, x0y0z0):
     return xyzdiff_origin2enu(xyz - x0y0z0, x0y0z0)
 
 
-def enu2xyz(enu: _np.ndarray, x0y0z0: _np.ndarray) -> _np.ndarray:
+def enu_to_xyz(enu: _np.ndarray, x0y0z0: _np.ndarray) -> _np.ndarray:
     """Convert ENU values using the origin XYZ back to the complete XYZ vectors
 
     :param _np.ndarray enu: local east, north and up coordinates
@@ -365,7 +365,7 @@ def enu2xyz(enu: _np.ndarray, x0y0z0: _np.ndarray) -> _np.ndarray:
     return x0y0z0 + xyz_diff
 
 
-def ecef2eci(sp3_in):
+def ecef_to_eci(sp3_in):
     """Simplified conversion of sp3 posiitons from ECEF to ECI"""
     xyz_idx = _np.argwhere(sp3_in.columns.isin([("EST", "X"), ("EST", "Y"), ("EST", "Z")])).ravel()
     theta = _gn_const.OMEGA_E * (sp3_in.index.get_level_values(0).values)
