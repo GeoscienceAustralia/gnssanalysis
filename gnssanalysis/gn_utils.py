@@ -5,7 +5,7 @@ import pathlib as _pathlib
 
 import click as _click
 
-from typing import List
+from typing import List as _List
 
 
 def diffutil_verify_input(input):
@@ -50,6 +50,54 @@ def get_filetype(path):
     elif suffix[:2].isdigit and suffix[2] == "i":
         return "ionex"
     return suffix
+
+
+def configure_logging(verbose: bool, output_logger: bool = False) -> _logging.Logger | None:
+    """Configure the logger object with the level of verbosity requested and output if desired
+
+    :param bool verbose: Verbosity of logger object to use for encoding logging strings, True: DEBUG, False: INFO
+    :param bool output_logger: Flag to indicate whether to output the Logger object, defaults to False
+    :return _logging.Logger | None: Return the logger object or None (based on output_logger)
+    """
+    if verbose:
+        logging_level = _logging.DEBUG
+    else:
+        logging_level = _logging.INFO
+    _logging.basicConfig(format="%(asctime)s [%(funcName)s] %(levelname)s: %(message)s")
+    _logging.getLogger().setLevel(logging_level)
+    if output_logger:
+        return _logging.getLogger()
+    else:
+        return None
+
+
+def ensure_folders(paths: _List[_pathlib.Path]):
+    """Ensures the folders in the input list exist in the file system - if not, create them
+
+    :param _List[_pathlib.Path] paths: list of pathlib.Path/s to check
+    """
+    for path in paths:
+        if not isinstance(path, _pathlib.Path):
+            path = _pathlib.Path(path)
+        if not path.is_dir():
+            path.mkdir(parents=True, exist_ok=True)
+
+
+def delete_entire_directory(directory: _pathlib.Path):
+    """Recursively delete a directory, including all subdirectories and files in subdirectories
+
+    :param Path directory: Directory to recursively delete
+    """
+    # First, iterate through all the files and subdirectories
+    for item in directory.iterdir():
+        if item.is_dir():
+            # Recursively delete subdirectories
+            delete_entire_directory(item)
+        else:
+            # Delete files
+            item.unlink()
+    # Finally, delete the empty directory itself
+    directory.rmdir()
 
 
 @_click.group(invoke_without_command=True)
@@ -577,12 +625,7 @@ def orbq(
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux
 
-    _logging.basicConfig(level="INFO")  # seems that logging can only be configured before the first logging call
-    logger = _logging.getLogger()
-    # if verbose:
-    #     logger.setLevel(_logging.INFO)
-    # else:
-    #     _logging.disable()
+    logger = configure_logging(verbose=True, output_logger=True)
 
     sp3_a = gn_io.sp3.read_sp3(input[0], nodata_to_nan=nodata_to_nan)
     sp3_b = gn_io.sp3.read_sp3(input[1], nodata_to_nan=nodata_to_nan)
@@ -770,12 +813,8 @@ def clkq(
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux, gn_const
 
-    _logging.basicConfig(level="INFO")  # seems that logging can only be configured before the first logging call
-    logger = _logging.getLogger()
-    if verbose:
-        logger.setLevel(_logging.INFO)
-    else:
-        _logging.disable()
+    logger = configure_logging(verbose=verbose, output_logger=True)
+
     clk_a, clk_b = gn_io.clk.read_clk(input_clk_paths[0]), gn_io.clk.read_clk(input_clk_paths[1])
     if reject_re is not None:
         logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
