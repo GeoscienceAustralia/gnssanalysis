@@ -4,9 +4,6 @@ from pyfakefs.fake_filesystem_unittest import TestCase
 from pathlib import Path, PosixPath
 from datetime import datetime
 
-import numpy as np
-import pandas as pd
-
 from gnssanalysis.gn_utils import delete_entire_directory
 import gnssanalysis.gn_download as ga_download
 
@@ -28,14 +25,19 @@ class TestDownload(TestCase):
         # Test download of file from CDDIS (in this case an IGS ULT)
         ga_download.download_product_from_cddis(
             download_dir=Path(self.test_dir),
-            start_epoch=datetime(2024, 8, 10),
-            end_epoch=datetime(2024, 8, 12),
+            start_epoch=datetime(2023, 8, 10),
+            end_epoch=datetime(2023, 8, 12),
             file_ext="SP3",
         )
 
+        # Grab pathlib.Path
+        downloaded_file = next(Path(self.test_dir).glob("*.SP3"))
+
         # Verify
-        self.assertEqual(type(next(Path(self.test_dir).glob("*.SP3"))), PosixPath)
-        self.assertEqual(next(Path(self.test_dir).glob("*.SP3")).name, "IGS0OPSULT_20242230000_02D_15M_ORB.SP3")
+        self.assertEqual(type(downloaded_file), PosixPath)
+        self.assertEqual(downloaded_file.name, "IGS0OPSULT_20232220000_02D_15M_ORB.SP3")
+        # Ensure file size is right:
+        self.assertEqual(downloaded_file.stat().st_size, 489602)
 
     def test_download_atx(self):
 
@@ -45,6 +47,9 @@ class TestDownload(TestCase):
         # Verify
         self.assertEqual(type(downloaded_file), PosixPath)
         self.assertEqual(downloaded_file.name, "igs20.atx")
+
+        # Check not empty
+        self.assertGreater(downloaded_file.stat().st_size, 100)
 
         # Re-try download - do not re-download
         downloaded_file = ga_download.download_atx(
@@ -63,6 +68,9 @@ class TestDownload(TestCase):
         self.assertEqual(type(downloaded_file), PosixPath)
         self.assertEqual(downloaded_file.name, "igs_satellite_metadata.snx")
 
+        # Check not empty
+        self.assertGreater(downloaded_file.stat().st_size, 100)
+
         # Re-try download - do not re-download
         downloaded_file = ga_download.download_satellite_metadata_snx(
             download_dir=Path(self.test_dir), if_file_present="dont_replace"
@@ -76,11 +84,17 @@ class TestDownload(TestCase):
         # Test download of yaw files
         downloaded_files = ga_download.download_yaw_files(download_dir=Path(self.test_dir))
 
+        # Get filenames:
+        downloaded_filenames = [file.name for file in downloaded_files]
+
         # Verify
         self.assertEqual(len(downloaded_files), 3)
-        self.assertEqual(downloaded_files[0].name, "bds_yaw_modes.snx")
-        self.assertEqual(downloaded_files[1].name, "qzss_yaw_modes.snx")
-        self.assertEqual(downloaded_files[2].name, "sat_yaw_bias_rate.snx")
+        self.assertIn("bds_yaw_modes.snx", downloaded_filenames)
+        self.assertIn("qzss_yaw_modes.snx", downloaded_filenames)
+        self.assertIn("sat_yaw_bias_rate.snx", downloaded_filenames)
+        # Check files aren't empty
+        for file in downloaded_files:
+            self.assertGreater(file.stat().st_size, 100)
 
         # Re-try download
         downloaded_files = ga_download.download_yaw_files(download_dir=Path(self.test_dir), if_file_present="replace")

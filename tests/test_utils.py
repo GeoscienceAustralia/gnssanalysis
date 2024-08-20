@@ -27,21 +27,21 @@ class TestUtils(TestCase):
     def test_ensure_folders(self):
 
         # Verify directories that do and dont exist:
-        self.assertEqual(Path(self.test_dir_1).is_dir(), True)
-        self.assertEqual((Path(self.test_dir_1) / "a/").is_dir(), False)
-        self.assertEqual((Path(self.test_dir_1) / "a/b/").is_dir(), False)
-        self.assertEqual(Path(self.test_dir_2).is_dir(), True)
-        self.assertEqual((Path(self.test_dir_2) / "c/d/").is_dir(), False)
+        self.assertTrue(Path(self.test_dir_1).is_dir())
+        self.assertFalse((Path(self.test_dir_1) / "a/").is_dir())
+        self.assertFalse((Path(self.test_dir_1) / "a/b/").is_dir())
+        self.assertTrue(Path(self.test_dir_2).is_dir())
+        self.assertFalse((Path(self.test_dir_2) / "c/d/").is_dir())
 
         # Use ensure_folders function to create various
         ga_utils.ensure_folders([self.test_dir_1, self.test_dir_1 + "/a/b/", self.test_dir_2])
 
         # Verify directories that do and dont exist:
-        self.assertEqual(Path(self.test_dir_1).is_dir(), True)
-        self.assertEqual((Path(self.test_dir_1) / "a/").is_dir(), True)
-        self.assertEqual((Path(self.test_dir_1) / "a/b/").is_dir(), True)
-        self.assertEqual(Path(self.test_dir_2).is_dir(), True)
-        self.assertEqual((Path(self.test_dir_2) / "c/d/").is_dir(), False)
+        self.assertTrue(Path(self.test_dir_1).is_dir())
+        self.assertTrue((Path(self.test_dir_1) / "a/").is_dir())
+        self.assertTrue((Path(self.test_dir_1) / "a/b/").is_dir())
+        self.assertTrue(Path(self.test_dir_2).is_dir())
+        self.assertFalse((Path(self.test_dir_2) / "c/d/").is_dir())
 
     def test_configure_logging(self):
 
