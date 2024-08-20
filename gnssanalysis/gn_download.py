@@ -450,9 +450,9 @@ def attempt_ftps_download(
     download_dir: _Path,
     ftps: _ftplib.FTP_TLS,
     filename: str,
-    type_of_file: str = None,
+    type_of_file: _Optional[str] = None,
     if_file_present: str = "prompt_user",
-) -> _Path:
+) -> _Path | None:
     """Attempt download of file (filename) given the ftps client object (ftps) to chosen location (download_dir)
 
     :param _Path download_dir: Path obj to download directory
@@ -460,7 +460,7 @@ def attempt_ftps_download(
     :param str filename: Filename to assign for the downloaded file
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
     :param str if_file_present: How to handle files that are already present ["replace","dont_replace","prompt_user"], defaults to "prompt_user"
-    :return _Path: Path obj to the downloaded file
+    :return _Path: Path obj to the downloaded file, or None if it was already present and not re-downloaded.
     """
     ""
     logging.info(f"Attempting FTPS Download of {type_of_file} file - {filename} to {download_dir}")
@@ -789,8 +789,8 @@ def download_file_from_cddis(
     max_retries: int = 3,
     decompress: bool = True,
     if_file_present: str = "prompt_user",
-    note_filetype: str = None,
-) -> _Path:
+    note_filetype: _Optional[str] = None,
+) -> _Path | None:
     """Downloads a single file from the cddis ftp server.
 
     :param filename: Name of the file to download
@@ -799,6 +799,8 @@ def download_file_from_cddis(
     :ftps: Optional active connection object which is reused
     :max_retries: Number of retries before raising error
     :uncomp: If true, uncompress files on download
+    :return Path | None: Path of the file if it was successfully downloaded. For download failures, or if the file
+        already existed and if_file_present policy said not to re-download it, the return is None.
     """
     with ftp_tls("gdc.cddis.eosdis.nasa.gov") as ftps:
         ftps.cwd(ftp_folder)
@@ -834,7 +836,7 @@ def download_file_from_cddis(
     return download_filepath
 
 
-def download_multiple_files_from_cddis(files: [str], ftp_folder: str, output_folder: _Path) -> None:
+def download_multiple_files_from_cddis(files: list[str], ftp_folder: str, output_folder: _Path) -> None:
     """Downloads multiple files in a single folder from cddis in a thread pool.
 
     :param files: List of str filenames

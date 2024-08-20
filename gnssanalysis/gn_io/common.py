@@ -15,7 +15,7 @@ from typing import Union as _Union
 MB = 1024 * 1024
 
 
-def path2bytes(path: _Union[_Path, str, bytes]) -> bytes:
+def path2bytes(path: _Path | str | bytes) -> bytes:
     """Main file reading function. Checks file extension and calls appropriate reading function.
     Passes through bytes if given, thus one may not routinely leave it in the top of the specific
      file reading function and be able to call it with bytes or str path without additional modifications.
@@ -27,7 +27,9 @@ def path2bytes(path: _Union[_Path, str, bytes]) -> bytes:
         return path
 
     if isinstance(path, _Path):
-        path = path.as_posix()
+        path = path.as_posix()  # Convert path to posix path as string
+
+    # Path can now only be a string. Try telling the linter that...
     try:
         if path.endswith(".Z"):
             databytes = _lzw2bytes(path)

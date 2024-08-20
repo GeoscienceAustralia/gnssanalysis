@@ -1,6 +1,7 @@
 import logging
 import io as _io
 import os as _os
+from pathlib import Path
 import re as _re
 from typing import Literal, Union, List, Tuple
 
@@ -240,13 +241,11 @@ def _process_sp3_block(
     return temp_sp3
 
 
-def read_sp3(
-    sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True
-) -> _pd.DataFrame:
+def read_sp3(sp3_path: Path | str, pOnly: bool = True, nodata_to_nan: bool = True) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
 
-    :param str sp3_path: The path to the SP3 file.
+    :param Path | str sp3_path: The path to the SP3 file.
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
     :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
@@ -260,7 +259,7 @@ def read_sp3(
         (mm/ps) and remove unnecessary columns. If pOnly is True, only P* values are included in the DataFrame.
         If nodata_to_nan is True, nodata values in the SP3 POS and CLK columns are converted to NaN.
     """
-    content = _gn_io.common.path2bytes(str(sp3_path))
+    content = _gn_io.common.path2bytes(sp3_path)
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
     comments: list = _RE_SP3_COMMENT_STRIP.findall(content)
@@ -316,7 +315,7 @@ def read_sp3(
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
     # Write header data to dataframe attributes:
     sp3_df.attrs["HEADER"] = parsed_header
-    sp3_df.attrs["path"] = sp3_path
+    sp3_df.attrs["path"] = str(sp3_path)
     return sp3_df
 
 

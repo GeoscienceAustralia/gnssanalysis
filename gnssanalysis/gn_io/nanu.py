@@ -2,6 +2,7 @@ import glob
 import logging as _logging
 import os as _os
 from typing import Union as _Union
+from datetime import datetime
 
 import numpy as _np
 import pandas as _pd
@@ -71,7 +72,9 @@ def collect_nanus_to_df(glob_expr: str) -> _pd.DataFrame:
     return _pd.DataFrame(read_nanu(n) for n in nanus_list if n is not None)
 
 
-def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetime64, str], offset_days: int) -> list:
+def get_bad_sv_from_nanu_df(
+    nanu_df: _pd.DataFrame, up_to_epoch: _Union[_np.datetime64, datetime, str], offset_days: int
+) -> list:
     """A simple function that analyses an input dataframe NANU collection and outputs a list of SVs that should be excluded for the entered epoch+offset
 
     :param _pd.DataFrame nanu_df: a dataframe returned by the collect_nanus_to_df, effectively a _pd.DataFrame call on a list of parsed dicts or a parsed dict
@@ -79,7 +82,9 @@ def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetim
     :param int offset_days: an offset or a length of a planned processing session in days
     :return list: a list of SVs that should not be used for the specified timeperiod. FIXME Potentially needs to be int?
     """
-    datetime = datetime if isinstance(datetime, _np.datetime64) else _np.datetime64(datetime)
+    up_to_epoch_datetime64: _np.datetime64 = (
+        up_to_epoch if isinstance(up_to_epoch, _np.datetime64) else _np.datetime64(up_to_epoch)
+    )
 
     columns_new = [
         "FILEPATH",
@@ -129,9 +134,9 @@ def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetim
     dt_df = _pd.concat([df.drop(labels=columns_date + columns_time, axis=1), dates + nd], axis=1)
 
     events_already_started = (
-        (dt_df["START CALENDAR DATE"] < (datetime + offset_days))
-        | (dt_df["UNUSABLE START CALENDAR DATE"] <= (datetime + offset_days))
-        | (dt_df["LAUNCH START CALENDAR DATE"] <= (datetime + offset_days))
+        (dt_df["START CALENDAR DATE"] < (up_to_epoch_datetime64 + offset_days))
+        | (dt_df["UNUSABLE START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
+        | (dt_df["LAUNCH START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
     )
 
     dt_valid_df = dt_df[events_already_started]
@@ -140,15 +145,19 @@ def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetim
 
     all_the_last_msgs = dt_df.loc[prns_last_nanu_to_date]
 
+    # Filter maneuver related NANU messages down to those with an end date in the future, or no end date at all:
     last_selected = all_the_last_msgs[
-        ((all_the_last_msgs["STOP CALENDAR DATE"] > datetime) | all_the_last_msgs["STOP CALENDAR DATE"].isna())
+        (
+            (all_the_last_msgs["STOP CALENDAR DATE"] > up_to_epoch_datetime64)
+            | all_the_last_msgs["STOP CALENDAR DATE"].isna()
+        )
         & (all_the_last_msgs["NANU TYPE"] != "USABINIT")
     ]
 
     if last_selected.empty:
-        return None
+        return []  # No NANUs currently in effect
 
-    _logging.info(msg="NANUs in affect are:\n" + "\n".join(last_selected.FILEPATH.to_list()))
+    _logging.info(msg="NANUs in effect are:\n" + "\n".join(last_selected.FILEPATH.to_list()))
 
     sel_idx = last_selected.index.values
     msg_gaps = dt_df.loc[sel_idx.min() : sel_idx.max()]
