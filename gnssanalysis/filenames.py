@@ -15,6 +15,7 @@ import pandas as pd
 import numpy as np
 
 from . import gn_datetime, gn_io, gn_const
+from gnssanalysis.solution_types import SolutionType, SolutionTypes
 
 # May be unnecessary, but for safety explicitly enable it
 logging.captureWarnings(True)
@@ -83,7 +84,7 @@ def determine_file_name_main(
         "start_epoch": datetime.datetime(year=2000, month=1, day=1),
         "end_epoch": datetime.datetime(year=2000, month=1, day=1),
         "timespan": datetime.timedelta(seconds=0),
-        "solution_type": "UNK",
+        "solution_type": "UNK",  # Internal only representation of unknown solution type. Used here to keep all values as strings
         "sampling_rate": "00U",
         "version": "0",
         "project": "OPS",
@@ -121,7 +122,7 @@ def determine_file_name(
      - start_epoch: datetime.datetime
      - end_epoch: datetime.datetime
      - timespan: datetime.timedelta
-     - solution_type: str
+     - solution_type: SolutionType
      - sampling_rate: str
      - version: str
      - project: str
@@ -163,7 +164,7 @@ def determine_properties_from_contents_and_filename(
      - start_epoch: datetime.datetime
      - end_epoch: datetime.datetime
      - timespan: datetime.timedelta
-     - solution_type: str
+     - solution_type: SolutionType
      - sampling_rate: str
      - version: str
      - project: str
@@ -228,7 +229,7 @@ def generate_IGS_long_filename(
     *,
     end_epoch: datetime.datetime,
     timespan: Union[datetime.timedelta, str, None] = ...,
-    solution_type: str = ...,
+    solution_type: SolutionType,
     sampling_rate: str = ...,
     sampling_rate_seconds: Optional[int] = ...,
     version: str = ...,
@@ -246,7 +247,7 @@ def generate_IGS_long_filename(
     *,
     end_epoch: None = ...,
     timespan: Union[datetime.timedelta, str],
-    solution_type: str = ...,
+    solution_type: SolutionType,
     sampling_rate: str = ...,
     sampling_rate_seconds: Optional[int] = ...,
     version: str = ...,
@@ -263,7 +264,7 @@ def generate_IGS_long_filename(
     *,
     end_epoch: Optional[datetime.datetime] = None,
     timespan: Union[datetime.timedelta, str, None] = None,
-    solution_type: str = "",  # TTT
+    solution_type: Optional[SolutionType] = None,  # TTT
     sampling_rate: str = "15M",  # SMP
     sampling_rate_seconds: Optional[int] = None,  # Not used here, but passed for structural consistency
     version: str = "0",  # V
@@ -288,7 +289,7 @@ def generate_IGS_long_filename(
     :param Optional[datetime.datetime] end_epoch: datetime representing final epoch in file, defaults to None
     :param timespan: Union[datetime.timedelta, str, None] timespan: timedelta representing time range of data in file,
         defaults to None
-    :param str solution_type: Three letter solution type identifier, defaults to ""
+    :param Optional[SolutionType] solution_type: Solution type identifier (mandatory, despite Optional type)
     :param str sampling_rate: Three letter sampling rate string, defaults to "15M"
     :param Optional[int] sampling_rate_seconds: Not used, passed only for structural consistency
     :param str version: Single character version identifier, defaults to "0"
@@ -297,6 +298,9 @@ def generate_IGS_long_filename(
     :raises ValueError: If both end_epoch and timespan are None
     :return str: IGS long filename
     """ """"""
+    if solution_type is None or solution_type == SolutionTypes.UNK:
+        raise ValueError(f"solution_type must be supplied. Got {solution_type}")
+
     if variable_datetime:
         initial_epoch = "<YYYY><DDD><HH><mm>"
     else:
@@ -675,15 +679,15 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         name_props["sampling_rate"] = nominal_span_string(sampling_rate)
         # Solution type can be estimated based on data duration or pulled from filename
         if "solution_type" in props_from_existing_name:
-            name_props["solution_type"] = props_from_existing_name["solution_type"]
+            name_props["solution_type"] = SolutionTypes.from_name(props_from_existing_name["solution_type"])
         else:
             span_hours = timespan / datetime.timedelta(hours=1)
             if 47.0 < span_hours < 49.0:
                 # Near enough to the 48 hour nominal span for ultra-rapid
-                name_props["solution_type"] = "ULT"
+                name_props["solution_type"] = SolutionTypes.ULT
             elif 23.0 < span_hours < 25.0:
                 # Not strictly accurate as Finals can also be 24 hour but near enough
-                name_props["solution_type"] = "RAP"
+                name_props["solution_type"] = SolutionTypes.RAP
         logging.debug(f"name_props prior to adding props extracted from name = {name_props}")
         # Can't get version and project from within file but might have it from filename
         subset_dictupdate(name_props, props_from_existing_name, ("version", "project"))
@@ -742,7 +746,7 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
                 + datetime.timedelta(days=int(long_match["day_of_year"]) - 1)
             ),
             "timespan": convert_nominal_span(long_match["period"]),
-            "solution_type": long_match["solution_type"],
+            "solution_type": SolutionTypes.from_name(long_match["solution_type"]),
             "sampling_rate": long_match["sampling"],
             "version": long_match["version"],
             "project": long_match["project"],
@@ -765,21 +769,21 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
         return {
             "analysis_center": "IGS",
             "format_type": extension[0:3].upper(),
-            "solution_type": "ULT",
+            "solution_type": SolutionTypes.ULT,
             # Do start epoch estimation eventually # TODO: looks like we're not doing start epoch estimation here at all...
         }
     elif analysis_center == "IGR":
         return {
             "analysis_center": "IGS",
             "format_type": extension[0:3].upper(),
-            "solution_type": "RAP",
+            "solution_type": SolutionTypes.RAP,
             # Do start epoch estimation eventually
         }
     elif analysis_center == "IGS":
         return {
             "analysis_center": "IGS",
             "format_type": extension[0:3].upper(),
-            "solution_type": "FIN",
+            "solution_type": SolutionTypes.FIN,
             # Do start epoch estimation eventually
         }
     return {

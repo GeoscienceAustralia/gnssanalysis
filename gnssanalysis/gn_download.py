@@ -34,6 +34,7 @@ import pandas as _pd
 from boto3.s3.transfer import TransferConfig
 
 from .gn_datetime import GPSDate, dt2gpswk, gpswkD2dt
+from gnssanalysis.solution_types import SolutionType, SolutionTypes
 
 MB = 1024 * 1024
 
@@ -286,6 +287,7 @@ def generate_nominal_span(start_epoch: _datetime.datetime, end_epoch: _datetime.
     return f"{span:02}{unit}"
 
 
+# TODO is this deprecated?
 def generate_long_filename(
     analysis_center: str,  # AAA
     content_type: str,  # CNT
@@ -293,7 +295,7 @@ def generate_long_filename(
     start_epoch: _datetime.datetime,  # YYYYDDDHHMM
     end_epoch: _datetime.datetime = None,
     timespan: _datetime.timedelta = None,  # LEN
-    solution_type: str = "",  # TTT
+    solution_type: _Optional[SolutionType] = None,  # TTT
     sampling_rate: str = "15M",  # SMP
     version: str = "0",  # V
     project: str = "EXP",  # PPP, e.g. EXP, OPS
@@ -306,12 +308,15 @@ def generate_long_filename(
     :param _datetime.datetime start_epoch: Start epoch of data
     :param _datetime.datetime end_epoch: End epoch of data [Optional: can be determined from timespan], defaults to None
     :param _datetime.timedelta timespan: Timespan of data in file (Start to End epoch), defaults to None
-    :param str solution_type: 3-char string identifier for Solution Type of file, defaults to ""
+    :param Optional[SolutionType] solution_type: Solution type identifier (mandatory, despite Optional type)
     :param str sampling_rate: 3-char string identifier for Sampling Rate of the file, defaults to "15M"
     :param str version: 3-char string identifier for Version of the file
     :param str project: 3-char string identifier for Project Type of the file
     :return str: The IGS long filename given all inputs
     """
+    if solution_type is None or solution_type == SolutionTypes.UNK:
+        raise ValueError(f"solution_type must be supplied. Got {solution_type}")
+
     initial_epoch = start_epoch.strftime("%Y%j%H%M")
     if end_epoch == None:
         end_epoch = start_epoch + timespan
@@ -343,11 +348,11 @@ def generate_product_filename(
     long_filename: bool = False,
     analysis_center: str = "IGS",
     timespan: _datetime.timedelta = _datetime.timedelta(days=1),
-    solution_type: str = "ULT",
+    solution_type: SolutionType = SolutionTypes.ULT,
     sampling_rate: str = "15M",
     version: str = "0",
     project: str = "OPS",
-    content_type: str = None,
+    content_type: _Optional[str] = None,
 ) -> _Tuple[str, GPSDate, _datetime.datetime]:
     """Given a reference datetime and extention of file, generate the IGS filename and GPSDate obj for use in download
 
@@ -357,7 +362,7 @@ def generate_product_filename(
     :param bool long_filename: Use the IGS long filename convention, defaults to False
     :param str analysis_center: Desired analysis center for filename output, defaults to "IGS"
     :param _datetime.timedelta timespan: Span of the file as datetime obj, defaults to _datetime.timedelta(days=1)
-    :param str solution_type: Solution type for the filename, defaults to "ULT"
+    :param SolutionType solution_type: Solution type for the filename, defaults to ULT (ultra-rapid)
     :param str sampling_rate: Sampling rate of data for the filename, defaults to "15M"
     :param str version: Version of the file, defaults to "0"
     :param str project: IGS project descriptor, defaults to "OPS"

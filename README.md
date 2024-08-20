@@ -2,6 +2,13 @@
 The package encompasses various GNSS-related functionality such as efficient reading and writing GNSS files (e.g. SINEX, SP3, CLK, IONEX and many others), advanced analysis and comparison, various coordinate transformations including geodetic frame rotations, predictions and combinations.
 Package  Solver.
 
+## Required Python and Pandas versions
+This codebase should work on Python 3.10 through 3.12 (at the time of writing). Some of the codebase still uses
+workarounds for features not present in older Python versions. These will be updated over time.
+
+Similarly much of the codebase uses Pandas APIs which will be deprecated when Pandas 3 is released. These will be
+progressively updated.
+
 ## Install
 
 ```bash
@@ -21,7 +28,7 @@ pip install gnssanalysis
 - SINEX (including discontinuity, post-seismic file formats)
 - SP3
 - TROP
-- GINAN proprietary formats: PEA partials, POD output, STEC and TRACE
+- GINAN proprietary formats: PEA partials, STEC and TRACE
 
 # Standalone utilities
 There is a set of standalone utilities installed together with the module module which are build on top of gnssanalysis.
