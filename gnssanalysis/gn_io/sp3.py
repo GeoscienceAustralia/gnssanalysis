@@ -9,10 +9,10 @@ import pandas as _pd
 from scipy import interpolate as _interpolate
 
 from .. import gn_aux as _gn_aux
+from .. import gn_const as _gn_const
 from .. import gn_datetime as _gn_datetime
 from .. import gn_io as _gn_io
 from .. import gn_transform as _gn_transform
-from .. import gn_const
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ def read_sp3(
         first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
         logging.warning(
             f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
-            f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + gn_const.J2000_ORIGIN} "
+            f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
             f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
         )
         # Now dedupe them, keeping the first of any clashes:
@@ -829,6 +829,7 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, li
     return b, hlm
 
 
+# Eugene: move to gn_diffaux.py (and other associated functions as well)?
 def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,
