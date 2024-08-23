@@ -259,6 +259,55 @@ def generate_nominal_span(start_epoch: _datetime.datetime, end_epoch: _datetime.
     return f"{span:02}{unit}"
 
 
+def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: str) -> str:
+    """
+    IGS files following the long filename convention require a content specifier
+    Given the file extension, generate the content specifier
+    """
+    file_ext = file_ext.upper()
+    sampling_rates = {
+        "ERP": {
+            ("COD"): {"FIN": "12H", "RAP": "01D", "ERP": "01D"},
+            (): "01D",
+        },
+        "BIA": "01D",
+        "SP3": {
+            ("COD", "GFZ", "GRG", "IAC", "JAX", "MIT", "WUM"): "05M",
+            ("ESA"): {"FIN": "05M", "RAP": "15M", None: "15M"},
+            (): "15M",
+        },
+        "CLK": {
+            ("EMR", "MIT", "SHA", "USN"): "05M",
+            ("ESA", "GFZ", "GRG", "IGS"): {"FIN": "30S", "RAP": "05M", None: "30S"},  # DZ: IGS FIN has 30S CLK
+            (): "30S",
+        },
+        "OBX": {"GRG": "05M", None: "30S"},
+        "TRO": {"JPL": "30S", None: "01H"},
+        "SNX": "01D",
+    }
+    if file_ext in sampling_rates:
+        file_rates = sampling_rates[file_ext]
+        if isinstance(file_rates, dict):
+            center_rates_found = False
+            for key in file_rates:
+                if analysis_center in key:
+                    center_rates = file_rates.get(key, file_rates.get(()))
+                    center_rates_found = True
+                    break
+                # else:
+                #     return file_rates.get(())
+            if not center_rates_found:  # DZ: bug fix
+                return file_rates.get(())
+            if isinstance(center_rates, dict):
+                return center_rates.get(solution_type, center_rates.get(None))
+            else:
+                return center_rates
+        else:
+            return file_rates
+    else:
+        return "01D"
+
+
 def generate_long_filename(
     analysis_center: str,  # AAA
     content_type: str,  # CNT
