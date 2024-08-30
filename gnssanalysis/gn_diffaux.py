@@ -692,7 +692,7 @@ def format_index(
     diff_df.index = diff_df.index.set_names(["Epoch", "Satellite"])
 
 
-def sp3_diff(
+def sp3_difference(
     base_sp3_file: _Path,
     test_sp3_file: _Path,
 ) -> _pd.DataFrame:
@@ -742,7 +742,7 @@ def sp3_diff(
     return diff_sp3_df
 
 
-def clk_diff(
+def clk_difference(
     base_clk_file: _Path,
     test_clk_file: _Path,
     norm_types: list[str],
@@ -774,7 +774,7 @@ def clk_diff(
     return diff_clk_df
 
 
-def diff_stats(
+def difference_statistics(
     diff_df: _pd.DataFrame,
 ) -> _pd.DataFrame:
     """
@@ -784,10 +784,10 @@ def diff_stats(
     :return _pd.DataFrame: The Pandas DataFrame containing statistics of SP3 or CLK differences
     """
     # Statistics of all satellites
-    stats = diff_df.describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
-    stats.loc["rms"] = _gn_aux.rms(diff_df)
-    stats.index = _pd.MultiIndex.from_tuples(
-        (("All", idx) for idx in stats.index.values)
+    stats_df = diff_df.describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
+    stats_df.loc["rms"] = _gn_aux.rms(diff_df)
+    stats_df.index = _pd.MultiIndex.from_tuples(
+        (("All", idx) for idx in stats_df.index.values)
     )
 
     # Statistics satellite-by-satellite
@@ -802,9 +802,9 @@ def diff_stats(
     )
 
     # Merge above dataframes, rename the indices properly and re-arrange the statistics
-    stats = _pd.concat([stats, stats_sat, rms_sat]).sort_index()
-    stats.index = stats.index.set_names(["Satellite", "Stats"])
-    stats = stats.reindex(
+    stats_df = _pd.concat([stats_df, stats_sat, rms_sat]).sort_index()
+    stats_df.index = stats_df.index.set_names(["Satellite", "Stats"])
+    stats_df = stats_df.reindex(
         [
             "count",
             "mean",
@@ -822,4 +822,4 @@ def diff_stats(
         level="Stats",
     )
 
-    return stats
+    return stats_df
