@@ -1,4 +1,5 @@
 """RINEX CLK file parsing function"""
+
 import logging as _logging
 import re as _re
 from io import BytesIO as _BytesIO
@@ -21,7 +22,7 @@ def read_clk(clk_path):
 
     data = content[data_b:]
     data_line = _RE_LINE.search(data)
-    assert data_line is not None
+    assert data_line is not None, "CLK data not parsable - file could be empty"
 
     len_line = len(data_line.groups()[0])  # need to get a line and check the length
 
@@ -45,9 +46,9 @@ def read_clk(clk_path):
             "D": _np.uint16,
             "h": _np.int32,
             "m": _np.int32,
-            "s": _np.float_,
-            "EST": _np.float_,
-            "STD": _np.float_,
+            "s": _np.float64,
+            "EST": _np.float64,
+            "STD": _np.float64,
         },
         na_values=["NAN", "-NAN"],
     )
