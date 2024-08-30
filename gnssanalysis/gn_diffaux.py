@@ -358,21 +358,21 @@ def compare_clk(
             _logging.debug("compare_clk: syncing clk_a_unst with common_svs as not equal")
             clk_a_unst = clk_a_unst[common_svs]
 
-    if len(norm_types) != 0:
-        _logging.info(f":_clk_compare:using {norm_types} clk normalization")
-        if "sv" in norm_types:
-            norm_types[norm_types.index("sv")] = _gn_io.clk.select_norm_svs_per_gnss(
+    norm_types_new = norm_types.copy() # DO NOT overwrite norm_types otherwise it will cause errors when the function is called in a loop
+    if len(norm_types_new) != 0:
+        _logging.info(f":compare_clk: using {norm_types_new} clk normalization")
+        if "sv" in norm_types_new:
+            norm_types_new[norm_types_new.index("sv")] = _gn_io.clk.select_norm_svs_per_gnss(
                 clk_a_unst=clk_a_unst, clk_b_unst=clk_b_unst
-            )
+            )  # get the svs to use for norm and overwrite "sv" with sv prns
 
         clk_a_unst[clk_b_unst.isna()] = _np.nan  # replace corresponding values in clk_a_unst with NaN where clk_b_unst is NaN
         clk_b_unst[clk_a_unst.isna()] = _np.nan  # replace corresponding values in clk_b_unst with NaN where clk_a_unst is NaN
 
-            # get the sv to use for norm and overwrite norm_type value with sv prn code
         _logging.info("---removing common mode from clk 1---")
-        _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types)
+        _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types_new)
         _logging.info("---removing common mode from clk 2---")
-        _gn_io.clk.rm_clk_bias(clk_b_unst, norm_types=norm_types)
+        _gn_io.clk.rm_clk_bias(clk_b_unst, norm_types=norm_types_new)
     return clk_a_unst - clk_b_unst
 
 
