@@ -46,9 +46,9 @@ def read_clk(clk_path):
             "D": _np.uint16,
             "h": _np.int32,
             "m": _np.int32,
-            "s": _np.float_,
-            "EST": _np.float_,
-            "STD": _np.float_,
+            "s": _np.float64,
+            "EST": _np.float64,
+            "STD": _np.float64,
         },
         na_values=["NAN", "-NAN"],
     )
