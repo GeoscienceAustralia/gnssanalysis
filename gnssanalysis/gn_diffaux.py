@@ -1,4 +1,5 @@
 import logging as _logging
+from pathlib import Path as _Path
 from typing import Union as _Union
 
 import numpy as _np
@@ -526,6 +527,7 @@ def sisre(
 def diffsp3(
     sp3_a_path, sp3_b_path, tol, log_lvl, clk_a_path, clk_b_path, nodata_to_nan=True, hlm_mode=None, plot=False, write_rac_file=False
 ):
+# Eugene: function name and description are confusing - it seems to output the SISRE instead of SP3 orbit/clock differences against the given tolerance
     """Compares two sp3 files and outputs a dataframe of differences above tolerance if such were found"""
     sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path, nodata_to_nan=nodata_to_nan), _gn_io.sp3.read_sp3(sp3_b_path, nodata_to_nan=nodata_to_nan)
 
@@ -547,7 +549,7 @@ def diffsp3(
         hlm_mode=hlm_mode,
         plot=plot,
         write_rac_file=write_rac_file,
-    )
+    )  # Eugene: sisre() returns SISRE instead of RAC differences
 
     bad_rac_vals = _diff2msg(diff_rac, tol=tol)
     if bad_rac_vals is not None:
@@ -669,3 +671,155 @@ def rac_df_to_rms_df(rac_df):
 
     rms_df.attrs["summary"] = summary_df
     return rms_df
+
+
+def format_index(
+    diff_df: _pd.DataFrame,
+) -> None:
+    """
+    Convert the epoch indices of a SP3 or CLK difference DataFrame from J2000 seconds to more readable
+    python datetimes and rename the indices properly.
+
+    :param _pd.DataFrame diff_df: The Pandas DataFrame containing SP3 or CLK differences
+    :return None
+    """
+    # Convert the epoch indices from J2000 seconds to python datetimes
+    diff_df.index = _pd.MultiIndex.from_tuples(
+        ((idx[0] + _gn_const.J2000_ORIGIN, idx[1]) for idx in diff_df.index.values)
+    )
+
+    # Rename the indices
+    diff_df.index = diff_df.index.set_names(["Epoch", "Satellite"])
+
+
+def sp3_difference(
+    base_sp3_file: _Path,
+    test_sp3_file: _Path,
+) -> _pd.DataFrame:
+    """
+    Compare two SP3 files to calculate orbit and clock differences. The orbit differences will be represented
+    in both X/Y/Z ECEF frame and R/A/C orbit frame, and the clock differences will NOT be normalised.
+
+    :param _Path base_sp3_file: Path of the baseline SP3 file
+    :param _Path test_sp3_file: Path of the test SP3 file
+    :return _pd.DataFrame: The Pandas DataFrame containing orbit and clock differences
+    """
+    base_sp3_df = _gn_io.sp3.read_sp3(str(base_sp3_file))
+    test_sp3_df = _gn_io.sp3.read_sp3(str(test_sp3_file))
+
+    # Select rows with matching indices and calculate XYZ differences (ECEF)
+    common_indices = base_sp3_df.index.intersection(test_sp3_df.index)
+    diff_est_df = (
+        test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
+    )
+
+    # Extract clocks and change the units from ms to ns (read_sp3 will result in sp3 units (ms))
+    # TODO: normalise clocks
+    diff_clk_df = diff_est_df["CLK"].to_frame(name="CLK") * 1e3
+
+    # Drop clocks and then change the units from km to m (read_sp3 will result in sp3 units (km))
+    diff_xyz_df = diff_est_df.drop(columns=["CLK"]) * 1e3
+
+    # RAC difference
+    # TODO: hlm_mode
+    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, hlm_mode=None)
+
+    # Drop the not-particularly needed 'EST_RAC' multi-index level
+    diff_rac_df.columns = diff_rac_df.columns.droplevel(0)
+
+    # Change the units from km to m (diff_sp3_rac will result in sp3 units (km))
+    diff_rac_df = diff_rac_df * 1e3
+
+    diff_sp3_df = diff_xyz_df.join(diff_rac_df)
+    diff_sp3_df["3D-Total"] = diff_xyz_df.pow(2).sum(axis=1, min_count=3).pow(0.5)
+    diff_sp3_df["Clock"] = diff_clk_df
+    diff_sp3_df["|Clock|"] = diff_clk_df.abs()
+
+    # Change the epoch indices from J2000 seconds to more readable python datetimes
+    # and rename the indices properly
+    format_index(diff_sp3_df)
+
+    return diff_sp3_df
+
+
+def clk_difference(
+    base_clk_file: _Path,
+    test_clk_file: _Path,
+    norm_types: list[str],
+) -> _pd.DataFrame:
+    """
+    Compare two CLK files to calculate clock differences with common mode removed (if specified)
+    based on the chosen normalisations.
+
+    :param _Path base_clk_file: Path of the baseline CLK file
+    :param _Path test_clk_file: Path of the test CLK file
+    :param norm_types list[str]: Normalizations to apply. Available options include 'epoch', 'daily', 'sv',
+            any satellite PRN, or any combination of them, defaults to None
+    :return _pd.DataFrame: The Pandas DataFrame containing clock differences
+    """
+    base_clk_df = _gn_io.clk.read_clk(base_clk_file)
+    test_clk_df = _gn_io.clk.read_clk(test_clk_file)
+
+    diff_clk_df = compare_clk(test_clk_df, base_clk_df, norm_types=norm_types)
+
+    # Stack diff_clk_df to keep the format consistent with other dataframes (compare_clk() returns unstacked dataframe)
+    # and change the units from s to ns (read_clk() and compare_clk() will result in clk units (s))
+    diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e9
+    diff_clk_df["|Clock|"] = diff_clk_df.abs()
+
+    # Change the epoch indices from J2000 seconds to more readable python datetimes
+    # and rename the indices properly
+    format_index(diff_clk_df)
+
+    return diff_clk_df
+
+
+def difference_statistics(
+    diff_df: _pd.DataFrame,
+) -> _pd.DataFrame:
+    """
+    Compute statistics of SP3 or CLK differences in a Pandas DataFrame.
+
+    :param _pd.DataFrame diff_df: The Pandas DataFrame containing SP3 or CLK differences
+    :return _pd.DataFrame: The Pandas DataFrame containing statistics of SP3 or CLK differences
+    """
+    # Statistics of all satellites
+    stats_df = diff_df.describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
+    stats_df.loc["rms"] = _gn_aux.rms(diff_df)
+    stats_df.index = _pd.MultiIndex.from_tuples(
+        (("All", idx) for idx in stats_df.index.values)
+    )
+
+    # Statistics satellite-by-satellite
+    stats_sat = (
+        diff_df.groupby("Satellite")
+        .describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
+        .stack(dropna=False)
+    )
+    rms_sat = _gn_aux.rms(diff_df, level="Satellite")
+    rms_sat.index = _pd.MultiIndex.from_tuples(
+        ((sv, "rms") for sv in rms_sat.index.values)
+    )
+
+    # Merge above dataframes, rename the indices properly and re-arrange the statistics
+    stats_df = _pd.concat([stats_df, stats_sat, rms_sat]).sort_index()
+    stats_df.index = stats_df.index.set_names(["Satellite", "Stats"])
+    stats_df = stats_df.reindex(
+        [
+            "count",
+            "mean",
+            "std",
+            "rms",
+            "min",
+            "5%",
+            "10%",
+            "50%",
+            "75%",
+            "90%",
+            "95%",
+            "max",
+        ],
+        level="Stats",
+    )
+
+    return stats_df

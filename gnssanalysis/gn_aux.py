@@ -196,10 +196,13 @@ def array_equal_unordered(a1: _np.ndarray, a2: _np.ndarray) -> bool:
 def rms(
     arr: _Union[_pd.DataFrame, _pd.Series],
     axis: _Union[None, int] = 0,
-    level: _Union[None, int] = None,
+    level: _Union[None, int, str] = None,
 ) -> _Union[_pd.Series, _pd.DataFrame]:
     """Trivial function to compute root mean square"""
-    return (arr**2).mean(axis=axis, level=level) ** 0.5
+    if level is not None:
+        return (arr**2).groupby(axis=axis, level=level).mean() ** 0.5
+    else:
+        return (arr**2).mean(axis=axis) ** 0.5
 
 
 def get_std_bounds(
