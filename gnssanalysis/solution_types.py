@@ -5,6 +5,7 @@ logging.basicConfig(format="%(asctime)s [%(funcName)s] %(levelname)s: %(message)
 
 
 # Abstract base class. Leverages above Immutable metaclass to prevent its (effectively) constants, from being modified.
+# Note that this doesn't prevent everything. For example, the contents of a list can still be changed.
 class SolutionType(metaclass=EnumMetaProperties):
     name: str
     long_name: str
@@ -86,13 +87,16 @@ class UNK(SolutionType):
     long_name = "unknown solution type"
 
 
-class SolutionTypes:
+class SolutionTypes(metaclass=EnumMetaProperties):
     """
     Defines valid solution type identifiers specified for use in the IGS long product filename convention v2:
     https://files.igs.org/pub/resource/guidelines/Guidelines_For_Long_Product_Filenames_in_the_IGS_v2.0.pdf
 
     Also see here for information on session lengths of products pubished by IGS: https://igs.org/products/#about
     """
+
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
 
     FIN = FIN  # Final products
     NRT = NRT  # Near-Real Time (between ULT and RTS)
