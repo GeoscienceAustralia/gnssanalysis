@@ -3,7 +3,7 @@ import unittest
 from gnssanalysis.solution_types import SolutionType, SolutionTypes
 
 
-class TestSp3(unittest.TestCase):
+class TestSolutionType(unittest.TestCase):
     def test_shortname_to_solution_type(self):
         self.assertEqual(SolutionTypes.from_name("ULT"), SolutionTypes.ULT)
         self.assertEqual(SolutionTypes.from_name("RAP"), SolutionTypes.RAP)
