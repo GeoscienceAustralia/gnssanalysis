@@ -126,14 +126,13 @@ def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetim
     nd.fill(_np.timedelta64("nat"))
     nd[na_time_mask] = hhmm[:, 0].astype("timedelta64[h]") + hhmm[:, 1].astype("timedelta64[m]")
 
-    dt_df = _pd.concat([df.drop(labels=columns_date + columns_time, axis=1), dates + nd], axis=1)
+    dt_df = _pd.concat([df.drop(labels=columns_date, axis=1), dates], axis=1)
 
     events_already_started = (
-        (dt_df["START CALENDAR DATE"] < (datetime + offset_days))
+        (dt_df["START CALENDAR DATE"] <= (datetime + offset_days))
         | (dt_df["UNUSABLE START CALENDAR DATE"] <= (datetime + offset_days))
         | (dt_df["LAUNCH START CALENDAR DATE"] <= (datetime + offset_days))
     )
-
     dt_valid_df = dt_df[events_already_started]
 
     prns_last_nanu_to_date = dt_valid_df.PRN.astype(float).drop_duplicates(keep="last").index
@@ -141,7 +140,7 @@ def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetim
     all_the_last_msgs = dt_df.loc[prns_last_nanu_to_date]
 
     last_selected = all_the_last_msgs[
-        ((all_the_last_msgs["STOP CALENDAR DATE"] > datetime) | all_the_last_msgs["STOP CALENDAR DATE"].isna())
+        ((all_the_last_msgs["STOP CALENDAR DATE"] >= datetime) | all_the_last_msgs["STOP CALENDAR DATE"].isna())
         & (all_the_last_msgs["NANU TYPE"] != "USABINIT")
     ]
 
