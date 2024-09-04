@@ -147,7 +147,7 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
     return None
 
 
-def download_url(url: str, destfile: str | _os.PathLike, max_retries: int = 5) -> Optional[_Path]:
+def download_url(url: str, destfile: Union[str, _os.PathLike], max_retries: int = 5) -> Optional[_Path]:
     logging.info(f'requesting "{url}"')
     for retry in range(1, max_retries + 1):
         try:
@@ -427,7 +427,7 @@ def check_whether_to_download(
     :param str filename: Filename of the downloaded file
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path | None: pathlib.Path to the downloaded file if file should be downloaded, otherwise returns None
+    :return _Path or None: pathlib.Path to the downloaded file if file should be downloaded, otherwise returns None
     """
     # Flag to determine whether to download:
     download = None
