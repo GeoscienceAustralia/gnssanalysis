@@ -1,9 +1,7 @@
 """Auxiliary functions"""
-import logging as _logging
-from typing import Tuple as _Tuple
-from typing import Union as _Union
-from typing import overload
 
+import logging as _logging
+from typing import overload, Tuple, Union
 import numpy as _np
 import pandas as _pd
 
@@ -28,7 +26,7 @@ def rad2arcsec(x: _np.ndarray) -> _np.ndarray:
     return _np.rad2deg(x) * 3600
 
 
-def wrap_radians(x: _Union[float, _np.ndarray]) -> _Union[float, _np.ndarray]:
+def wrap_radians(x: Union[float, _np.ndarray]) -> Union[float, _np.ndarray]:
     """Overwrite negative angles in radians with positive coterminal angles
 
     :param float or _np.ndarray x: angles in radians
@@ -37,7 +35,7 @@ def wrap_radians(x: _Union[float, _np.ndarray]) -> _Union[float, _np.ndarray]:
     return x % (2 * _np.pi)
 
 
-def wrap_degrees(x: _Union[float, _np.ndarray]) -> _Union[float, _np.ndarray]:
+def wrap_degrees(x: Union[float, _np.ndarray]) -> Union[float, _np.ndarray]:
     """Overwrite negative angles in decimal degrees with positive coterminal angles
 
     :param float or _np.ndarray x: angles in decimal degrees
@@ -67,10 +65,7 @@ def update_mindex(dataframe, lvl_name, loc=0, axis=1):
 
 
 def get_common_index(*dfs, level=None):
-    index_sets = [
-        set(df.index.values if level is None else df.index.levels[level].values)
-        for df in dfs
-    ]
+    index_sets = [set(df.index.values if level is None else df.index.levels[level].values) for df in dfs]
     return set.intersection(*index_sets)
 
 
@@ -104,9 +99,7 @@ def unique_cols(df: _pd.DataFrame) -> _np.ndarray:
     return (a[:, 0][:, None] == a).all(1)
 
 
-def rm_duplicates_df(
-    df: _Union[_pd.DataFrame, _pd.Series], rm_nan_level: _Union[int, str, None] = None
-):
+def rm_duplicates_df(df: Union[_pd.DataFrame, _pd.Series], rm_nan_level: Union[int, str, None] = None):
     """
     Takes in a clk/sp3/other dataframe and removes any duplicate indices.
     Optionally, removes level_values from the index which contain NaNs
@@ -125,38 +118,23 @@ def rm_duplicates_df(
 
     if rm_nan_level is not None:
         attrs = df.attrs
-        df_unstacked = df.unstack(
-            level=rm_nan_level
-        )  # previous step insures successful unstacking
-        cols2check = df_unstacked.columns.get_level_values(
-            -1
-        )  # -1 is the recently unstacked level
+        df_unstacked = df.unstack(level=rm_nan_level)  # previous step insures successful unstacking
+        cols2check = df_unstacked.columns.get_level_values(-1)  # -1 is the recently unstacked level
 
-        nan_mask = (
-            ~df_unstacked.set_axis(cols2check, axis=1)
-            .isna()
-            .sum(axis=0)
-            .groupby(level=0)
-            .sum()
-            .astype(bool)
-        )
+        nan_mask = ~df_unstacked.set_axis(cols2check, axis=1).isna().sum(axis=0).groupby(level=0).sum().astype(bool)
         # if multiple cols with same name are present - sum(level=0) will group by same name
 
         if (~nan_mask).sum() != 0:
             sv_complete = nan_mask.index.values[nan_mask.values]
-            _logging.warning(
-                f"removed {nan_mask.index.values[~nan_mask.values]} as incomplete"
-            )
+            _logging.warning(f"removed {nan_mask.index.values[~nan_mask.values]} as incomplete")
             df = df_unstacked.loc(axis=1)[:, :, sv_complete].stack(-1)
             df.attrs = attrs  # copy over attrs which get lost in stack/unstack
-            df.index = (
-                df.index.remove_unused_levels()
-            )  # removed levels are still present in the index so remove
+            df.index = df.index.remove_unused_levels()  # removed levels are still present in the index so remove
 
     return df
 
 
-def get_sampling(arr: _np.ndarray) -> _Union[int, None]:
+def get_sampling(arr: _np.ndarray) -> Union[int, None]:
     """
     Simple function to compute sampling of the J2000 array
 
@@ -187,17 +165,15 @@ def array_equal_unordered(a1: _np.ndarray, a2: _np.ndarray) -> bool:
     if a1.shape == a2.shape:
         return sorted(a1.tolist()) == sorted(a2.tolist())
     else:
-        _logging.debug(
-            msg=f"array_equal_unordered:{a1.shape} and {a2.shape} shapes are different"
-        )
+        _logging.debug(msg=f"array_equal_unordered:{a1.shape} and {a2.shape} shapes are different")
         return False
 
 
 def rms(
-    arr: _Union[_pd.DataFrame, _pd.Series],
-    axis: _Union[None, int] = 0,
-    level: _Union[None, int, str] = None,
-) -> _Union[_pd.Series, _pd.DataFrame]:
+    arr: Union[_pd.DataFrame, _pd.Series],
+    axis: Union[None, int] = 0,
+    level: Union[None, int, str] = None,
+) -> Union[_pd.Series, _pd.DataFrame]:
     """Trivial function to compute root mean square"""
     if level is not None:
         return (arr**2).groupby(axis=axis, level=level).mean() ** 0.5
@@ -207,7 +183,7 @@ def rms(
 
 def get_std_bounds(
     a: _np.ndarray,
-    axis: _Union[None, int, _Tuple[int, ...]] = None,
+    axis: Union[None, int, Tuple[int, ...]] = None,
     sigma_coeff: int = 3,
 ):
     """
@@ -234,9 +210,7 @@ def get_std_bounds(
     return bounds if axis is None else _np.expand_dims(a=bounds, axis=axis)
 
 
-def df_quick_select(
-    df: _pd.DataFrame, ind_lvl: _Union[str, int], ind_keys, as_mask: bool = False
-) -> _np.ndarray:
+def df_quick_select(df: _pd.DataFrame, ind_lvl: Union[str, int], ind_keys, as_mask: bool = False) -> _np.ndarray:
     """A faster alternative to do index selection over pandas dataframe, if multiple index levels are being used then better generate masks with this function and add them later into a single mask.
     df.loc(axis=0)[:,:,'IND_KEY',:] is the same as df_quick_select(df, 2, 'IND_KEY'),
     or, if used as mask: df[df_quick_select(df, 2, 'IND_NAME', as_mask=True)]"""
@@ -280,28 +254,22 @@ def _series_str_degminsec2deg(a: _pd.Series) -> _pd.Series:
 
 
 @overload
-def degminsec2deg(a: _pd.Series) -> _pd.Series:
-    ...
+def degminsec2deg(a: _pd.Series) -> _pd.Series: ...
 
 
 @overload
-def degminsec2deg(a: _pd.DataFrame) -> _pd.DataFrame:
-    ...
+def degminsec2deg(a: _pd.DataFrame) -> _pd.DataFrame: ...
 
 
 @overload
-def degminsec2deg(a: list) -> _pd.Series:
-    ...
+def degminsec2deg(a: list) -> _pd.Series: ...
 
 
 @overload
-def degminsec2deg(a: str) -> float:
-    ...
+def degminsec2deg(a: str) -> float: ...
 
 
-def degminsec2deg(
-    a: _Union[_pd.Series, _pd.DataFrame, list, str]
-) -> _Union[_pd.Series, _pd.DataFrame, float]:
+def degminsec2deg(a: Union[_pd.Series, _pd.DataFrame, list, str]) -> Union[_pd.Series, _pd.DataFrame, float]:
     """Converts degrees/minutes/seconds to decimal degrees.
 
     :param _Union[_pd.Series, _pd.DataFrame, list, str] a: space-delimited string values of degrees/minutes/seconds
@@ -319,9 +287,7 @@ def degminsec2deg(
         assert isinstance(a_series, _pd.Series)
         return _series_str_degminsec2deg(a_series).unstack()
     else:
-        raise TypeError(
-            "Unsupported input type. Please use either of _pd.Series, _pd.DataFrame, List or str"
-        )
+        raise TypeError("Unsupported input type. Please use either of _pd.Series, _pd.DataFrame, List or str")
 
 
 def _deg2degminsec(a: _np.ndarray) -> _np.ndarray:
@@ -338,21 +304,18 @@ def _deg2degminsec(a: _np.ndarray) -> _np.ndarray:
 
 
 @overload
-def deg2degminsec(a: float) -> float:
-    ...
+def deg2degminsec(a: float) -> float: ...
 
 
 @overload
-def deg2degminsec(a: list) -> _np.ndarray:
-    ...
+def deg2degminsec(a: list) -> _np.ndarray: ...
 
 
 @overload
-def deg2degminsec(a: _np.ndarray) -> _np.ndarray:
-    ...
+def deg2degminsec(a: _np.ndarray) -> _np.ndarray: ...
 
 
-def deg2degminsec(a: _Union[_np.ndarray, list, float]) -> _Union[_np.ndarray, float]:
+def deg2degminsec(a: Union[_np.ndarray, list, float]) -> Union[_np.ndarray, float]:
     """Converts decimal degrees to string representation in the form of degrees minutes seconds
       as in the sinex SITE/ID block. Could be used with multiple columns at once (2D ndarray)
 
@@ -371,9 +334,7 @@ def deg2degminsec(a: _Union[_np.ndarray, list, float]) -> _Union[_np.ndarray, fl
 def throw_if_index_duplicates(df):
     if df.index.has_duplicates:
         df_dupl = df[df.index.duplicated()]
-        dt_dupl = _gn_datetime.j20002datetime(
-            df_dupl.index.get_level_values("TIME").unique().values
-        )
+        dt_dupl = _gn_datetime.j20002datetime(df_dupl.index.get_level_values("TIME").unique().values)
         raise ValueError(
             f"Found duplicated index entries at {dt_dupl} time values. Complete duplicated index entries present, see below:\n {df[df.index.duplicated()].to_string()}"
         )
@@ -399,14 +360,10 @@ def throw_if_nans(trace_bytes: bytes, nan_to_find=b"-nan", max_reported_nans: in
         else:
             break
     if nans_bytes != b"":
-        raise ValueError(
-            f"Found nan values (max_nans = {max_reported_nans})\n{nans_bytes.decode()}"
-        )
+        raise ValueError(f"Found nan values (max_nans = {max_reported_nans})\n{nans_bytes.decode()}")
 
 
-def df_groupby_statistics(
-    df: _Union[_pd.Series, _pd.DataFrame], lvl_name: _Union[list, str]
-):
+def df_groupby_statistics(df: Union[_pd.Series, _pd.DataFrame], lvl_name: Union[list, str]):
     """Generate AVG/STD/RMS statistics from a dataframe summarizing over levels
 
     :param _pd.Series df: an input dataframe or series
@@ -447,8 +404,8 @@ def _get_trend(dataset, deg=1):
 
 def remove_outliers(
     dataframe: _pd.DataFrame,
-    cutoff: _Union[int, float, None] = None,
-    coeff_std: _Union[int, float] = 3,
+    cutoff: Union[int, float, None] = None,
+    coeff_std: Union[int, float] = 3,
 ) -> _pd.DataFrame:
     """Filters a dataframe with linear data. Runs detrending of the data to normalize to zero and applies absolute cutoff and std-based filtering
 
