@@ -540,7 +540,7 @@ def diffsp3(
     plot=False,
     write_rac_file=False,
 ):
-    # Eugene: function name and description are confusing - it seems to output the SISRE instead of SP3 orbit/clock differences against the given tolerance
+    # TODO: change function name and description as both are confusing - it seems to output the SISRE instead of SP3 orbit/clock differences against the given tolerance
     """Compares two sp3 files and outputs a dataframe of differences above tolerance if such were found"""
     sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path, nodata_to_nan=nodata_to_nan), _gn_io.sp3.read_sp3(
         sp3_b_path, nodata_to_nan=nodata_to_nan
@@ -553,7 +553,7 @@ def diffsp3(
         as_sisre = True
 
     status = 0
-    diff_rac = sisre(
+    sv_sisre = sisre(
         sp3_a=sp3_a.iloc[:, :3],
         sp3_b=sp3_b.iloc[:, :3],
         clk_a=clk_a,
@@ -564,12 +564,12 @@ def diffsp3(
         hlm_mode=hlm_mode,
         plot=plot,
         write_rac_file=write_rac_file,
-    )  # Eugene: sisre() returns SISRE instead of RAC differences
+    )
 
-    bad_rac_vals = _diff2msg(diff_rac, tol=tol)
-    if bad_rac_vals is not None:
+    bad_sisre_vals = _diff2msg(sv_sisre, tol=tol)
+    if bad_sisre_vals is not None:
         _logging.log(
-            msg=f':diffutil found {"SISRE values" if as_sisre else "estimates"} estimates diffs above {"the extracted STDs" if tol is None else f"{tol:.1E} tolerance"}:\n{bad_rac_vals.to_string(justify="center")}\n',
+            msg=f':diffutil found {"SISRE values" if as_sisre else "estimates"} diffs above {"the extracted STDs" if tol is None else f"{tol:.1E} tolerance"}:\n{bad_sisre_vals.to_string(justify="center")}\n',
             level=log_lvl,
         )
         status = -1
@@ -698,12 +698,10 @@ def format_index(
     :param _pd.DataFrame diff_df: The Pandas DataFrame containing SP3 or CLK differences
     :return None
     """
-    # Convert the epoch indices from J2000 seconds to python datetimes
     diff_df.index = _pd.MultiIndex.from_tuples(
         ((idx[0] + _gn_const.J2000_ORIGIN, idx[1]) for idx in diff_df.index.values)
     )
 
-    # Rename the indices
     diff_df.index = diff_df.index.set_names(["Epoch", "Satellite"])
 
 
@@ -722,25 +720,15 @@ def sp3_difference(
     base_sp3_df = _gn_io.sp3.read_sp3(str(base_sp3_file))
     test_sp3_df = _gn_io.sp3.read_sp3(str(test_sp3_file))
 
-    # Select rows with matching indices and calculate XYZ differences (ECEF)
     common_indices = base_sp3_df.index.intersection(test_sp3_df.index)
     diff_est_df = test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
 
-    # Extract clocks and change the units from ms to ns (read_sp3 will result in sp3 units (ms))
-    # TODO: normalise clocks
-    diff_clk_df = diff_est_df["CLK"].to_frame(name="CLK") * 1e3
-
-    # Drop clocks and then change the units from km to m (read_sp3 will result in sp3 units (km))
+    diff_clk_df = diff_est_df["CLK"].to_frame(name="CLK") * 1e3  # TODO: normalise clocks
     diff_xyz_df = diff_est_df.drop(columns=["CLK"]) * 1e3
+    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, hlm_mode=None)  # TODO: hlm_mode
 
-    # RAC difference
-    # TODO: hlm_mode
-    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, hlm_mode=None)
-
-    # Drop the not-particularly needed 'EST_RAC' multi-index level
     diff_rac_df.columns = diff_rac_df.columns.droplevel(0)
 
-    # Change the units from km to m (diff_sp3_rac will result in sp3 units (km))
     diff_rac_df = diff_rac_df * 1e3
 
     diff_sp3_df = diff_xyz_df.join(diff_rac_df)
@@ -748,8 +736,6 @@ def sp3_difference(
     diff_sp3_df["Clock"] = diff_clk_df
     diff_sp3_df["|Clock|"] = diff_clk_df.abs()
 
-    # Change the epoch indices from J2000 seconds to more readable python datetimes
-    # and rename the indices properly
     format_index(diff_sp3_df)
 
     return diff_sp3_df
@@ -775,13 +761,9 @@ def clk_difference(
 
     diff_clk_df = compare_clk(test_clk_df, base_clk_df, norm_types=norm_types)
 
-    # Stack diff_clk_df to keep the format consistent with other dataframes (compare_clk() returns unstacked dataframe)
-    # and change the units from s to ns (read_clk() and compare_clk() will result in clk units (s))
     diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e9
     diff_clk_df["|Clock|"] = diff_clk_df.abs()
 
-    # Change the epoch indices from J2000 seconds to more readable python datetimes
-    # and rename the indices properly
     format_index(diff_clk_df)
 
     return diff_clk_df
@@ -796,12 +778,10 @@ def difference_statistics(
     :param _pd.DataFrame diff_df: The Pandas DataFrame containing SP3 or CLK differences
     :return _pd.DataFrame: The Pandas DataFrame containing statistics of SP3 or CLK differences
     """
-    # Statistics of all satellites
     stats_df = diff_df.describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
     stats_df.loc["rms"] = _gn_aux.rms(diff_df)
     stats_df.index = _pd.MultiIndex.from_tuples((("All", idx) for idx in stats_df.index.values))
 
-    # Statistics satellite-by-satellite
     stats_sat = (
         diff_df.groupby("Satellite")
         .describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
@@ -810,7 +790,6 @@ def difference_statistics(
     rms_sat = _gn_aux.rms(diff_df, level="Satellite")
     rms_sat.index = _pd.MultiIndex.from_tuples(((sv, "rms") for sv in rms_sat.index.values))
 
-    # Merge above dataframes, rename the indices properly and re-arrange the statistics
     stats_df = _pd.concat([stats_df, stats_sat, rms_sat]).sort_index()
     stats_df.index = stats_df.index.set_names(["Satellite", "Stats"])
     stats_df = stats_df.reindex(
