@@ -407,21 +407,20 @@ def convert_nominal_span(nominal_span: str) -> datetime.timedelta:
     """
     span = int(nominal_span[0:2])
     unit = nominal_span[2].upper()
-    if unit == "S":
-        return datetime.timedelta(seconds=span)
-    elif unit == "M":
-        return datetime.timedelta(minutes=span)
-    elif unit == "H":
-        return datetime.timedelta(hours=span)
-    elif unit == "D":
-        return datetime.timedelta(days=span)
-    elif unit == "W":
-        return datetime.timedelta(weeks=span)
-    elif unit == "L":
-        return datetime.timedelta(days=span * 28)
-    elif unit == "Y":
-        return datetime.timedelta(days=span * 365)
-    else:
+    unit_to_timedelta_args = {
+        "S": {"seconds": 1},
+        "M": {"minutes": 1},
+        "H": {"hours": 1},
+        "D": {"days": 1},
+        "W": {"weeks": 1},
+        "L": {"days": 28},
+        "Y": {"days": 365},
+    }
+    try:
+        timedelta_args = unit_to_timedelta_args[unit]
+        return datetime.timedelta(**{k: v * span for k, v in timedelta_args.items()})
+    except KeyError:
+        logging.warning("Time unit '%s' not understood", unit)
         return datetime.timedelta()
 
 

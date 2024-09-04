@@ -1,6 +1,6 @@
 import logging as _logging
 from pathlib import Path as _Path
-from typing import Union as _Union
+from typing import Union
 
 import numpy as _np
 import pandas as _pd
@@ -103,7 +103,7 @@ def _diff2msg(diff, tol=None, dt_as_gpsweek=False):
     return msg
 
 
-def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: _Union[float, None] = None, plot: bool = False) -> int:
+def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, None] = None, plot: bool = False) -> int:
     """_summary_
 
     Args:
@@ -142,7 +142,7 @@ def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: _Union[float, Non
     return 0
 
 
-def _compare_residuals(diffstd: _pd.DataFrame, log_lvl: int, tol: _Union[float, None] = None):
+def _compare_residuals(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, None] = None):
     """Compares extracted POSTFIT residuals from the trace file and generates a comprehensive statistics on the present differences. Alternatively logs an OK message.
 
     Args:
@@ -309,8 +309,8 @@ def compare_clk(
     clk_a: _pd.DataFrame,
     clk_b: _pd.DataFrame,
     norm_types: list = ["daily", "epoch"],
-    ext_dt: _Union[_np.ndarray, _pd.Index, None] = None,
-    ext_svs: _Union[_np.ndarray, _pd.Index, None] = None,
+    ext_dt: Union[_np.ndarray, _pd.Index, None] = None,
+    ext_svs: Union[_np.ndarray, _pd.Index, None] = None,
 ) -> _pd.DataFrame:
     """Compares clock dataframes, removed common mode.
 
@@ -365,10 +365,14 @@ def compare_clk(
                 clk_a_unst=clk_a_unst, clk_b_unst=clk_b_unst
             )
 
-        clk_a_unst[clk_b_unst.isna()] = _np.nan  # replace corresponding values in clk_a_unst with NaN where clk_b_unst is NaN
-        clk_b_unst[clk_a_unst.isna()] = _np.nan  # replace corresponding values in clk_b_unst with NaN where clk_a_unst is NaN
+        clk_a_unst[clk_b_unst.isna()] = (
+            _np.nan
+        )  # replace corresponding values in clk_a_unst with NaN where clk_b_unst is NaN
+        clk_b_unst[clk_a_unst.isna()] = (
+            _np.nan
+        )  # replace corresponding values in clk_b_unst with NaN where clk_a_unst is NaN
 
-            # get the sv to use for norm and overwrite norm_type value with sv prn code
+        # get the sv to use for norm and overwrite norm_type value with sv prn code
         _logging.info("---removing common mode from clk 1---")
         _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types)
         _logging.info("---removing common mode from clk 2---")
@@ -379,12 +383,12 @@ def compare_clk(
 def sisre(
     sp3_a: _pd.DataFrame,
     sp3_b: _pd.DataFrame,
-    clk_a: _Union[_pd.DataFrame, None] = None,
-    clk_b: _Union[_pd.DataFrame, None] = None,
+    clk_a: Union[_pd.DataFrame, None] = None,
+    clk_b: Union[_pd.DataFrame, None] = None,
     norm_type: str = "both",
     output_mode: str = "rms",
     clean: bool = True,
-    cutoff: _Union[int, float, None] = None,
+    cutoff: Union[int, float, None] = None,
     use_rms: bool = False,
     hlm_mode=None,
     plot=False,
@@ -525,11 +529,22 @@ def sisre(
 
 
 def diffsp3(
-    sp3_a_path, sp3_b_path, tol, log_lvl, clk_a_path, clk_b_path, nodata_to_nan=True, hlm_mode=None, plot=False, write_rac_file=False
+    sp3_a_path,
+    sp3_b_path,
+    tol,
+    log_lvl,
+    clk_a_path,
+    clk_b_path,
+    nodata_to_nan=True,
+    hlm_mode=None,
+    plot=False,
+    write_rac_file=False,
 ):
-# Eugene: function name and description are confusing - it seems to output the SISRE instead of SP3 orbit/clock differences against the given tolerance
+    # Eugene: function name and description are confusing - it seems to output the SISRE instead of SP3 orbit/clock differences against the given tolerance
     """Compares two sp3 files and outputs a dataframe of differences above tolerance if such were found"""
-    sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path, nodata_to_nan=nodata_to_nan), _gn_io.sp3.read_sp3(sp3_b_path, nodata_to_nan=nodata_to_nan)
+    sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path, nodata_to_nan=nodata_to_nan), _gn_io.sp3.read_sp3(
+        sp3_b_path, nodata_to_nan=nodata_to_nan
+    )
 
     as_sisre = False  # the switch only needed for logging msg
     clk_a = clk_b = None
@@ -709,9 +724,7 @@ def sp3_difference(
 
     # Select rows with matching indices and calculate XYZ differences (ECEF)
     common_indices = base_sp3_df.index.intersection(test_sp3_df.index)
-    diff_est_df = (
-        test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
-    )
+    diff_est_df = test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
 
     # Extract clocks and change the units from ms to ns (read_sp3 will result in sp3 units (ms))
     # TODO: normalise clocks
@@ -786,9 +799,7 @@ def difference_statistics(
     # Statistics of all satellites
     stats_df = diff_df.describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
     stats_df.loc["rms"] = _gn_aux.rms(diff_df)
-    stats_df.index = _pd.MultiIndex.from_tuples(
-        (("All", idx) for idx in stats_df.index.values)
-    )
+    stats_df.index = _pd.MultiIndex.from_tuples((("All", idx) for idx in stats_df.index.values))
 
     # Statistics satellite-by-satellite
     stats_sat = (
@@ -797,9 +808,7 @@ def difference_statistics(
         .stack(dropna=False)
     )
     rms_sat = _gn_aux.rms(diff_df, level="Satellite")
-    rms_sat.index = _pd.MultiIndex.from_tuples(
-        ((sv, "rms") for sv in rms_sat.index.values)
-    )
+    rms_sat.index = _pd.MultiIndex.from_tuples(((sv, "rms") for sv in rms_sat.index.values))
 
     # Merge above dataframes, rename the indices properly and re-arrange the statistics
     stats_df = _pd.concat([stats_df, stats_sat, rms_sat]).sort_index()

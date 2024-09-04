@@ -25,7 +25,7 @@ import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Optional as _Optional, Tuple as _Tuple, List as _List
+from typing import Any, Generator, List, Optional, Tuple, Union
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError
 
@@ -121,7 +121,7 @@ def upload_with_chunksize_and_meta(
     # return transfer_callback.thread_info
 
 
-def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum") -> _Optional[str]:
+def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum") -> Optional[str]:
     """requests md5checksum metadata over https (AWS S3 bucket)
     Returns None if file not found (404) or if md5checksum metadata key does not exist"""
     logging.info(f'requesting checksum for "{url}"')
@@ -147,7 +147,7 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
     return None
 
 
-def download_url(url: str, destfile: str | _os.PathLike, max_retries: int = 5) -> _Optional[_Path]:
+def download_url(url: str, destfile: Union[str, _os.PathLike], max_retries: int = 5) -> Optional[_Path]:
     logging.info(f'requesting "{url}"')
     for retry in range(1, max_retries + 1):
         try:
@@ -370,7 +370,7 @@ def generate_product_filename(
     version: str = "0",
     project: str = "OPS",
     content_type: str = None,
-) -> _Tuple[str, GPSDate, _datetime.datetime]:
+) -> Tuple[str, GPSDate, _datetime.datetime]:
     """Given a reference datetime and extention of file, generate the IGS filename and GPSDate obj for use in download
 
     :param _datetime.datetime reference_start: Datetime of the start period of interest
@@ -418,14 +418,16 @@ def generate_product_filename(
     return product_filename, gps_date, reference_start
 
 
-def check_whether_to_download(filename: str, download_dir: _Path, if_file_present: str = "prompt_user") -> _Path | None:
+def check_whether_to_download(
+    filename: str, download_dir: _Path, if_file_present: str = "prompt_user"
+) -> Union[_Path, None]:
     """Determine whether to download given file (filename) to the desired location (download_dir) based on whether it is
     already present and what action to take if it is (if_file_present)
 
     :param str filename: Filename of the downloaded file
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path | None: pathlib.Path to the downloaded file if file should be downloaded, otherwise returns None
+    :return _Path or None: pathlib.Path to the downloaded file if file should be downloaded, otherwise returns None
     """
     # Flag to determine whether to download:
     download = None
@@ -687,7 +689,7 @@ def connect_cddis(verbose=False):
 
 
 @_contextmanager
-def ftp_tls(url: str, **kwargs) -> None:
+def ftp_tls(url: str, **kwargs) -> Generator[Any, Any, Any]:
     """Opens a connect to specified ftp server over tls.
 
     :param: url: Remote ftp url
@@ -755,7 +757,7 @@ def download_file_from_cddis(
     return download_filepath
 
 
-def download_multiple_files_from_cddis(files: _List[str], ftp_folder: str, output_folder: _Path) -> None:
+def download_multiple_files_from_cddis(files: List[str], ftp_folder: str, output_folder: _Path) -> None:
     """Downloads multiple files in a single folder from cddis in a thread pool.
 
     :param files: List of str filenames
@@ -773,7 +775,7 @@ def download_product_from_cddis(
     end_epoch: _datetime,
     file_ext: str,
     limit: int = None,
-    long_filename: _Optional[bool] = None,
+    long_filename: Optional[bool] = None,
     analysis_center: str = "IGS",
     solution_type: str = "ULT",
     sampling_rate: str = "15M",
@@ -890,13 +892,11 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
     :raises ValueError: If an invalid option is given for reference_frame variable
     :return _Path: The pathlib.Path of the downloaded file
     """
-    match reference_frame:
-        case "IGS20":
-            atx_filename = "igs20.atx"
-        case "IGb14":
-            atx_filename = "igs14.atx"
-        case _:
-            raise ValueError("Invalid value passed for reference_frame var. Must be either 'IGS20' or 'IGb14'")
+    reference_frame_to_filename = {"IGS20": "igs20.atx", "IGb14": "igs14.atx"}
+    try:
+        atx_filename = reference_frame_to_filename[reference_frame]
+    except KeyError:
+        raise ValueError("Invalid value passed for reference_frame var. Must be either 'IGS20' or 'IGb14'")
 
     ensure_folders([download_dir])
 
@@ -940,12 +940,12 @@ def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = 
     return download_filepath
 
 
-def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> _List[_Path]:
+def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> List[_Path]:
     """Download yaw rate / bias files needed to for Ginan's PEA
 
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _List[_Path]: Return list of download files
+    :return List[_Path]: Return list of download files
     """
     ensure_folders([download_dir])
     download_filepaths = []
