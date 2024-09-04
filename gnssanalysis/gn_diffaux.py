@@ -744,7 +744,7 @@ def sp3_difference(
 def clk_difference(
     base_clk_file: _Path,
     test_clk_file: _Path,
-    norm_types: list,
+    norm_types: list = [],
 ) -> _pd.DataFrame:
     """
     Compare two CLK files to calculate clock differences with common mode removed (if specified)
@@ -753,7 +753,7 @@ def clk_difference(
     :param _Path base_clk_file: Path of the baseline CLK file
     :param _Path test_clk_file: Path of the test CLK file
     :param norm_types list: Normalizations to apply. Available options include 'epoch', 'daily', 'sv',
-            any satellite PRN, or any combination of them, defaults to None
+            any satellite PRN, or any combination of them, defaults to empty list
     :return _pd.DataFrame: The Pandas DataFrame containing clock differences
     """
     base_clk_df = _gn_io.clk.read_clk(base_clk_file)
