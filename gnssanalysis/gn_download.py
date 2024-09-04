@@ -890,13 +890,11 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
     :raises ValueError: If an invalid option is given for reference_frame variable
     :return _Path: The pathlib.Path of the downloaded file
     """
-    match reference_frame:
-        case "IGS20":
-            atx_filename = "igs20.atx"
-        case "IGb14":
-            atx_filename = "igs14.atx"
-        case _:
-            raise ValueError("Invalid value passed for reference_frame var. Must be either 'IGS20' or 'IGb14'")
+    reference_frame_to_filename = {"IGS20": "igs20.atx", "IGb14": "igs14.atx"}
+    try:
+        atx_filename = reference_frame_to_filename[reference_frame]
+    except KeyError:
+        raise ValueError("Invalid value passed for reference_frame var. Must be either 'IGS20' or 'IGb14'")
 
     ensure_folders([download_dir])
 
