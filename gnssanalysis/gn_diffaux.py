@@ -316,7 +316,7 @@ def compare_clk(
 
     :param _pd.DataFrame clk_a: clk dataframe 1
     :param _pd.DataFrame clk_b: clk dataframe 2
-    :param str norm_type: normalization to apply, defaults to "both"
+    :param str norm_types: normalization to apply, defaults to ["daily", "epoch"]
     :param _Union[_np.ndarray, _pd.Index, None] ext_dt: external datetime values to filter the clk dfs, defaults to None
     :param _Union[_np.ndarray, _pd.Index, None] ext_svs: external satellites to filter the clk dfs, defaults to None
     :raises ValueError: if no common epochs between clk_a and external datetime were found
@@ -385,7 +385,7 @@ def sisre(
     sp3_b: _pd.DataFrame,
     clk_a: Union[_pd.DataFrame, None] = None,
     clk_b: Union[_pd.DataFrame, None] = None,
-    norm_type: str = "both",
+    norm_types: list = ["daily", "epoch"],
     output_mode: str = "rms",
     clean: bool = True,
     cutoff: Union[int, float, None] = None,
@@ -422,8 +422,8 @@ def sisre(
         Output of read_clk function or a similar clk DataFrame.
     clk_b : clk DataFrame b (optional)
         Output of read_clk function or a similar clk DataFrame.
-    norm_type : str
-        a norm_type parameter used for the clk values normalisations before
+    norm_types : list
+        normalization parameter used for removing the clk common modes before
         differencing.
     output_mode : str
         controls at what stage to output SISRE
@@ -475,7 +475,7 @@ def sisre(
     if (clk_a is not None) & (clk_b is not None):  # check if clk data is present
         clk_diff = (
             compare_clk(
-                clk_a, clk_b, norm_types=norm_type, ext_dt=rac_unstack.index, ext_svs=rac_unstack.columns.levels[1]
+                clk_a, clk_b, norm_types=norm_types, ext_dt=rac_unstack.index, ext_svs=rac_unstack.columns.levels[1]
             )
             * _gn_const.C_LIGHT
         )  # units are meters
@@ -558,7 +558,7 @@ def diffsp3(
         sp3_b=sp3_b.iloc[:, :3],
         clk_a=clk_a,
         clk_b=clk_b,
-        norm_type="both",
+        norm_types=["daily", "epoch"],
         output_mode="sv",
         clean=False,
         hlm_mode=hlm_mode,
@@ -624,12 +624,12 @@ def diffblq(blq_a_path, blq_b_path, tol, log_lvl):
     return status
 
 
-def diffclk(clk_a_path, clk_b_path, tol, log_lvl, norm_type="both"):
+def diffclk(clk_a_path, clk_b_path, tol, log_lvl, norm_types=["daily", "epoch"]):
     """Compares two clk files and provides a difference above atol if present. If sp3 orbits provided - does analysis using the SISRE values"""
     clk_a, clk_b = _gn_io.clk.read_clk(clk_a_path), _gn_io.clk.read_clk(clk_b_path)
 
     status = 0
-    diff_clk = compare_clk(clk_a=clk_a, clk_b=clk_b, norm_types=norm_type) * _gn_const.C_LIGHT
+    diff_clk = compare_clk(clk_a=clk_a, clk_b=clk_b, norm_types=norm_types) * _gn_const.C_LIGHT
 
     bad_clk_vals = _diff2msg(diff_clk, tol=tol)
     if bad_clk_vals is not None:
@@ -744,7 +744,7 @@ def sp3_difference(
 def clk_difference(
     base_clk_file: _Path,
     test_clk_file: _Path,
-    norm_types: list[str],
+    norm_types: list,
 ) -> _pd.DataFrame:
     """
     Compare two CLK files to calculate clock differences with common mode removed (if specified)
@@ -752,7 +752,7 @@ def clk_difference(
 
     :param _Path base_clk_file: Path of the baseline CLK file
     :param _Path test_clk_file: Path of the test CLK file
-    :param norm_types list[str]: Normalizations to apply. Available options include 'epoch', 'daily', 'sv',
+    :param norm_types list: Normalizations to apply. Available options include 'epoch', 'daily', 'sv',
             any satellite PRN, or any combination of them, defaults to None
     :return _pd.DataFrame: The Pandas DataFrame containing clock differences
     """
