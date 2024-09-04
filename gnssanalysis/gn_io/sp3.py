@@ -29,9 +29,7 @@ _RE_SP3_HEAD = _re.compile(
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
 # Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
-_RE_SP3_HEADER_SV = _re.compile(
-    rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE
-)
+_RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
 # Note: header is padded with '  0' entries after the actual data, so empty fields are matched and then trimmed.
@@ -240,9 +238,7 @@ def _process_sp3_block(
     return temp_sp3
 
 
-def read_sp3(
-    sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True
-) -> _pd.DataFrame:
+def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
 
@@ -360,9 +356,7 @@ def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
     return date_lines, data_blocks
 
 
-def parse_sp3_header(
-    header: bytes, warn_on_negative_sv_acc_values: bool = True
-) -> _pd.Series:
+def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True) -> _pd.Series:
     """
     Parse the header of an SP3 file and extract relevant information.
 
@@ -371,10 +365,9 @@ def parse_sp3_header(
     """
     try:
         sp3_heading = _pd.Series(
-            data=_np.asarray(
-                _RE_SP3_HEAD.search(header).groups()
-                + _RE_SP3_HEAD_FDESCR.search(header).groups()
-            ).astype(str),
+            data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
+                str
+            ),
             index=[
                 "VERSION",
                 "PV_FLAG",
@@ -389,9 +382,7 @@ def parse_sp3_header(
             ],
         )
     except AttributeError as e:  # Make the exception slightly clearer.
-        raise AttributeError(
-            "Failed to parse SP3 header. Regex likely returned no match.", e
-        )
+        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
     # Find all Satellite Vehicle (SV) entries
     # Updated to also extract the count of expected SVs from the header, and compare that to the number of SVs we get.
@@ -566,15 +557,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
 
     comment = ["/*\n"] * 4
 
-    return "".join(
-        line1
-        + line2
-        + sats_header.tolist()
-        + sv_orb_head.tolist()
-        + head_c
-        + head_fi
-        + comment
-    )
+    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
 
 
 def gen_sp3_content(

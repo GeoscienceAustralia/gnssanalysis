@@ -76,7 +76,7 @@ def diff2plot(diff, kind=None, title="Unnamed plot"):
         if mask0.any():
             cols = diff.columns[mask0]
             x1 = _gn_datetime.j20002datetime(diff.index.values).astype(str)
-            plx.datetime._datetime_form = "%Y-%m-%dT%H:%M:%S" # change parsed format to numpy-like
+            plx.datetime._datetime_form = "%Y-%m-%dT%H:%M:%S"  # change parsed format to numpy-like
             for i in range(cols.shape[0]):
                 plx.scatter_date(x1, diff[cols[i]].to_list(), color=i, marker="hd", label=diff.columns[i])
                 plx.plotsize(100, 30 + 3)

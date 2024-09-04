@@ -5,7 +5,7 @@ import pathlib as _pathlib
 
 import click as _click
 
-from typing import List as _List
+from typing import List, Union
 
 
 def diffutil_verify_input(input):
@@ -52,7 +52,7 @@ def get_filetype(path):
     return suffix
 
 
-def configure_logging(verbose: bool, output_logger: bool = False) -> _logging.Logger | None:
+def configure_logging(verbose: bool, output_logger: bool = False) -> Union[_logging.Logger, None]:
     """Configure the logger object with the level of verbosity requested and output if desired
 
     :param bool verbose: Verbosity of logger object to use for encoding logging strings, True: DEBUG, False: INFO
@@ -71,10 +71,10 @@ def configure_logging(verbose: bool, output_logger: bool = False) -> _logging.Lo
         return None
 
 
-def ensure_folders(paths: _List[_pathlib.Path]):
+def ensure_folders(paths: List[_pathlib.Path]):
     """Ensures the folders in the input list exist in the file system - if not, create them
 
-    :param _List[_pathlib.Path] paths: list of pathlib.Path/s to check
+    :param List[_pathlib.Path] paths: list of pathlib.Path/s to check
     """
     for path in paths:
         if not isinstance(path, _pathlib.Path):
