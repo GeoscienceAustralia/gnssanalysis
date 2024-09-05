@@ -156,7 +156,7 @@ E03     -0.1216 0.042   0.1286
 ```
 These can also be stacked:
 ```bash
-clkq -i IGS2R03FIN_20191990000_01D_30S_CLK.CLK COD0R03FIN_20191990000_01D_30S_CLK.CLK --norm "daily"
+clkq -i IGS2R03FIN_20191990000_01D_30S_CLK.CLK COD0R03FIN_20191990000_01D_30S_CLK.CLK --norm "daily" --norm "epoch"
 ```
 Result:
 ```

@@ -1,4 +1,5 @@
 """Parser of frame discontinuity file"""
+
 from io import BytesIO as _BytesIO
 
 import pandas as _pd
