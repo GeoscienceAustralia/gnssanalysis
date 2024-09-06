@@ -1,6 +1,6 @@
 # Central record of CLK test data sets to be shared across unit tests
 
-# dataset is part of the IGS benchmark (modified to include non null data on clock)
+# dataset is part of the IGS benchmark IGS0OPSRAP_20240400000_01D_05M_CLK.CLK
 clk_test_data_truncated_igs_rapid = b"""     3.00           C                                       RINEX VERSION / TYPE
 CCLOCK              IGSACC @ GA MIT                         PGM / RUN BY / DATE 
 GPS week: 2300   Day: 5   MJD: 60349                        COMMENT             
@@ -146,7 +146,7 @@ AS G30  2024 02 09 00 15  0.000000  2   -4.350348588860e-04  1.907215367590e-11
 AS G31  2024 02 09 00 15  0.000000  2   -2.277027375110e-04  1.580708131870e-11
 AS G32  2024 02 09 00 15  0.000000  2   -6.105563690940e-04  1.707684061960e-11"""
 
-# second dataset a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3
+# second dataset a truncated version of file GFZ0OPSRAP_20240400000_01D_05M_CLK.CLK
 clk_test_data_truncated_gfz_rapid = b"""     3.00           C                                       RINEX VERSION / TYPE
 EPOS-8              GFZ                 20240210 084659 LCL PGM / RUN BY / DATE
 G                   IGS20_2290                              SYS / PCVS APPLIED

@@ -7,9 +7,9 @@ import gnssanalysis.gn_io.clk as clk
 import gnssanalysis.gn_diffaux as gn_diffaux
 
 from test_datasets.clk_test_data import (
-    # dataset is part of the IGS benchmark (modified to include non null data on clock):
+    # dataset is part of the IGS benchmark IGS0OPSRAP_20240400000_01D_05M_CLK.CLK (modified to include non null data on clock):
     clk_test_data_truncated_igs_rapid as input_data_igs,
-    # second dataset a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
+    # second dataset a truncated version of file GFZ0OPSRAP_20240400000_01D_05M_CLK.CLK:
     clk_test_data_truncated_gfz_rapid as input_data_gfz,
 )
 
@@ -31,7 +31,7 @@ class TestClk(TestCase):
         self.assertEqual(clk_df_igs.index[0][1], 760708800, msg="Check that first epoch is expressed correctly")
         self.assertEqual(clk_df_gfz.index[0][1], 760708800, msg="Check that first epoch is expressed correctly")
         self.assertEqual(clk_df_igs["EST"].iloc[0], 0.0001688124131169, msg="Check first datapoint is correct")
-        self.assertEqual(clk_df_gfz["EST"].iloc[0], 0.000168814651894, msg="Check first datapoint is correct")
+        self.assertEqual(clk_df_gfz["EST"].iloc[0], 0.0001688146518940, msg="Check first datapoint is correct")
         self.assertEqual(clk_df_igs["EST"].iloc[-1], -0.000610556369094, msg="Check last datapoint is correct")
         self.assertEqual(clk_df_gfz["EST"].iloc[-1], -0.000610554231912, msg="Check last datapoint is correct")
 
