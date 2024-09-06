@@ -7,9 +7,9 @@ import gnssanalysis.gn_io.clk as clk
 import gnssanalysis.gn_diffaux as gn_diffaux
 
 from test_datasets.clk_test_data import (
-    # dataset is part of the IGS benchmark IGS0OPSRAP_20240400000_01D_05M_CLK.CLK (modified to include non null data on clock):
+    # first dataset is a truncated version of file IGS0OPSRAP_20240400000_01D_05M_CLK.CLK:
     clk_test_data_truncated_igs_rapid as input_data_igs,
-    # second dataset a truncated version of file GFZ0OPSRAP_20240400000_01D_05M_CLK.CLK:
+    # second dataset is a truncated version of file GFZ0OPSRAP_20240400000_01D_05M_CLK.CLK:
     clk_test_data_truncated_gfz_rapid as input_data_gfz,
 )
 

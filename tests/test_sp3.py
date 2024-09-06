@@ -8,9 +8,9 @@ import pandas as pd
 import gnssanalysis.gn_io.sp3 as sp3
 
 from test_datasets.sp3_test_data import (
-    # dataset is part of the IGS benchmark (modified to include non null data on clock):
+    # first dataset is part of the IGS benchmark (modified to include non null data on clock):
     sp3_test_data_igs_benchmark_null_clock as input_data,
-    # second dataset a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
+    # second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
     sp3_test_data_truncated_cod_final as input_data2,
 )
 
