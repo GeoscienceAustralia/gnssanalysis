@@ -417,7 +417,9 @@ def generate_product_filename(
             product_filename = f"igs{gps_date.yr[2:]}P{gps_date.gpswk}.snx.Z"
         else:
             hour = f"{reference_start.hour:02}"
-            product_filename = f"igu{gps_date.gpswkD}_{hour}.{file_ext}.Z"
+            prefix = "igs" if solution_type == "FIN" else "igr" if solution_type == "RAP" else "igu"
+            product_filename = f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z" if solution_type == "ULT" else \
+                f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
     return product_filename, gps_date, reference_start
 
 
