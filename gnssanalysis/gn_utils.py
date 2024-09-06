@@ -240,7 +240,7 @@ def clk(ctx, norm):
         clk_b_path=ctx.parent.params["input"][1],
         tol=ctx.parent.params["atol"],
         log_lvl=ctx.parent.params["log_lvl"],
-        norm_type=norm,
+        norm_types=norm,
     )
     diffutil_verify_status(status=status, passthrough=ctx.parent.params["passthrough"])
 

@@ -812,7 +812,7 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, li
     return b, hlm
 
 
-# Eugene: move to gn_diffaux.py (and other associated functions as well)?
+# TODO: move to gn_diffaux.py (and other associated functions as well)?
 def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,

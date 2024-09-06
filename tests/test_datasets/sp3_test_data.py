@@ -1,6 +1,6 @@
 # Central record of SP3 test data sets to be shared across unit tests
 
-# dataset is part of the IGS benchmark (modified to include non null data on clock)
+# first dataset is part of the IGS benchmark (modified to include non null data on clock)
 sp3_test_data_igs_benchmark_null_clock = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
 ## 1422 345600.00000000   900.00000000 54202 0.0000000000000
 +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
@@ -38,9 +38,10 @@ PG01  -1218.171155 -14755.013599  22252.168480 999999.999999
 VG01  26855.435366  -6704.236117  -3062.394499 999999.999999
 PG02  11149.555664  21314.099837  11331.977499 123456.999999
 VG02 -12578.915944  -7977.396362  26581.116225 999999.999999
-EOF"""
+EOF
+"""
 
-# second dataset a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3
+# second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3
 sp3_test_data_truncated_cod_final = b"""#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
 ## 2323 432000.00000000   300.00000000 60510 0.0000000000000
 +   34   G01G02G03G04G05G06G07G08G09G10G11G12G13G14G15G16G17

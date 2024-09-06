@@ -263,6 +263,11 @@ def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: s
     """
     IGS files following the long filename convention require a content specifier
     Given the file extension, generate the content specifier
+
+    :param str file_ext: 3-char file extention of the file (e.g. SP3, SNX, ERP, etc)
+    :param str analysis_center: 3-char string identifier for Analysis Center
+    :param str solution_type: 3-char string identifier for Solution Type of file
+    :return str: 3-char string identifier for Sampling Rate of the file (e.g. 15M)
     """
     file_ext = file_ext.upper()
     sampling_rates = {
@@ -294,9 +299,7 @@ def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: s
                     center_rates = file_rates.get(key, file_rates.get(()))
                     center_rates_found = True
                     break
-                # else:
-                #     return file_rates.get(())
-            if not center_rates_found:  # DZ: bug fix
+            if not center_rates_found:
                 return file_rates.get(())
             if isinstance(center_rates, dict):
                 return center_rates.get(solution_type, center_rates.get(None))
@@ -414,7 +417,9 @@ def generate_product_filename(
             product_filename = f"igs{gps_date.yr[2:]}P{gps_date.gpswk}.snx.Z"
         else:
             hour = f"{reference_start.hour:02}"
-            product_filename = f"igu{gps_date.gpswkD}_{hour}.{file_ext}.Z"
+            prefix = "igs" if solution_type == "FIN" else "igr" if solution_type == "RAP" else "igu"
+            product_filename = f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z" if solution_type == "ULT" else \
+                f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
     return product_filename, gps_date, reference_start
 
 
