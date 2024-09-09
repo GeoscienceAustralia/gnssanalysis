@@ -1,5 +1,6 @@
 import logging as _logging
-from typing import Union as _Union
+from pathlib import Path as _Path
+from typing import Union
 
 import numpy as _np
 import pandas as _pd
@@ -102,7 +103,7 @@ def _diff2msg(diff, tol=None, dt_as_gpsweek=False):
     return msg
 
 
-def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: _Union[float, None] = None, plot: bool = False) -> int:
+def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, None] = None, plot: bool = False) -> int:
     """_summary_
 
     Args:
@@ -141,7 +142,7 @@ def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: _Union[float, Non
     return 0
 
 
-def _compare_residuals(diffstd: _pd.DataFrame, log_lvl: int, tol: _Union[float, None] = None):
+def _compare_residuals(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, None] = None):
     """Compares extracted POSTFIT residuals from the trace file and generates a comprehensive statistics on the present differences. Alternatively logs an OK message.
 
     Args:
@@ -308,14 +309,14 @@ def compare_clk(
     clk_a: _pd.DataFrame,
     clk_b: _pd.DataFrame,
     norm_types: list = ["daily", "epoch"],
-    ext_dt: _Union[_np.ndarray, _pd.Index, None] = None,
-    ext_svs: _Union[_np.ndarray, _pd.Index, None] = None,
+    ext_dt: Union[_np.ndarray, _pd.Index, None] = None,
+    ext_svs: Union[_np.ndarray, _pd.Index, None] = None,
 ) -> _pd.DataFrame:
     """Compares clock dataframes, removed common mode.
 
     :param _pd.DataFrame clk_a: clk dataframe 1
     :param _pd.DataFrame clk_b: clk dataframe 2
-    :param str norm_type: normalization to apply, defaults to "both"
+    :param str norm_types: normalization to apply, defaults to ["daily", "epoch"]
     :param _Union[_np.ndarray, _pd.Index, None] ext_dt: external datetime values to filter the clk dfs, defaults to None
     :param _Union[_np.ndarray, _pd.Index, None] ext_svs: external satellites to filter the clk dfs, defaults to None
     :raises ValueError: if no common epochs between clk_a and external datetime were found
@@ -357,33 +358,37 @@ def compare_clk(
             _logging.debug("compare_clk: syncing clk_a_unst with common_svs as not equal")
             clk_a_unst = clk_a_unst[common_svs]
 
-    if len(norm_types) != 0:
-        _logging.info(f":_clk_compare:using {norm_types} clk normalization")
-        if "sv" in norm_types:
-            norm_types[norm_types.index("sv")] = _gn_io.clk.select_norm_svs_per_gnss(
+    norm_types_copy = norm_types.copy() # DO NOT overwrite norm_types otherwise it will cause errors when the function is called in a loop
+    if len(norm_types_copy) != 0:
+        _logging.info(f":compare_clk: using {norm_types_copy} clk normalization")
+        if "sv" in norm_types_copy:
+            norm_types_copy[norm_types_copy.index("sv")] = _gn_io.clk.select_norm_svs_per_gnss(
                 clk_a_unst=clk_a_unst, clk_b_unst=clk_b_unst
-            )
+            )  # get the svs to use for norm and overwrite "sv" with sv prns
 
-        clk_a_unst[clk_b_unst.isna()] = _np.nan  # replace corresponding values in clk_a_unst with NaN where clk_b_unst is NaN
-        clk_b_unst[clk_a_unst.isna()] = _np.nan  # replace corresponding values in clk_b_unst with NaN where clk_a_unst is NaN
+        clk_a_unst[clk_b_unst.isna()] = (
+            _np.nan
+        )  # replace corresponding values in clk_a_unst with NaN where clk_b_unst is NaN
+        clk_b_unst[clk_a_unst.isna()] = (
+            _np.nan
+        )  # replace corresponding values in clk_b_unst with NaN where clk_a_unst is NaN
 
-            # get the sv to use for norm and overwrite norm_type value with sv prn code
         _logging.info("---removing common mode from clk 1---")
-        _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types)
+        _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types_copy)
         _logging.info("---removing common mode from clk 2---")
-        _gn_io.clk.rm_clk_bias(clk_b_unst, norm_types=norm_types)
+        _gn_io.clk.rm_clk_bias(clk_b_unst, norm_types=norm_types_copy)
     return clk_a_unst - clk_b_unst
 
 
 def sisre(
     sp3_a: _pd.DataFrame,
     sp3_b: _pd.DataFrame,
-    clk_a: _Union[_pd.DataFrame, None] = None,
-    clk_b: _Union[_pd.DataFrame, None] = None,
-    norm_type: str = "both",
+    clk_a: Union[_pd.DataFrame, None] = None,
+    clk_b: Union[_pd.DataFrame, None] = None,
+    norm_types: list = ["daily", "epoch"],
     output_mode: str = "rms",
     clean: bool = True,
-    cutoff: _Union[int, float, None] = None,
+    cutoff: Union[int, float, None] = None,
     use_rms: bool = False,
     hlm_mode=None,
     plot=False,
@@ -417,8 +422,8 @@ def sisre(
         Output of read_clk function or a similar clk DataFrame.
     clk_b : clk DataFrame b (optional)
         Output of read_clk function or a similar clk DataFrame.
-    norm_type : str
-        a norm_type parameter used for the clk values normalisations before
+    norm_types : list
+        normalization parameter used for removing the clk common modes before
         differencing.
     output_mode : str
         controls at what stage to output SISRE
@@ -470,7 +475,7 @@ def sisre(
     if (clk_a is not None) & (clk_b is not None):  # check if clk data is present
         clk_diff = (
             compare_clk(
-                clk_a, clk_b, norm_types=norm_type, ext_dt=rac_unstack.index, ext_svs=rac_unstack.columns.levels[1]
+                clk_a, clk_b, norm_types=norm_types, ext_dt=rac_unstack.index, ext_svs=rac_unstack.columns.levels[1]
             )
             * _gn_const.C_LIGHT
         )  # units are meters
@@ -524,10 +529,22 @@ def sisre(
 
 
 def diffsp3(
-    sp3_a_path, sp3_b_path, tol, log_lvl, clk_a_path, clk_b_path, nodata_to_nan=True, hlm_mode=None, plot=False, write_rac_file=False
+    sp3_a_path,
+    sp3_b_path,
+    tol,
+    log_lvl,
+    clk_a_path,
+    clk_b_path,
+    nodata_to_nan=True,
+    hlm_mode=None,
+    plot=False,
+    write_rac_file=False,
 ):
+    # TODO: change function name and description as both are confusing - it seems to output the SISRE instead of SP3 orbit/clock differences against the given tolerance
     """Compares two sp3 files and outputs a dataframe of differences above tolerance if such were found"""
-    sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path, nodata_to_nan=nodata_to_nan), _gn_io.sp3.read_sp3(sp3_b_path, nodata_to_nan=nodata_to_nan)
+    sp3_a, sp3_b = _gn_io.sp3.read_sp3(sp3_a_path, nodata_to_nan=nodata_to_nan), _gn_io.sp3.read_sp3(
+        sp3_b_path, nodata_to_nan=nodata_to_nan
+    )
 
     as_sisre = False  # the switch only needed for logging msg
     clk_a = clk_b = None
@@ -536,12 +553,12 @@ def diffsp3(
         as_sisre = True
 
     status = 0
-    diff_rac = sisre(
+    sv_sisre = sisre(
         sp3_a=sp3_a.iloc[:, :3],
         sp3_b=sp3_b.iloc[:, :3],
         clk_a=clk_a,
         clk_b=clk_b,
-        norm_type="both",
+        norm_types=["daily", "epoch"],
         output_mode="sv",
         clean=False,
         hlm_mode=hlm_mode,
@@ -549,10 +566,10 @@ def diffsp3(
         write_rac_file=write_rac_file,
     )
 
-    bad_rac_vals = _diff2msg(diff_rac, tol=tol)
-    if bad_rac_vals is not None:
+    bad_sisre_vals = _diff2msg(sv_sisre, tol=tol)
+    if bad_sisre_vals is not None:
         _logging.log(
-            msg=f':diffutil found {"SISRE values" if as_sisre else "estimates"} estimates diffs above {"the extracted STDs" if tol is None else f"{tol:.1E} tolerance"}:\n{bad_rac_vals.to_string(justify="center")}\n',
+            msg=f':diffutil found {"SISRE values" if as_sisre else "estimates"} diffs above {"the extracted STDs" if tol is None else f"{tol:.1E} tolerance"}:\n{bad_sisre_vals.to_string(justify="center")}\n',
             level=log_lvl,
         )
         status = -1
@@ -607,12 +624,12 @@ def diffblq(blq_a_path, blq_b_path, tol, log_lvl):
     return status
 
 
-def diffclk(clk_a_path, clk_b_path, tol, log_lvl, norm_type="both"):
+def diffclk(clk_a_path, clk_b_path, tol, log_lvl, norm_types=["daily", "epoch"]):
     """Compares two clk files and provides a difference above atol if present. If sp3 orbits provided - does analysis using the SISRE values"""
     clk_a, clk_b = _gn_io.clk.read_clk(clk_a_path), _gn_io.clk.read_clk(clk_b_path)
 
     status = 0
-    diff_clk = compare_clk(clk_a=clk_a, clk_b=clk_b, norm_types=norm_type) * _gn_const.C_LIGHT
+    diff_clk = compare_clk(clk_a=clk_a, clk_b=clk_b, norm_types=norm_types) * _gn_const.C_LIGHT
 
     bad_clk_vals = _diff2msg(diff_clk, tol=tol)
     if bad_clk_vals is not None:
@@ -669,3 +686,128 @@ def rac_df_to_rms_df(rac_df):
 
     rms_df.attrs["summary"] = summary_df
     return rms_df
+
+
+def format_index(
+    diff_df: _pd.DataFrame,
+) -> None:
+    """
+    Convert the epoch indices of a SP3 or CLK difference DataFrame from J2000 seconds to more readable
+    python datetimes and rename the indices properly.
+
+    :param _pd.DataFrame diff_df: The Pandas DataFrame containing SP3 or CLK differences
+    :return None
+    """
+    diff_df.index = _pd.MultiIndex.from_tuples(
+        ((idx[0] + _gn_const.J2000_ORIGIN, idx[1]) for idx in diff_df.index.values)
+    )
+
+    diff_df.index = diff_df.index.set_names(["Epoch", "Satellite"])
+
+
+def sp3_difference(
+    base_sp3_file: _Path,
+    test_sp3_file: _Path,
+) -> _pd.DataFrame:
+    """
+    Compare two SP3 files to calculate orbit and clock differences. The orbit differences will be represented
+    in both X/Y/Z ECEF frame and R/A/C orbit frame, and the clock differences will NOT be normalised.
+
+    :param _Path base_sp3_file: Path of the baseline SP3 file
+    :param _Path test_sp3_file: Path of the test SP3 file
+    :return _pd.DataFrame: The Pandas DataFrame containing orbit and clock differences
+    """
+    base_sp3_df = _gn_io.sp3.read_sp3(str(base_sp3_file))
+    test_sp3_df = _gn_io.sp3.read_sp3(str(test_sp3_file))
+
+    common_indices = base_sp3_df.index.intersection(test_sp3_df.index)
+    diff_est_df = test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
+
+    diff_clk_df = diff_est_df["CLK"].to_frame(name="CLK") * 1e3  # TODO: normalise clocks
+    diff_xyz_df = diff_est_df.drop(columns=["CLK"]) * 1e3
+    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, hlm_mode=None)  # TODO: hlm_mode
+
+    diff_rac_df.columns = diff_rac_df.columns.droplevel(0)
+
+    diff_rac_df = diff_rac_df * 1e3
+
+    diff_sp3_df = diff_xyz_df.join(diff_rac_df)
+    diff_sp3_df["3D-Total"] = diff_xyz_df.pow(2).sum(axis=1, min_count=3).pow(0.5)
+    diff_sp3_df["Clock"] = diff_clk_df
+    diff_sp3_df["|Clock|"] = diff_clk_df.abs()
+
+    format_index(diff_sp3_df)
+
+    return diff_sp3_df
+
+
+def clk_difference(
+    base_clk_file: _Path,
+    test_clk_file: _Path,
+    norm_types: list = [],
+) -> _pd.DataFrame:
+    """
+    Compare two CLK files to calculate clock differences with common mode removed (if specified)
+    based on the chosen normalisations.
+
+    :param _Path base_clk_file: Path of the baseline CLK file
+    :param _Path test_clk_file: Path of the test CLK file
+    :param norm_types list: Normalizations to apply. Available options include 'epoch', 'daily', 'sv',
+            any satellite PRN, or any combination of them, defaults to empty list
+    :return _pd.DataFrame: The Pandas DataFrame containing clock differences
+    """
+    base_clk_df = _gn_io.clk.read_clk(base_clk_file)
+    test_clk_df = _gn_io.clk.read_clk(test_clk_file)
+
+    diff_clk_df = compare_clk(test_clk_df, base_clk_df, norm_types=norm_types)
+
+    diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e9
+    diff_clk_df["|Clock|"] = diff_clk_df.abs()
+
+    format_index(diff_clk_df)
+
+    return diff_clk_df
+
+
+def difference_statistics(
+    diff_df: _pd.DataFrame,
+) -> _pd.DataFrame:
+    """
+    Compute statistics of SP3 or CLK differences in a Pandas DataFrame.
+
+    :param _pd.DataFrame diff_df: The Pandas DataFrame containing SP3 or CLK differences
+    :return _pd.DataFrame: The Pandas DataFrame containing statistics of SP3 or CLK differences
+    """
+    stats_df = diff_df.describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
+    stats_df.loc["rms"] = _gn_aux.rms(diff_df)
+    stats_df.index = _pd.MultiIndex.from_tuples((("All", idx) for idx in stats_df.index.values))
+
+    stats_sat = (
+        diff_df.groupby("Satellite")
+        .describe(percentiles=[0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95])
+        .stack(dropna=False)
+    )
+    rms_sat = _gn_aux.rms(diff_df, level="Satellite")
+    rms_sat.index = _pd.MultiIndex.from_tuples(((sv, "rms") for sv in rms_sat.index.values))
+
+    stats_df = _pd.concat([stats_df, stats_sat, rms_sat]).sort_index()
+    stats_df.index = stats_df.index.set_names(["Satellite", "Stats"])
+    stats_df = stats_df.reindex(
+        [
+            "count",
+            "mean",
+            "std",
+            "rms",
+            "min",
+            "5%",
+            "10%",
+            "50%",
+            "75%",
+            "90%",
+            "95%",
+            "max",
+        ],
+        level="Stats",
+    )
+
+    return stats_df

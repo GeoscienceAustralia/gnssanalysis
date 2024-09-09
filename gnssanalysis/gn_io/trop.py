@@ -1,4 +1,5 @@
 """Trop sinex files reader/parser"""
+
 from io import BytesIO as _BytesIO
 
 import numpy as _np

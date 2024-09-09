@@ -1,76 +1,126 @@
 import logging
-from typing import Optional
+from gnssanalysis.enum_meta_properties import EnumMetaProperties
 
 logging.basicConfig(format="%(asctime)s [%(funcName)s] %(levelname)s: %(message)s")
 
-class SolutionType:
-    _name: str
-    _long_name: str
 
-    def __init__(self, name: str, long_name: str) -> None:
-        self._name = name
-        self._long_name = long_name
+# Abstract base class. Leverages above Immutable metaclass to prevent its (effectively) constants, from being modified.
+# Note that this doesn't prevent everything. For example, the contents of a list can still be changed.
+class SolutionType(metaclass=EnumMetaProperties):
+    name: str
+    long_name: str
 
-    @property
-    def name(self):
-        return self._name
-
-    @property
-    def long_name(self):
-        return self._long_name
-
-    def __str__(self) -> str:
-        return self._name
-
-    def __repr__(self) -> str:
-        return self._name
-
-    def __eq__(self, other):
-        """
-        Override default equality check
-        """
-        # If we're the unknown shorthand "UNK", consider None equivalent. Both are expressions of unknown solution type
-        if self._name == "UNK" and other is None:
-            return True
-
-        if not isinstance(other, SolutionType):
-            return False
-        return self._name == other._name
-        # Note that in Python, there is both an equality and an inequality check.
-        # But in Python 3 the inequality check leverages 'not __eq__()' by default.
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
 
 
-class SolutionTypes:
+class FIN(SolutionType):
+    """
+    Final products
+    """
+
+    name = "FIN"
+    long_name = "final"
+
+
+class NRT(SolutionType):
+    """
+    Near-Real Time (between ULT and RTS)
+    """
+
+    name = "PRD"
+    long_name = "near-real time"
+
+
+class PRD(SolutionType):
+    """
+    Predicted products
+    """
+
+    name = "PRD"
+    long_name = "predicted"
+
+
+class RAP(SolutionType):
+    """
+    Rapid products
+    """
+
+    name = "RAP"
+    long_name = "rapid"
+
+
+class RTS(SolutionType):
+    """
+    Real-Time streamed products
+    """
+
+    name = "RTS"
+    long_name = "real-time streamed"
+
+
+class SNX(SolutionType):
+    """
+    SINEX Combination product
+    """
+
+    name = "SNX"
+    long_name = "sinex combination"
+
+
+class ULT(SolutionType):
+    """
+    Ultra-rapid products
+    The only orbit product from IGS which isn't a 1 day span
+    """
+
+    name = "ULT"
+    long_name = "ultra-rapid"
+
+
+class UNK(SolutionType):
+    """
+    Internal representation of an unknown solution type.
+    """
+
+    name = "UNK"
+    long_name = "unknown solution type"
+
+
+class SolutionTypes(metaclass=EnumMetaProperties):
     """
     Defines valid solution type identifiers specified for use in the IGS long product filename convention v2:
     https://files.igs.org/pub/resource/guidelines/Guidelines_For_Long_Product_Filenames_in_the_IGS_v2.0.pdf
+
+    Also see here for information on session lengths of products pubished by IGS: https://igs.org/products/#about
     """
 
-    FIN = SolutionType("FIN", "final")  # Final products
-    NRT = SolutionType("NRT", "near-real time")  # Near-Real Time (between ULT and RTS)
-    PRD = SolutionType("PRD", "predicted")  # Predicted products
-    RAP = SolutionType("RAP", "rapid")  # Rapid products
-    RTS = SolutionType("RTS", "real-time streamed")  # Real-Time streamed products
-    SNX = SolutionType("SNX", "sinex combination")  # SINEX Combination product
-    ULT = SolutionType("ULT", "ultra-rapid")  # Ultra-rapid products (every 6 hours)
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
 
-    # Internal representation of unknown, for contexts where defaults are passed as strings.
-    UNK = SolutionType("UNK", "unknown solution type")
+    FIN = FIN  # Final products
+    NRT = NRT  # Near-Real Time (between ULT and RTS)
+    PRD = PRD  # Predicted products
+    RAP = RAP  # Rapid products
+    RTS = RTS  # Real-Time streamed products
+    SNX = SNX  # SINEX Combination product
+    ULT = ULT  # Ultra-rapid products (every 6 hours). The only orbit product from IGS which isn't a 1 day span
+    UNK = UNK  # Internal representation of unknown. Useful in contexts where defaults are passed as strings.
 
     # To support search function below
-    _all: list[SolutionType] = [FIN, NRT, PRD, RAP, RTS, SNX, ULT, UNK]
+    _all: list[type[SolutionType]] = [FIN, NRT, PRD, RAP, RTS, SNX, ULT, UNK]
 
     @staticmethod
-    def from_name(name: Optional[str]):
+    def from_name(name: str):
         """
         Returns the relevant static SolutionType object, given the solution type's short name (case insensitive).
-        :param str name: The short name of the solution type e.g. 'RAP', 'ULT', 'FIN', 'SNX'. Also accepts unknwon, as
-         either UNK or None
+        :param str name: The short name of the solution type e.g. 'RAP', 'ULT', 'FIN', 'SNX'. Though not part of the
+         official standard, 'UNK' can also be used to indicate an unknown solution type.
         """
-        if name is None:  # None is analogous to UNK
-            logging.debug("Converted solution type value of None, to SolutionTypes.UNK")
-            return SolutionTypes.UNK
-
+        if name is None or len(name.strip()) == 0:
+            raise ValueError("Solution type name passed was None or effectively empty!", name)
+        if len(name) > 3:
+            raise ValueError("Long solution type names are not supported here. Please use RAP, ULT, etc.", name)
         name = name.upper()
         for solution_type in SolutionTypes._all:
             if name == solution_type.name:

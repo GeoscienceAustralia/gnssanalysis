@@ -1,6 +1,7 @@
 import logging
 import io as _io
 import os as _os
+from pathlib import Path
 import re as _re
 from typing import Literal, Union, List, Tuple
 
@@ -9,10 +10,10 @@ import pandas as _pd
 from scipy import interpolate as _interpolate
 
 from .. import gn_aux as _gn_aux
+from .. import gn_const as _gn_const
 from .. import gn_datetime as _gn_datetime
 from .. import gn_io as _gn_io
 from .. import gn_transform as _gn_transform
-from .. import gn_const
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,7 @@ _RE_SP3_HEAD = _re.compile(
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
 # Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
-_RE_SP3_HEADER_SV = _re.compile(
-    rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE
-)
+_RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
 # Note: header is padded with '  0' entries after the actual data, so empty fields are matched and then trimmed.
@@ -240,9 +239,7 @@ def _process_sp3_block(
     return temp_sp3
 
 
-def read_sp3(
-    sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True
-) -> _pd.DataFrame:
+def read_sp3(sp3_path: Union[str, Path], pOnly: bool = True, nodata_to_nan: bool = True) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
 
@@ -260,7 +257,7 @@ def read_sp3(
         (mm/ps) and remove unnecessary columns. If pOnly is True, only P* values are included in the DataFrame.
         If nodata_to_nan is True, nodata values in the SP3 POS and CLK columns are converted to NaN.
     """
-    content = _gn_io.common.path2bytes(str(sp3_path))
+    content = _gn_io.common.path2bytes(sp3_path)
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
     comments: list = _RE_SP3_COMMENT_STRIP.findall(content)
@@ -309,7 +306,7 @@ def read_sp3(
         first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
         logging.warning(
             f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
-            f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + gn_const.J2000_ORIGIN} "
+            f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
             f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
         )
         # Now dedupe them, keeping the first of any clashes:
@@ -360,9 +357,7 @@ def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
     return date_lines, data_blocks
 
 
-def parse_sp3_header(
-    header: bytes, warn_on_negative_sv_acc_values: bool = True
-) -> _pd.Series:
+def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True) -> _pd.Series:
     """
     Parse the header of an SP3 file and extract relevant information.
 
@@ -371,10 +366,9 @@ def parse_sp3_header(
     """
     try:
         sp3_heading = _pd.Series(
-            data=_np.asarray(
-                _RE_SP3_HEAD.search(header).groups()
-                + _RE_SP3_HEAD_FDESCR.search(header).groups()
-            ).astype(str),
+            data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
+                str
+            ),
             index=[
                 "VERSION",
                 "PV_FLAG",
@@ -389,9 +383,7 @@ def parse_sp3_header(
             ],
         )
     except AttributeError as e:  # Make the exception slightly clearer.
-        raise AttributeError(
-            "Failed to parse SP3 header. Regex likely returned no match.", e
-        )
+        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
     # Find all Satellite Vehicle (SV) entries
     # Updated to also extract the count of expected SVs from the header, and compare that to the number of SVs we get.
@@ -566,15 +558,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
 
     comment = ["/*\n"] * 4
 
-    return "".join(
-        line1
-        + line2
-        + sats_header.tolist()
-        + sv_orb_head.tolist()
-        + head_c
-        + head_fi
-        + comment
-    )
+    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
 
 
 def gen_sp3_content(
@@ -829,6 +813,7 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, li
     return b, hlm
 
 
+# Eugene: move to gn_diffaux.py (and other associated functions as well)?
 def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,

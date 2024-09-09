@@ -3,9 +3,7 @@
 from datetime import datetime as _datetime
 from datetime import timedelta as _timedelta
 from io import StringIO as _StringIO
-from typing import Optional as _Optional
-from typing import Union as _Union
-from typing import overload as _overload
+from typing import Optional, overload, Union
 
 import numpy as _np
 import pandas as _pd
@@ -133,7 +131,7 @@ def gpswkD2dt(gpswkD):
 
 
 def yydoysec2datetime(
-    arr: _Union[_np.ndarray, _pd.Series, list], recenter: bool = False, as_j2000: bool = True, delimiter: str = ":"
+    arr: Union[_np.ndarray, _pd.Series, list], recenter: bool = False, as_j2000: bool = True, delimiter: str = ":"
 ) -> _np.ndarray:
     """Converts snx YY:DOY:SSSSS [snx] or YYYY:DOY:SSSSS [bsx/bia] object Series/ndarray to datetime64.
     recenter overrides day seconds value to midday
@@ -152,7 +150,7 @@ def yydoysec2datetime(
     return datetime2j2000(datetime64) if as_j2000 else datetime64
 
 
-def datetime2yydoysec(datetime: _Union[_np.ndarray, _pd.Series]) -> _np.ndarray:
+def datetime2yydoysec(datetime: Union[_np.ndarray, _pd.Series]) -> _np.ndarray:
     """datetime64[s] -> yydoysecond
     The '2000-01-01T00:00:00' (-43200 J2000 for 00:000:00000) datetime becomes 00:000:00000 as it should,
     No masking and overriding with year 2100 is needed"""
@@ -181,7 +179,7 @@ def gpsweeksec2datetime(gps_week: _np.ndarray, tow: _np.ndarray, as_j2000: bool 
     return datetime
 
 
-def datetime2gpsweeksec(array: _np.ndarray, as_decimal=False) -> _Union[tuple, _np.ndarray]:
+def datetime2gpsweeksec(array: _np.ndarray, as_decimal=False) -> Union[tuple, _np.ndarray]:
     if array.dtype == int:
         ORIGIN = _gn_const.J2000_ORIGIN.astype("int64") - _gn_const.GPS_ORIGIN.astype("int64")
         gps_time = array + ORIGIN  # need int conversion for the case of datetime64
@@ -345,15 +343,15 @@ def snx_time_to_pydatetime(snx_time: str) -> _datetime:
     return _datetime(year=year, month=1, day=1) + _timedelta(days=(int(day_str) - 1), seconds=int(second_str))
 
 
-@_overload
+@overload
 def round_timedelta(
-    delta: _timedelta, roundto: _timedelta, *, tol: float = ..., abs_tol: _Optional[_timedelta]
+    delta: _timedelta, roundto: _timedelta, *, tol: float = ..., abs_tol: Optional[_timedelta]
 ) -> _timedelta: ...
 
 
-@_overload
+@overload
 def round_timedelta(
-    delta: _np.timedelta64, roundto: _np.timedelta64, *, tol: float = ..., abs_tol: _Optional[_np.timedelta64]
+    delta: _np.timedelta64, roundto: _np.timedelta64, *, tol: float = ..., abs_tol: Optional[_np.timedelta64]
 ) -> _np.timedelta64: ...
 
 
