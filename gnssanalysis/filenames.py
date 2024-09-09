@@ -229,7 +229,7 @@ def generate_IGS_long_filename(
     *,
     end_epoch: datetime.datetime,
     timespan: Union[datetime.timedelta, str, None] = ...,
-    solution_type: SolutionType,
+    solution_type: Union[type[SolutionType], str],
     sampling_rate: str = ...,
     sampling_rate_seconds: Optional[int] = ...,
     version: str = ...,
@@ -247,7 +247,7 @@ def generate_IGS_long_filename(
     *,
     end_epoch: None = ...,
     timespan: Union[datetime.timedelta, str],
-    solution_type: SolutionType,
+    solution_type: Union[type[SolutionType], str],
     sampling_rate: str = ...,
     sampling_rate_seconds: Optional[int] = ...,
     version: str = ...,
@@ -264,7 +264,7 @@ def generate_IGS_long_filename(
     *,
     end_epoch: Optional[datetime.datetime] = None,
     timespan: Union[datetime.timedelta, str, None] = None,
-    solution_type: Optional[SolutionType] = None,  # TTT
+    solution_type: Union[type[SolutionType], str],  # TTT
     sampling_rate: str = "15M",  # SMP
     sampling_rate_seconds: Optional[int] = None,  # Not used here, but passed for structural consistency
     version: str = "0",  # V
@@ -289,7 +289,8 @@ def generate_IGS_long_filename(
     :param Optional[datetime.datetime] end_epoch: datetime representing final epoch in file, defaults to None
     :param timespan: Union[datetime.timedelta, str, None] timespan: timedelta representing time range of data in file,
         defaults to None
-    :param Optional[SolutionType] solution_type: Solution type identifier (mandatory, despite Optional type)
+    :param type[SolutionType] | str solution_type: Solution type definition class (or string, temporarily for
+      backwards compatibility). If unknown, use SolutionTypes.UNK
     :param str sampling_rate: Three letter sampling rate string, defaults to "15M"
     :param Optional[int] sampling_rate_seconds: Not used, passed only for structural consistency
     :param str version: Single character version identifier, defaults to "0"
@@ -298,8 +299,10 @@ def generate_IGS_long_filename(
     :raises ValueError: If both end_epoch and timespan are None
     :return str: IGS long filename
     """ """"""
-    if solution_type is None or solution_type == SolutionTypes.UNK:
+    if solution_type is None:
         raise ValueError(f"solution_type must be supplied. Got {solution_type}")
+    if solution_type == SolutionTypes.UNK or solution_type == "":
+        logging.warning(f"Received solution type of '{solution_type}'. This may be an issue")
 
     if variable_datetime:
         initial_epoch = "<YYYY><DDD><HH><mm>"
