@@ -335,7 +335,7 @@ def generate_product_filename(
     :param bool long_filename: Use the IGS long filename convention, defaults to False
     :param str analysis_center: Desired analysis center for filename output, defaults to "IGS"
     :param _datetime.timedelta timespan: Span of the file as datetime obj, defaults to _datetime.timedelta(days=1)
-    :param SolutionType solution_type: Solution type for the filename, defaults to ULT (ultra-rapid)
+    :param type[SolutionType] solution_type: Solution type for the filename, defaults to ULT (ultra-rapid)
     :param str sampling_rate: Sampling rate of data for the filename, defaults to "15M"
     :param str version: Version of the file, defaults to "0"
     :param str project: IGS project descriptor, defaults to "OPS"

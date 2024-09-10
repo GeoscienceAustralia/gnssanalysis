@@ -122,7 +122,7 @@ def determine_file_name(
      - start_epoch: datetime.datetime
      - end_epoch: datetime.datetime
      - timespan: datetime.timedelta
-     - solution_type: SolutionType
+     - solution_type: type[SolutionType]
      - sampling_rate: str
      - version: str
      - project: str
@@ -164,7 +164,7 @@ def determine_properties_from_contents_and_filename(
      - start_epoch: datetime.datetime
      - end_epoch: datetime.datetime
      - timespan: datetime.timedelta
-     - solution_type: SolutionType
+     - solution_type: type[SolutionType]
      - sampling_rate: str
      - version: str
      - project: str
