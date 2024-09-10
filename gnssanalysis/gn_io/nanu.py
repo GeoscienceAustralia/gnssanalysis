@@ -1,6 +1,7 @@
 import glob
 import logging as _logging
 import os as _os
+from pathlib import Path
 from typing import Union as _Union
 
 import numpy as _np
@@ -45,16 +46,21 @@ def parse_nanu(nanu_bytes: bytes) -> dict:
     return output_dict
 
 
-def read_nanu(path_or_bytes: _Union[str, bytes]) -> dict:
+def read_nanu(path_or_bytes: _Union[Path, str, bytes]) -> dict:
     """A parser for Notice Advisory to Navstar Users (NANU) files.
     Assumes there is only one message per file, that starts with '1.'
 
     :param _Union[str, bytes] path_or_bytes: path to nanu file or a bytes object
     :return dict: nanu values with parameter names as keys
     """
-    nanu_bytes = _gn_io.common.path2bytes(path=path_or_bytes)
+    nanu_bytes = _gn_io.common.path2bytes(path_or_bytes)
     output_dict = {}
-    output_dict["FILEPATH"] = path_or_bytes  # TODO change to pathlib
+    if isinstance(path_or_bytes, Path) or isinstance(path_or_bytes, str):
+        # If effectively a path, canonicalise via Path then store as a string
+        path_str = path_or_bytes.as_posix() if isinstance(path_or_bytes, Path) else Path(path_or_bytes).as_posix()
+    else:  # Data was bytes. We retain the field because get_bad_sv_from_nanu_df() expects it
+        path_str = ""
+    output_dict["FILEPATH"] = path_str
     output_dict["NANU ID"] = nanu_path_to_id(path_or_bytes)
     output_dict["CONTENT"] = nanu_bytes
     output_dict.update(parse_nanu(nanu_bytes))
