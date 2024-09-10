@@ -15,32 +15,43 @@ from typing import Union as _Union
 MB = 1024 * 1024
 
 
-def path2bytes(path: _Union[_Path, str, bytes]) -> bytes:
+def path2bytes(path_or_bytes: _Union[_Path, str, bytes]) -> bytes:
     """Main file reading function. Checks file extension and calls appropriate reading function.
     Passes through bytes if given, thus one may not routinely leave it in the top of the specific
      file reading function and be able to call it with bytes or str path without additional modifications.
 
     :param str path: input file path
     :return bytes: bytes object, decompressed if necessary
+    :raise FileNotFoundError: path didn't resolve to a file
+    :raise Exception: wrapped exception for all other exceptions raised
+    :raise EOFError: if input bytes is empty, input file is empty, or decompressed result of input file is empty.
     """
-    if isinstance(path, bytes):  # no reading is necessary - pass through.
-        return path
+    if isinstance(path_or_bytes, bytes):  # no reading is necessary - pass through.
+        if len(path_or_bytes) == 0:
+            raise EOFError("Input bytes object was empty!")
+        return path_or_bytes
 
-    if isinstance(path, _Path):
-        path = path.as_posix()
+    if isinstance(path_or_bytes, _Path):
+        path_string = path_or_bytes.as_posix()
+    elif isinstance(path_or_bytes, str):
+        path_string = path_or_bytes
+    else:
+        raise TypeError("Must be Path, str, or bytes")
+
     try:
-        if path.endswith(".Z"):
-            databytes = _lzw2bytes(path)
-        elif path.endswith(".gz"):
-            databytes = _gz2bytes(path)
+        if path_string.endswith(".Z"):
+            databytes = _lzw2bytes(path_string)
+        elif path_string.endswith(".gz"):
+            databytes = _gz2bytes(path_string)
         else:
-            databytes = _txt2bytes(path)
-    except FileNotFoundError:
-        _logging.error(f"File {path} not found. Returning empty bytes.")
-        return None
+            databytes = _txt2bytes(path_string)
+    except FileNotFoundError as fe:
+        raise fe
     except Exception as e:
-        _logging.error(f"Error reading file {path} with error {e}. Returning empty bytes.")
-        return None
+        raise Exception(f"Error reading file '{path_string}'. Exception: {e}")
+
+    if len(databytes) == 0:
+        raise EOFError(f"Input file (or decompressed result of it) was empty. Path: '{path_string}'")
     return databytes
 
 
