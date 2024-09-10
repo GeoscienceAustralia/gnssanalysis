@@ -302,15 +302,9 @@ def generate_IGS_long_filename(
     else:
         initial_epoch = start_epoch.strftime("%Y%j%H%M")
 
-    if isinstance(timespan, str):
-        timespan_str = timespan
-    else:
-        if end_epoch is None:
-            if timespan is None:
-                raise ValueError("Either end_epoch or timespan must be supplied")
-        else:
-            timespan = end_epoch - start_epoch
-        timespan_str = nominal_span_string(timespan.total_seconds())
+    # We need a timespan in the filename not an end epoch.
+    # If the timespan is missing however, we can derive it using start and end epoch.
+    timespan_str = derive_timespan_str(start_epoch, end_epoch, timespan)
 
     result = (
         f"{analysis_center}{version}{project}"
@@ -319,6 +313,41 @@ def generate_IGS_long_filename(
         f"{content_type}.{format_type}"
     )
     return result
+
+
+def derive_timespan_str(
+    start_epoch: datetime.datetime,
+    end_epoch: Optional[datetime.datetime],
+    timespan: Optional[Union[datetime.timedelta, str]],
+) -> str:
+    """
+    Derives a filename standard timespan string.
+    If the provided timespan is a string, it is simply passed through.
+    If timespan is not provided, it will be calculated from end_epoch - start_epoch.
+    :param datetime start_epoch:
+    :param Optional[datetime] end_epoch: can be ommitted if timespan is provided
+    :param Optional[datetime, str] timespan: can be ommitted if end_epoch is provided
+    :return str: standard span string for the given timespan
+    """
+
+    # Use timespan:
+    # - string if provided OR
+    # - convert the timespan timedelta into it, OR
+    # - derive a timedelta from end - start and convert that to a timespan string
+    if isinstance(timespan, str):
+        if timespan.strip() == "":
+            raise ValueError("timespan can't be empty")
+        return timespan
+
+    if timespan is not None:
+        return nominal_span_string(timespan.total_seconds())
+
+    # Fall back to deriving it from end_epoch - start_epoch
+    if end_epoch is None:
+        raise ValueError("Either end_epoch or timespan must be supplied")
+
+    timespan = end_epoch - start_epoch
+    return nominal_span_string(timespan.total_seconds())
 
 
 def generate_IGS_nominal_span(start_epoch: datetime.datetime, end_epoch: datetime.datetime) -> str:
@@ -400,7 +429,7 @@ def nominal_span_string(span_seconds: float) -> str:
 
 
 def convert_nominal_span(nominal_span: str) -> datetime.timedelta:
-    """Effectively invert :func: `filenames.generate_nominal_span`, turn a span string into a timedelta
+    """Effectively invert :func: `filenames.nominal_span_string`, turn a span string into a timedelta
 
     :param str nominal_span: Three-character span string in IGS format
     :return datetime.timedelta: Time delta of same duration as span string

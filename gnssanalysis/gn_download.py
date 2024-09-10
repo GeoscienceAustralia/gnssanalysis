@@ -6,36 +6,42 @@ clk
 rnx (including transformation from crx to rnx)
 """
 
+# Standard libraries
 import concurrent as _concurrent
-from contextlib import contextmanager as _contextmanager
-import datetime as _datetime
-from itertools import repeat as _repeat
 import logging
 import os as _os
-from copy import deepcopy as _deepcopy
 import random as _random
 import shutil
-import click as _click
 import sys as _sys
 import threading
 import time as _time
 import gzip as _gzip
 import tarfile as _tarfile
-import hatanaka as _hatanaka
 import ftplib as _ftplib
+from contextlib import contextmanager as _contextmanager
+from copy import deepcopy as _deepcopy
+from datetime import datetime as _datetime, timedelta as _timedelta
 from ftplib import FTP_TLS as _FTP_TLS
+from itertools import repeat as _repeat
 from pathlib import Path as _Path
 from typing import Any, Generator, List, Optional, Tuple, Union
+from typing_extensions import deprecated
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError
 
+# Third party
+import click as _click
+import hatanaka as _hatanaka
 import boto3
 import numpy as _np
 import pandas as _pd
 from boto3.s3.transfer import TransferConfig
 
-from .gn_datetime import GPSDate, dt2gpswk, gpswkD2dt
-from .gn_utils import ensure_folders
+# Local
+from gnssanalysis.filenames import generate_IGS_long_filename
+from gnssanalysis.gn_datetime import GPSDate, gpswkD2dt
+from gnssanalysis.solution_types import SolutionType, SolutionTypes
+from gnssanalysis.gn_utils import ensure_folders
 
 MB = 1024 * 1024
 
@@ -235,38 +241,13 @@ def generate_content_type(file_ext: str, analysis_center: str) -> str:
     return content_type
 
 
-def generate_nominal_span(start_epoch: _datetime.datetime, end_epoch: _datetime.datetime) -> str:
-    """Generate the 3-char LEN or span following the IGS long filename convention given the start and end epochs
-
-    :param _datetime.datetime start_epoch: Start epoch of data in file
-    :param _datetime.datetime end_epoch: End epoch of data in file
-    :raises NotImplementedError: Raise error if range cannot be generated
-    :return str: The 3-char string corresponding to the LEN or span of the data for IGS long filename
-    """
-    span = (end_epoch - start_epoch).total_seconds()
-    if span % 86400 == 0.0:
-        unit = "D"
-        span = int(span // 86400)
-    elif span % 3600 == 0.0:
-        unit = "H"
-        span = int(span // 3600)
-    elif span % 60 == 0.0:
-        unit = "M"
-        span = int(span // 60)
-    else:
-        raise NotImplementedError
-
-    return f"{span:02}{unit}"
-
-
-def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: str) -> str:
+def get_default_sampling_rate(file_ext: str, analysis_center: str, solution_type_str: str = "") -> str:
     """
     IGS files following the long filename convention require a content specifier
     Given the file extension, generate the content specifier
-
     :param str file_ext: 3-char file extention of the file (e.g. SP3, SNX, ERP, etc)
     :param str analysis_center: 3-char string identifier for Analysis Center
-    :param str solution_type: 3-char string identifier for Solution Type of file
+    :param str solution_type_str: 3-char string identifier for Solution Type of file, defaults to ""
     :return str: 3-char string identifier for Sampling Rate of the file (e.g. 15M)
     """
     file_ext = file_ext.upper()
@@ -302,7 +283,7 @@ def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: s
             if not center_rates_found:
                 return file_rates.get(())
             if isinstance(center_rates, dict):
-                return center_rates.get(solution_type, center_rates.get(None))
+                return center_rates.get(solution_type_str, center_rates.get(None))
             else:
                 return center_rates
         else:
@@ -311,85 +292,45 @@ def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: s
         return "01D"
 
 
-def generate_long_filename(
-    analysis_center: str,  # AAA
-    content_type: str,  # CNT
-    format_type: str,  # FMT
-    start_epoch: _datetime.datetime,  # YYYYDDDHHMM
-    end_epoch: _datetime.datetime = None,
-    timespan: _datetime.timedelta = None,  # LEN
-    solution_type: str = "",  # TTT
-    sampling_rate: str = "15M",  # SMP
-    version: str = "0",  # V
-    project: str = "EXP",  # PPP, e.g. EXP, OPS
-) -> str:
-    """Generate filename following the IGS Long Product Filename convention: AAAVPPPTTT_YYYYDDDHHMM_LEN_SMP_CNT.FMT[.gz]
-
-    :param str analysis_center: 3-char string identifier for Analysis Center
-    :param str content_type: 3-char string identifier for Content Type of the file
-    :param str format_type: 3-char string identifier for Format Type of the file
-    :param _datetime.datetime start_epoch: Start epoch of data
-    :param _datetime.datetime end_epoch: End epoch of data [Optional: can be determined from timespan], defaults to None
-    :param _datetime.timedelta timespan: Timespan of data in file (Start to End epoch), defaults to None
-    :param str solution_type: 3-char string identifier for Solution Type of file, defaults to ""
-    :param str sampling_rate: 3-char string identifier for Sampling Rate of the file, defaults to "15M"
-    :param str version: 3-char string identifier for Version of the file
-    :param str project: 3-char string identifier for Project Type of the file
-    :return str: The IGS long filename given all inputs
-    """
-    initial_epoch = start_epoch.strftime("%Y%j%H%M")
-    if end_epoch == None:
-        end_epoch = start_epoch + timespan
-    timespan_str = generate_nominal_span(start_epoch, end_epoch)
-
-    result = (
-        f"{analysis_center}{version}{project}"
-        f"{solution_type}_"
-        f"{initial_epoch}_{timespan_str}_{sampling_rate}_"
-        f"{content_type}.{format_type}"
-    )
-    return result
-
-
-def long_filename_cddis_cutoff(epoch: _datetime.datetime) -> bool:
+def long_filename_cddis_cutoff(epoch: _datetime) -> bool:
     """Simple function that determines whether long filenames should be expected on the CDDIS server
 
-    :param _datetime.datetime epoch: Start epoch of data in file
+    :param _datetime epoch: Start epoch of data in file
     :return bool: Boolean of whether file would follow long filename convention on CDDIS
     """
-    long_filename_cutoff = _datetime.datetime(2022, 11, 27)
+    long_filename_cutoff = _datetime(2022, 11, 27)
     return epoch >= long_filename_cutoff
 
 
 def generate_product_filename(
-    reference_start: _datetime.datetime,
+    reference_start: _datetime,
     file_ext: str,
     shift: int = 0,
     long_filename: bool = False,
     analysis_center: str = "IGS",
-    timespan: _datetime.timedelta = _datetime.timedelta(days=1),
-    solution_type: str = "ULT",
+    timespan: _timedelta = _timedelta(days=1),
+    solution_type: type[SolutionType] = SolutionTypes.ULT,
     sampling_rate: str = "15M",
     version: str = "0",
     project: str = "OPS",
-    content_type: str = None,
-) -> Tuple[str, GPSDate, _datetime.datetime]:
+    content_type: Optional[str] = None,
+) -> Tuple[str, GPSDate, _datetime]:
     """Given a reference datetime and extention of file, generate the IGS filename and GPSDate obj for use in download
 
-    :param _datetime.datetime reference_start: Datetime of the start period of interest
+    :param _datetime reference_start: Datetime of the start period of interest
     :param str file_ext: Extention of the file (e.g. SP3, SNX, ERP, etc)
     :param int shift: Shift the reference time by "shift" hours (in filename and GPSDate output), defaults to 0
     :param bool long_filename: Use the IGS long filename convention, defaults to False
     :param str analysis_center: Desired analysis center for filename output, defaults to "IGS"
-    :param _datetime.timedelta timespan: Span of the file as datetime obj, defaults to _datetime.timedelta(days=1)
-    :param str solution_type: Solution type for the filename, defaults to "ULT"
+    :param _timedelta timespan: Span of the file as datetime obj, defaults to _timedelta(days=1)
+    :param type[SolutionType] solution_type: Solution type for the filename, defaults to ULT (ultra-rapid)
     :param str sampling_rate: Sampling rate of data for the filename, defaults to "15M"
     :param str version: Version of the file, defaults to "0"
     :param str project: IGS project descriptor, defaults to "OPS"
     :param str content_type: IGS content specifier - if None set automatically based on file_ext, defaults to None
-    :return _Tuple[str, GPSDate, _datetime.datetime]: Tuple of filename str, GPSDate and datetime obj (based on shift)
+    :return _Tuple[str, GPSDate, _datetime]: Tuple of filename str, GPSDate and datetime obj (based on shift)
     """
-    reference_start += _datetime.timedelta(hours=shift)
+    reference_start += _timedelta(hours=shift)
     if type(reference_start == _datetime.date):
         gps_date = GPSDate(str(reference_start))
     else:
@@ -399,7 +340,7 @@ def generate_product_filename(
         if content_type == None:
             content_type = generate_content_type(file_ext, analysis_center=analysis_center)
         product_filename = (
-            generate_long_filename(
+            generate_IGS_long_filename(
                 analysis_center=analysis_center,
                 content_type=content_type,
                 format_type=file_ext,
@@ -418,8 +359,11 @@ def generate_product_filename(
         else:
             hour = f"{reference_start.hour:02}"
             prefix = "igs" if solution_type == "FIN" else "igr" if solution_type == "RAP" else "igu"
-            product_filename = f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z" if solution_type == "ULT" else \
-                f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
+            product_filename = (
+                f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z"
+                if solution_type == "ULT"
+                else f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
+            )
     return product_filename, gps_date, reference_start
 
 
@@ -533,11 +477,11 @@ def dates_type_convert(dates):
     if typ_dt == _datetime.date:
         dates = [dates]
         typ_dt = type(dates)
-    elif typ_dt == _datetime.datetime:
+    elif typ_dt == _datetime:
         dates = [dates]
         typ_dt = type(dates)
     elif typ_dt == _np.datetime64:
-        dates = [dates.astype(_datetime.datetime)]
+        dates = [dates.astype(_datetime)]
         typ_dt = type(dates)
     elif typ_dt == str:
         dates = [_np.datetime64(dates)]
@@ -785,7 +729,7 @@ def download_product_from_cddis(
     solution_type: str = "ULT",
     sampling_rate: str = "15M",
     project_type: str = "OPS",
-    timespan: _datetime.timedelta = _datetime.timedelta(days=2),
+    timespan: _timedelta = _timedelta(days=2),
     if_file_present: str = "prompt_user",
 ) -> None:
     """Download the file/s from CDDIS based on start and end epoch, to the download directory (download_dir)
@@ -800,7 +744,7 @@ def download_product_from_cddis(
     :param str solution_type: Which solution type to download (e.g. ULT, RAP, FIN), defaults to "ULT"
     :param str sampling_rate: Sampling rate of file to download, defaults to "15M"
     :param str project_type: Project type of file to download (e.g. ), defaults to "OPS"
-    :param _datetime.timedelta timespan: Timespan of the file/s to download, defaults to _datetime.timedelta(days=2)
+    :param _timedelta timespan: Timespan of the file/s to download, defaults to _timedelta(days=2)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
     """
@@ -808,7 +752,7 @@ def download_product_from_cddis(
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
         start_epoch = GPSDate(str(start_epoch))
         start_epoch = gpswkD2dt(f"{start_epoch.gpswk}0")
-        timespan = _datetime.timedelta(days=7)
+        timespan = _timedelta(days=7)
     # Details for debugging purposes:
     logging.debug("Attempting CDDIS Product download/s")
     logging.debug(f"Start Epoch - {start_epoch}")
@@ -855,12 +799,12 @@ def download_product_from_cddis(
                 raise FileNotFoundError
 
         # reference_start will be changed in the first run through while loop below
-        reference_start -= _datetime.timedelta(hours=24)
+        reference_start -= _timedelta(hours=24)
         count = 0
         remain = end_epoch - reference_start
         while remain.total_seconds() > timespan.total_seconds():
             if count == limit:
-                remain = _datetime.timedelta(days=0)
+                remain = _timedelta(days=0)
             else:
                 product_filename, gps_date, reference_start = generate_product_filename(
                     reference_start,
