@@ -503,27 +503,27 @@ def attempt_ftps_download(
 
 
 def attempt_url_download(
-    download_dir: _Path, url: str, filename: str = None, type_of_file: str = None, if_file_present: str = "prompt_user"
+    download_dir: _Path, url: str, download_filename: str = None, type_of_file: str = None, if_file_present: str = "prompt_user"
 ) -> _Path:
     """Attempt download of file given URL (url) to chosen location (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
     :param str url: URL to download
-    :param str filename: Filename to assign for the downloaded file, defaults to None
+    :param str download_filename: Filename to assign for the downloaded file, defaults to None
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :return _Path: The pathlib.Path of the downloaded file
     """
-    # If the filename is not provided, use the filename from the URL
-    if not filename:
-        filename = url[url.rfind("/") + 1 :]
-    logging.info(f"Attempting URL Download of {type_of_file} file - {filename} to {download_dir}")
+    # If the download_filename is not provided, use the filename from the URL
+    if not download_filename:
+        download_filename = url[url.rfind("/") + 1 :]
+    logging.info(f"Attempting URL Download of {type_of_file} file - {download_filename} to {download_dir}")
     # Use the check_whether_to_download function to determine whether to download the file
     download_filepath = check_whether_to_download(
-        filename=filename, download_dir=download_dir, if_file_present=if_file_present
+        filename=download_filename, download_dir=download_dir, if_file_present=if_file_present
     )
     if download_filepath:
-        download_url(url, download_filepath)
+        download_filepath = download_url(url, download_filepath)
     return download_filepath
 
 
@@ -751,7 +751,7 @@ def download_file_from_cddis(
             except _ftplib.all_errors as e:
                 retries += 1
                 if retries > max_retries:
-                    logging.info(f"Failed to download {filename} and reached maximum retry count ({max_retries}).")
+                    logging.error(f"Failed to download {filename} and reached maximum retry count ({max_retries}).")
                     if (output_folder / filename).is_file():
                         (output_folder / filename).unlink()
                     raise e
@@ -787,7 +787,7 @@ def download_product_from_cddis(
     project_type: str = "OPS",
     timespan: _datetime.timedelta = _datetime.timedelta(days=2),
     if_file_present: str = "prompt_user",
-) -> None:
+) -> List[_Path]:
     """Download the file/s from CDDIS based on start and end epoch, to the download directory (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
@@ -803,6 +803,7 @@ def download_product_from_cddis(
     :param _datetime.timedelta timespan: Timespan of the file/s to download, defaults to _datetime.timedelta(days=2)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
+    :return List[_Path]: Return list of download files
     """
     # Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
@@ -830,12 +831,15 @@ def download_product_from_cddis(
     logging.debug(
         f"Generated filename: {product_filename}, with GPS Date: {gps_date.gpswkD} and reference: {reference_start}"
     )
+
+    ensure_folders([download_dir])
+    download_filepaths = []
     with ftp_tls(CDDIS_FTP) as ftps:
         try:
             ftps.cwd(f"gnss/products/{gps_date.gpswk}")
         except _ftplib.all_errors as e:
-            logging.info(f"{reference_start} too recent")
-            logging.info(f"ftp_lib error: {e}")
+            logging.warning(f"{reference_start} too recent")
+            logging.warning(f"ftp_lib error: {e}")
             product_filename, gps_date, reference_start = generate_product_filename(
                 reference_start,
                 file_ext,
@@ -851,7 +855,7 @@ def download_product_from_cddis(
 
             all_files = ftps.nlst()
             if not (product_filename in all_files):
-                logging.info(f"{product_filename} not in gnss/products/{gps_date.gpswk} - too recent")
+                logging.warning(f"{product_filename} not in gnss/products/{gps_date.gpswk} - too recent")
                 raise FileNotFoundError
 
         # reference_start will be changed in the first run through while loop below
@@ -877,12 +881,14 @@ def download_product_from_cddis(
                     filename=product_filename, download_dir=download_dir, if_file_present=if_file_present
                 )
                 if download_filepath:
-                    download_file_from_cddis(
-                        filename=product_filename,
-                        ftp_folder=f"gnss/products/{gps_date.gpswk}",
-                        output_folder=download_dir,
-                        if_file_present=if_file_present,
-                        note_filetype=file_ext,
+                    download_filepaths.append(
+                        download_file_from_cddis(
+                            filename=product_filename,
+                            ftp_folder=f"gnss/products/{gps_date.gpswk}",
+                            output_folder=download_dir,
+                            if_file_present=if_file_present,
+                            note_filetype=file_ext,
+                        )
                     )
                 count += 1
                 remain = end_epoch - reference_start
@@ -912,7 +918,7 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
         download_filepath = attempt_url_download(
             download_dir=download_dir,
             url=url_igs,
-            filename=atx_filename,
+            download_filename=atx_filename,
             type_of_file="ATX",
             if_file_present=if_file_present,
         )
@@ -920,7 +926,7 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
         download_filepath = attempt_url_download(
             download_dir=download_dir,
             url=url_bern,
-            filename=atx_filename,
+            download_filename=atx_filename,
             type_of_file="ATX",
             if_file_present=if_file_present,
         )
@@ -938,7 +944,7 @@ def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = 
     download_filepath = attempt_url_download(
         download_dir=download_dir,
         url=IGS_FILES_URL + "station/general/igs_satellite_metadata.snx",
-        filename="igs_satellite_metadata.snx",
+        download_filename="igs_satellite_metadata.snx",
         type_of_file="IGS satellite metadata",
         if_file_present=if_file_present,
     )
@@ -959,7 +965,7 @@ def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user"
         download_filepath = attempt_url_download(
             download_dir=download_dir,
             url=PRODUCT_BASE_URL + "tables/" + filename,
-            filename=filename,
+            download_filename=filename,
             type_of_file="Yaw Model SNX",
             if_file_present=if_file_present,
         )
