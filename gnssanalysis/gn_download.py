@@ -894,6 +894,55 @@ def download_product_from_cddis(
                 remain = end_epoch - reference_start
 
 
+def download_iau2000_file(download_dir: _Path, start_epoch: _datetime, if_file_present: str = "prompt_user"):
+    """
+    Download relevant IAU2000 file from CDDIS or IERS based on start_epoch of data
+    """
+    ensure_folders([download_dir])
+    # Download most recent daily IAU2000 file if running for a session within the past week (data is within 3 months)
+    if _datetime.datetime.now() - start_epoch < _datetime.timedelta(weeks=1):
+        url_dir = "daily/"
+        iau2000_filename = "finals2000A.daily"
+        download_filename = "finals.daily.iau2000.txt"
+        logging.info("Attempting Download of finals2000A.daily file")
+    # Otherwise download the IAU2000 file dating back to 1992
+    else:
+        url_dir = "standard/"
+        iau2000_filename = "finals2000A.data"
+        download_filename = "finals.data.iau2000.txt"
+        logging.info("Attempting Download of finals2000A.data file")
+    filetype = "EOP IAU2000"
+
+    if not check_whether_to_download(
+        filename=download_filename, download_dir=download_dir, if_file_present=if_file_present
+    ):
+        return None
+
+    # Attempt download from the CDDIS website first, if that fails try IERS
+    # Eugene: should try IERS first and then CDDIS?
+    try:
+        logging.info("Downloading IAU2000 file from CDDIS")
+        download_filepath = download_file_from_cddis(
+            filename=iau2000_filename,
+            ftp_folder="products/iers/",
+            output_folder=download_dir,
+            decompress=False,
+            if_file_present=if_file_present,
+            note_filetype=filetype
+        )
+        download_filepath = download_filepath.rename(download_dir / download_filename)
+    except:
+        logging.info("Failed CDDIS download - Downloading IAU2000 file from IERS")
+        download_filepath = attempt_url_download(
+            download_dir=download_dir,
+            url="https://datacenter.iers.org/products/eop/rapid/" + url_dir + iau2000_filename,
+            download_filename=download_filename,
+            type_of_file=filetype,
+            if_file_present=if_file_present,
+        )
+    return download_filepath
+
+
 def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_present: str = "prompt_user") -> _Path:
     """Download the ATX file necessary for running the PEA provided the download directory (download_dir)
 
