@@ -38,13 +38,20 @@ class TestPath2BytesWithFakeFs(TestCase):
         self.setUpPyfakefs()
 
     def test_file_not_found_and_file_read(self):
-        # Create a file, but not the one we're looking for
+        # Create a mock file, but not the one we're looking for
         self.fs.create_file("testfile.txt", contents=b"hello")
         with self.assertRaises(FileNotFoundError):
             path2bytes("nonexistent.txt")
 
         # Now open the file that does exist and check the contents
         self.assertEqual(path2bytes("testfile.txt"), b"hello")
+
+    def test_empty_file_exception(self):
+        # Create a mock empty file
+        self.fs.create_file("emptyfile.txt", contents=b"")
+        # We raise EOFError for empty files, and (valid) compressed files that expand to a zero-length output
+        with self.assertRaises(EOFError):
+            path2bytes("emptyfile.txt")
 
     def test_invalid_archive_expand_exception(self):
         # Test that trying to unpack an archive file which isn't valid archive data, raises an exception
