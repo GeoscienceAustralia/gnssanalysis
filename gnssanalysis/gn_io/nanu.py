@@ -52,7 +52,7 @@ def read_nanu(path_or_bytes: _Union[str, bytes]) -> dict:
     :param _Union[str, bytes] path_or_bytes: path to nanu file or a bytes object
     :return dict: nanu values with parameter names as keys
     """
-    nanu_bytes = _gn_io.common.path2bytes(path=path_or_bytes)
+    nanu_bytes = _gn_io.common.path2bytes(path_or_bytes)
     output_dict = {}
     output_dict["FILEPATH"] = path_or_bytes  # TODO change to pathlib
     output_dict["NANU ID"] = nanu_path_to_id(path_or_bytes)
