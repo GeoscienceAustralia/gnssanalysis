@@ -2,7 +2,8 @@ import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Literal, Union, List, Tuple
+from typing import Literal, Optional, Union, List, Tuple
+from pathlib import Path
 
 import numpy as _np
 import pandas as _pd
@@ -238,7 +239,16 @@ def _process_sp3_block(
     return temp_sp3
 
 
-def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _pd.DataFrame:
+def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Optional[str]:
+    if isinstance(path_or_bytes, str) or isinstance(path_or_bytes, Path):
+        return str(path_or_bytes)
+    else:
+        return "Data passed as bytes: no path available"
+
+
+def read_sp3(
+    sp3_path_or_bytes: Union[str, Path, bytes], pOnly: bool = True, nodata_to_nan: bool = True
+) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
 
@@ -247,7 +257,8 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
     :return pandas.DataFrame: The SP3 data as a DataFrame.
-    :raise FileNotFoundError: If the SP3 file specified by sp3_path does not exist.
+    :raise FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
+    :raise Exception: For other errors reading SP3 file/bytes
 
     :note: The SP3 file format is a standard format used for representing precise satellite ephemeris and clock data.
         This function reads the SP3 file, parses the header information, and extracts the data into a DataFrame.
@@ -256,7 +267,7 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
         (mm/ps) and remove unnecessary columns. If pOnly is True, only P* values are included in the DataFrame.
         If nodata_to_nan is True, nodata values in the SP3 POS and CLK columns are converted to NaN.
     """
-    content = _gn_io.common.path2bytes(str(sp3_path))
+    content = _gn_io.common.path2bytes(sp3_path_or_bytes)  # Will raise EOFError if file empty
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
     comments: list = _RE_SP3_COMMENT_STRIP.findall(content)
@@ -306,13 +317,13 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
         logging.warning(
             f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
             f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
-            f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
+            f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
         )
         # Now dedupe them, keeping the first of any clashes:
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
     # Write header data to dataframe attributes:
     sp3_df.attrs["HEADER"] = parsed_header
-    sp3_df.attrs["path"] = sp3_path
+    sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
     return sp3_df
 
 
