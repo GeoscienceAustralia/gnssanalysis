@@ -324,8 +324,8 @@ def compare_clk(
     :return _pd.DataFrame: clk differences in the same units as input clk dfs (usually seconds)
     """
 
-    clk_a = _gn_io.clk.get_AS_entries(clk_a)
-    clk_b = _gn_io.clk.get_AS_entries(clk_b)
+    clk_a = _gn_io.clk.get_sv_clocks(clk_a)
+    clk_b = _gn_io.clk.get_sv_clocks(clk_b)
 
     if not isinstance(norm_types, list):  # need list for 'sv' to be correctly converted to array of SVs to use for norm
         norm_types = list(norm_types)
@@ -708,6 +708,7 @@ def format_index(
 def sp3_difference(
     base_sp3_file: _Path,
     test_sp3_file: _Path,
+    clk_norm_types: list = [],
 ) -> _pd.DataFrame:
     """
     Compare two SP3 files to calculate orbit and clock differences. The orbit differences will be represented
@@ -715,6 +716,8 @@ def sp3_difference(
 
     :param _Path base_sp3_file: Path of the baseline SP3 file
     :param _Path test_sp3_file: Path of the test SP3 file
+    :param clk_norm_types list: Clock normalizations to apply. Available options include 'epoch', 'daily', 'sv',
+            any satellite PRN, or any combination of them, defaults to empty list
     :return _pd.DataFrame: The Pandas DataFrame containing orbit and clock differences
     """
     base_sp3_df = _gn_io.sp3.read_sp3(str(base_sp3_file))
@@ -722,18 +725,18 @@ def sp3_difference(
 
     common_indices = base_sp3_df.index.intersection(test_sp3_df.index)
     diff_est_df = test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
-
-    diff_clk_df = diff_est_df["CLK"].to_frame(name="CLK") * 1e3  # TODO: normalise clocks
     diff_xyz_df = diff_est_df.drop(columns=["CLK"]) * 1e3
+
     diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, hlm_mode=None)  # TODO: hlm_mode
-
     diff_rac_df.columns = diff_rac_df.columns.droplevel(0)
-
     diff_rac_df = diff_rac_df * 1e3
+
+    diff_clk_df = compare_clk(test_sp3_df, base_sp3_df, norm_types=clk_norm_types)
+    diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e3
 
     diff_sp3_df = diff_xyz_df.join(diff_rac_df)
     diff_sp3_df["3D-Total"] = diff_xyz_df.pow(2).sum(axis=1, min_count=3).pow(0.5)
-    diff_sp3_df["Clock"] = diff_clk_df
+    diff_sp3_df = diff_sp3_df.join(diff_clk_df)
     diff_sp3_df["|Clock|"] = diff_clk_df.abs()
 
     format_index(diff_sp3_df)
@@ -744,7 +747,7 @@ def sp3_difference(
 def clk_difference(
     base_clk_file: _Path,
     test_clk_file: _Path,
-    norm_types: list = [],
+    clk_norm_types: list = [],
 ) -> _pd.DataFrame:
     """
     Compare two CLK files to calculate clock differences with common mode removed (if specified)
@@ -752,15 +755,14 @@ def clk_difference(
 
     :param _Path base_clk_file: Path of the baseline CLK file
     :param _Path test_clk_file: Path of the test CLK file
-    :param norm_types list: Normalizations to apply. Available options include 'epoch', 'daily', 'sv',
+    :param clk_norm_types list: Clock normalizations to apply. Available options include 'epoch', 'daily', 'sv',
             any satellite PRN, or any combination of them, defaults to empty list
     :return _pd.DataFrame: The Pandas DataFrame containing clock differences
     """
     base_clk_df = _gn_io.clk.read_clk(base_clk_file)
     test_clk_df = _gn_io.clk.read_clk(test_clk_file)
 
-    diff_clk_df = compare_clk(test_clk_df, base_clk_df, norm_types=norm_types)
-
+    diff_clk_df = compare_clk(test_clk_df, base_clk_df, norm_types=clk_norm_types)
     diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e9
     diff_clk_df["|Clock|"] = diff_clk_df.abs()
 
