@@ -333,7 +333,7 @@ def generate_long_filename(
     :param _datetime.timedelta timespan: Timespan of data in file (Start to End epoch), defaults to None
     :param str solution_type: 3-char string identifier for Solution Type of file, defaults to ""
     :param str sampling_rate: 3-char string identifier for Sampling Rate of the file, defaults to "15M"
-    :param str version: 3-char string identifier for Version of the file
+    :param str version: 1-char string identifier for Version of the file
     :param str project: 3-char string identifier for Project Type of the file
     :return str: The IGS long filename given all inputs
     """
@@ -784,6 +784,7 @@ def download_product_from_cddis(
     analysis_center: str = "IGS",
     solution_type: str = "ULT",
     sampling_rate: str = "15M",
+    version: str = "0",
     project_type: str = "OPS",
     timespan: _datetime.timedelta = _datetime.timedelta(days=2),
     if_file_present: str = "prompt_user",
@@ -826,6 +827,7 @@ def download_product_from_cddis(
         timespan=timespan,
         solution_type=solution_type,
         sampling_rate=sampling_rate,
+        version=version,
         project=project_type,
     )
     logging.debug(
@@ -849,6 +851,7 @@ def download_product_from_cddis(
                 timespan=timespan,
                 solution_type=solution_type,
                 sampling_rate=sampling_rate,
+                version=version,
                 project=project_type,
             )
             ftps.cwd(f"gnss/products/{gps_date.gpswk}")
@@ -875,6 +878,7 @@ def download_product_from_cddis(
                     timespan=timespan,
                     solution_type=solution_type,
                     sampling_rate=sampling_rate,
+                    version=version,
                     project=project_type,
                 )
                 download_filepath = check_whether_to_download(
