@@ -8,8 +8,13 @@ from . import gn_aux as _gn_aux
 from . import gn_const as _gn_const
 
 
-def gen_helm_aux(pt1, pt2):
+def gen_helm_aux(pt1, pt2, dropna = True):
     """aux function for helmert values inversion."""
+    if dropna:
+        mask = ~_np.isnan(pt1).any(axis=1) & ~_np.isnan(pt2).any(axis=1)
+        pt1 = pt1[mask]
+        pt2 = pt2[mask]
+
     pt1 = pt1.astype(float)
     pt2 = pt2.astype(float)
     n_points = pt1.shape[0]
@@ -32,23 +37,24 @@ def gen_helm_aux(pt1, pt2):
     return A, rhs
 
 
-def get_helmert7(pt1: _np.ndarray, pt2: _np.ndarray, scale_in_ppm: bool = True) -> Tuple[_np.ndarray, _np.ndarray]:
+def get_helmert7(pt1: _np.ndarray, pt2: _np.ndarray, scale_in_ppm: bool = True, dropna: bool = True) -> Tuple[_np.ndarray, _np.ndarray]:
     """Inversion of 7 Helmert parameters between 2 sets of points.
 
     :param numpy.ndarray pt1: The first set of points.
     :param numpy.ndarray pt2: The second set of points.
     :param bool scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
+    :param bool dropna: Whether to drop NaN values in input data.
 
     :returns uple[np.ndarray, np.ndarray]: A tuple containing the Helmert parameters and the residuals.
 
     """
-    A, rhs = gen_helm_aux(pt1, pt2)
+    A, rhs = gen_helm_aux(pt1, pt2, dropna)
     sol = list(_np.linalg.lstsq(A, rhs, rcond=-1))  # parameters
+    res = rhs - A @ sol[0]  # computing residuals for pt2
+    sol.append(res.reshape(-1, 3))  # appending residuals
     sol[0] = sol[0].flatten() * -1.0  # flattening the HLM params arr to [Tx, Ty, Tz, Rx, Ry, Rz, Scale/mu]
     if scale_in_ppm:
         sol[0][-1] *= 1e6  # scale in ppm
-    res = rhs - A @ sol[0]  # computing residuals for pt2
-    sol.append(res.reshape(-1, 3))  # appending residuals
     return sol
 
 
