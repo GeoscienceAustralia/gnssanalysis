@@ -809,17 +809,36 @@ def sp3merge(
     return merged_sp3
 
 
-def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, list]:
+def hlm_trans(a: _np.ndarray, b: _np.ndarray) -> tuple[_np.ndarray, list]:
     """
-     Rotates sp3_b into sp3_a.
+    Rotates b into a.
 
-     :param DataFrame a: The sp3_a DataFrame.
-     :param DataFrame b : The sp3_b DataFrame.
+    :param _np.ndarray a: The a array.
+    :param _np.ndarray b: The b array.
 
-    :returntuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    :return tuple[_np.ndarray, list]: A tuple containing the output array and the HLM array with applied computed parameters and residuals.
     """
-    hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
-    b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
+    hlm = _gn_transform.get_helmert7(pt1=a, pt2=b)
+    xyz_out = _gn_transform.transform7(xyz_in=b, hlm_params=hlm[0])
+    return xyz_out, hlm
+
+
+def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -> tuple[_pd.DataFrame, list]:
+    """
+    Rotates sp3_b into sp3_a.
+
+    :param DataFrame a: The sp3_a DataFrame.
+    :param DataFrame b : The sp3_b DataFrame.
+    :param bool epochwise: Epochwise HLM transformation.
+
+    :return tuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    """
+    if epochwise:
+        for epoch in b.index.get_level_values("J2000").unique():
+            b.loc[epoch].iloc[:, :3], hlm = hlm_trans(a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values)  # Eugene: hlm will be overwritten in the loop 
+    else:
+        b.iloc[:, :3], hlm = hlm_trans(a.EST[["X", "Y", "Z"]].values, b.EST[["X", "Y", "Z"]].values)
+
     return b, hlm
 
 
@@ -829,6 +848,7 @@ def diff_sp3_rac(
     sp3_test: _pd.DataFrame,
     hlm_mode: Literal[None, "ECF", "ECI"] = None,
     use_cubic_spline: bool = True,
+    epochwise: bool = False,
 ) -> _pd.DataFrame:
     """
     Computes the difference between the two sp3 files in the radial, along-track and cross-track coordinates.
@@ -837,6 +857,7 @@ def diff_sp3_rac(
     :param DataFrame sp3_test: The test sp3 DataFrame.
     :param string hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
     :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation.
+    :param bool epochwise: Epochwise orbit comparison.
     :return: The DataFrame containing the difference in RAC coordinates.
     """
     hlm_modes = [None, "ECF", "ECI"]
@@ -852,11 +873,11 @@ def diff_sp3_rac(
 
     hlm = None  # init hlm var
     if hlm_mode == "ECF":
-        sp3_test, hlm = sp3_hlm_trans(sp3_baseline, sp3_test)
+        sp3_test, hlm = sp3_hlm_trans(sp3_baseline, sp3_test, epochwise)
     sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline)
     sp3_test_eci = _gn_transform.ecef2eci(sp3_test)
     if hlm_mode == "ECI":
-        sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci)
+        sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci, epochwise)
 
     diff_eci = sp3_test_eci - sp3_baseline_eci
 
