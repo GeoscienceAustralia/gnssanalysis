@@ -20,7 +20,7 @@ def path2bytes(path_or_bytes: _Union[_Path, str, bytes]) -> bytes:
     Passes through bytes if given, thus one may not routinely leave it in the top of the specific
      file reading function and be able to call it with bytes or str path without additional modifications.
 
-    :param str path: input file path
+    :param Path | str | bytes path_or_bytes: input file path as a Path or string, or bytes object to pass through
     :return bytes: bytes object, decompressed if necessary
     :raise FileNotFoundError: path didn't resolve to a file
     :raise Exception: wrapped exception for all other exceptions raised
