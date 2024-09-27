@@ -710,6 +710,7 @@ def sp3_difference(
     test_sp3_file: _Path,
     svs: list[str],
     orb_hlm_mode: Literal[None, "ECF", "ECI"] = None,
+    epochwise_hlm: bool = False,
     clk_norm_types: list = [],
 ) -> _pd.DataFrame:
     """
@@ -720,6 +721,7 @@ def sp3_difference(
     :param _Path test_sp3_file: Path of the test SP3 file
     :param list[str] svs: List of satellites to process
     :param str orb_hlm_mode: Helmert transformation to apply to orbits. Can be None, "ECF", or "ECI".
+    :param bool epochwise_hlm: Epochwise HLM transformation.
     :param list clk_norm_types: Normalizations to apply to clocks. Available options include 'epoch', 'daily', 'sv',
             any satellite PRN, or any combination of them, defaults to empty list
     :return _pd.DataFrame: The Pandas DataFrame containing orbit and clock differences
@@ -736,7 +738,7 @@ def sp3_difference(
     diff_est_df = test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
     diff_xyz_df = diff_est_df.drop(columns=["CLK"]) * 1e3
 
-    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, hlm_mode=orb_hlm_mode)  # TODO Eugene: compare orbits by constellation
+    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, hlm_mode=orb_hlm_mode, epochwise_hlm=epochwise_hlm)  # TODO Eugene: compare orbits by constellation
     diff_rac_df.columns = diff_rac_df.columns.droplevel(0)
     diff_rac_df = diff_rac_df * 1e3
 

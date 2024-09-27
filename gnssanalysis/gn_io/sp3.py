@@ -847,8 +847,8 @@ def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,
     hlm_mode: Literal[None, "ECF", "ECI"] = None,
+    epochwise_hlm: bool = False,
     use_cubic_spline: bool = True,
-    epochwise: bool = False,
 ) -> _pd.DataFrame:
     """
     Computes the difference between the two sp3 files in the radial, along-track and cross-track coordinates.
@@ -856,8 +856,8 @@ def diff_sp3_rac(
     :param DataFrame sp3_baseline: The baseline sp3 DataFrame.
     :param DataFrame sp3_test: The test sp3 DataFrame.
     :param string hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
+    :param bool epochwise_hlm: Epochwise HLM transformation.
     :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation.
-    :param bool epochwise: Epochwise orbit comparison.
     :return: The DataFrame containing the difference in RAC coordinates.
     """
     hlm_modes = [None, "ECF", "ECI"]
@@ -873,11 +873,11 @@ def diff_sp3_rac(
 
     hlm = None  # init hlm var
     if hlm_mode == "ECF":
-        sp3_test, hlm = sp3_hlm_trans(sp3_baseline, sp3_test, epochwise)
+        sp3_test, hlm = sp3_hlm_trans(sp3_baseline, sp3_test, epochwise_hlm)
     sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline)
     sp3_test_eci = _gn_transform.ecef2eci(sp3_test)
     if hlm_mode == "ECI":
-        sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci, epochwise)
+        sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci, epochwise_hlm)
 
     diff_eci = sp3_test_eci - sp3_baseline_eci
 
