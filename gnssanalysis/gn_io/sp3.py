@@ -792,7 +792,6 @@ def sp3merge(
     :param List[str] sp3paths: The list of paths to the sp3 files.
     :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
-
     :return pd.DataFrame: The merged sp3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
@@ -809,17 +808,16 @@ def sp3merge(
     return merged_sp3
 
 
-def hlm_trans(a: _np.ndarray, b: _np.ndarray) -> tuple[_np.ndarray, list]:
+def hlm_trans(pt1: _np.ndarray, pt2: _np.ndarray) -> tuple[_np.ndarray, list]:
     """
-    Rotates b into a.
+    Rotates a set of points pt1 into pt2.
 
-    :param _np.ndarray a: The a array.
-    :param _np.ndarray b: The b array.
-
+    :param _np.ndarray pt1: The first set of points.
+    :param _np.ndarray pt2: The second set of points.
     :return tuple[_np.ndarray, list]: A tuple containing the output array and the HLM array with applied computed parameters and residuals.
     """
-    hlm = _gn_transform.get_helmert7(pt1=a, pt2=b)
-    xyz_out = _gn_transform.transform7(xyz_in=b, hlm_params=hlm[0])
+    hlm = _gn_transform.get_helmert7(pt1, pt2)
+    xyz_out = _gn_transform.transform7(xyz_in=pt2, hlm_params=hlm[0])
     return xyz_out, hlm
 
 
@@ -830,7 +828,6 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -
     :param DataFrame a: The sp3_a DataFrame.
     :param DataFrame b : The sp3_b DataFrame.
     :param bool epochwise: Epochwise HLM transformation.
-
     :return tuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
     """
     if epochwise:

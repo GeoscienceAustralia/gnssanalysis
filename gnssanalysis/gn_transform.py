@@ -44,7 +44,6 @@ def get_helmert7(pt1: _np.ndarray, pt2: _np.ndarray, scale_in_ppm: bool = True, 
     :param numpy.ndarray pt2: The second set of points.
     :param bool scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
     :param bool dropna: Whether to drop NaN values in input data.
-
     :returns uple[np.ndarray, np.ndarray]: A tuple containing the Helmert parameters and the residuals.
     """
     A, rhs = gen_helm_aux(pt1, pt2, dropna)

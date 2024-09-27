@@ -720,8 +720,8 @@ def sp3_difference(
     :param _Path base_sp3_file: Path of the baseline SP3 file
     :param _Path test_sp3_file: Path of the test SP3 file
     :param list[str] svs: List of satellites to process
-    :param str orb_hlm_mode: Helmert transformation to apply to orbits. Can be None, "ECF", or "ECI".
-    :param bool epochwise_hlm: Epochwise HLM transformation.
+    :param str orb_hlm_mode: Helmert transformation to apply to orbits. Can be None, "ECF", or "ECI"
+    :param bool epochwise_hlm: Epochwise Helmert transformation
     :param list clk_norm_types: Normalizations to apply to clocks. Available options include 'epoch', 'daily', 'sv',
             any satellite PRN, or any combination of them, defaults to empty list
     :return _pd.DataFrame: The Pandas DataFrame containing orbit and clock differences
