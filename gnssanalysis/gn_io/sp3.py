@@ -830,9 +830,11 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -
     :param bool epochwise: Epochwise HLM transformation.
     :return tuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
     """
+    hlm = []
     if epochwise:
         for epoch in b.index.get_level_values("J2000").unique():
-            b.loc[epoch, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]], hlm = hlm_trans(a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values)  # Eugene: hlm will be overwritten in the loop 
+            b.loc[epoch, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]], hlm_epoch = hlm_trans(a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values)
+            hlm.append(hlm_epoch)
     else:
         b.iloc[:, :3], hlm = hlm_trans(a.EST[["X", "Y", "Z"]].values, b.EST[["X", "Y", "Z"]].values)
 
