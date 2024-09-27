@@ -8,8 +8,18 @@ from . import gn_aux as _gn_aux
 from . import gn_const as _gn_const
 
 
-def gen_helm_aux(pt1, pt2, dropna = True):
-    """aux function for helmert values inversion."""
+def gen_helm_aux(
+    pt1: _np.ndarray,
+    pt2: _np.ndarray,
+    dropna: bool = True,
+) -> Tuple[_np.ndarray, _np.ndarray]:
+    """Aux function for helmert values inversion.
+
+    :param _np.ndarray pt1: The first set of points.
+    :param _np.ndarray pt2: The second set of points.
+    :param bool dropna: Whether to drop NaN values in input data, defaults to True.
+    :return Tuple[_np.ndarray, _np.ndarray]: A tuple containing the design matrix and right hand side of the equation for least square estimation.
+    """
     if dropna:
         mask = ~_np.isnan(pt1).any(axis=1) & ~_np.isnan(pt2).any(axis=1)
         pt1 = pt1[mask]
@@ -37,14 +47,19 @@ def gen_helm_aux(pt1, pt2, dropna = True):
     return A, rhs
 
 
-def get_helmert7(pt1: _np.ndarray, pt2: _np.ndarray, scale_in_ppm: bool = True, dropna: bool = True) -> Tuple[_np.ndarray, _np.ndarray]:
+def get_helmert7(
+    pt1: _np.ndarray,
+    pt2: _np.ndarray,
+    scale_in_ppm: bool = True,
+    dropna: bool = True,
+) -> list:
     """Inversion of 7 Helmert parameters between 2 sets of points.
 
     :param numpy.ndarray pt1: The first set of points.
     :param numpy.ndarray pt2: The second set of points.
     :param bool scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
-    :param bool dropna: Whether to drop NaN values in input data.
-    :returns uple[np.ndarray, np.ndarray]: A tuple containing the Helmert parameters and the residuals.
+    :param bool dropna: Whether to drop NaN values in input data, defaults to True.
+    :returns list: A list containing the Helmert parameters and the residuals.
     """
     A, rhs = gen_helm_aux(pt1, pt2, dropna)
     sol = list(_np.linalg.lstsq(A, rhs, rcond=-1))  # parameters
@@ -67,14 +82,18 @@ def gen_rot_matrix(v):
     return mat + _np.eye(3)
 
 
-def transform7(xyz_in: _np.ndarray, hlm_params: _np.ndarray, scale_in_ppm: bool = True) -> _np.ndarray:
+def transform7(
+    xyz_in: _np.ndarray,
+    hlm_params: _np.ndarray,
+    scale_in_ppm: bool = True,
+) -> _np.ndarray:
     """
     Transformation of xyz vector with 7 helmert parameters.
 
-    :param xyz_in: The input xyz vector.
-    :param hlm_params: The 7 helmert parameters: [Tx, Ty, Tz, Rx, Ry, Rz, Scale].
-    :param scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
-    :return: The transformed xyz vector.
+    :param _np.ndarray xyz_in: The input xyz vector.
+    :param _np.ndarray hlm_params: The 7 helmert parameters: [Tx, Ty, Tz, Rx, Ry, Rz, Scale].
+    :param bool scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
+    :return _np.ndarray: The transformed xyz vector.
     """
     assert hlm_params.size == 7, "There must be exactly seven parameters"
 

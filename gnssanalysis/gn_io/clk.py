@@ -71,7 +71,12 @@ def read_clk(clk_path):
 
 
 def get_sv_clocks(clk_df: _pd.DataFrame) -> _pd.Series:
-    """Retrieve satellite clocks from a CLK or SP3 dataframe"""
+    """Retrieve satellite clocks from a CLK or SP3 dataframe
+
+    :param _pd.DataFrame clk_df: CLK or SP3 dataframe where to retreive satellite clocks from
+    :raises IndexError: Raise error if the dataframe is not indexed correctly
+    :return _pd.Series: Retrieved satellite clocks
+    """
     if clk_df.index.names == ['A', 'J2000', 'CODE']:
         # fastest method to grab a specific category!, same as clk_df.EST.loc['AS'] but >6 times faster
         AS_cat_code = clk_df.index.levels[0].categories.get_loc("AS")

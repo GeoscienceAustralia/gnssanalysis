@@ -214,7 +214,6 @@ def _process_sp3_block(
 ) -> _pd.DataFrame:
     """Process a single block of SP3 data.
 
-
     :param    str date: The date of the SP3 data block.
     :param    str data: The SP3 data block.
     :param    List[int] widths: The widths of the columns in the SP3 data block.
@@ -250,7 +249,6 @@ def read_sp3(
     sp3_path_or_bytes: Union[str, Path, bytes], pOnly: bool = True, nodata_to_nan: bool = True
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
-
 
     :param str sp3_path: The path to the SP3 file.
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
@@ -474,7 +472,6 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     :param DataFrame sp3Df: A pandas DataFrame containing the sp3 data.
     :param int deg: Degree of the polynomial fit. Default is 35.
     :return DataFrame: A pandas DataFrame with the interpolated velocities added as a new column.
-
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
     x = est.index.get_level_values("J2000").values
@@ -580,7 +577,6 @@ def gen_sp3_content(
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
     it otherwise.
 
-    Args:
     :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
     :param io.TextIOBase  buf: The buffer to write the SP3 content to. Defaults to None.
