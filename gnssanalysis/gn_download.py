@@ -897,6 +897,8 @@ def download_product_from_cddis(
                 count += 1
                 remain = end_epoch - reference_start
 
+    return download_filepaths
+
 
 def download_iau2000_file(download_dir: _Path, start_epoch: _datetime, if_file_present: str = "prompt_user"):
     """
