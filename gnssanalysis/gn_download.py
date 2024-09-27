@@ -503,24 +503,24 @@ def attempt_ftps_download(
 
 
 def attempt_url_download(
-    download_dir: _Path, url: str, download_filename: str = None, type_of_file: str = None, if_file_present: str = "prompt_user"
+    download_dir: _Path, url: str, filename: str = None, type_of_file: str = None, if_file_present: str = "prompt_user"
 ) -> _Path:
     """Attempt download of file given URL (url) to chosen location (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
     :param str url: URL to download
-    :param str download_filename: Filename to assign for the downloaded file, defaults to None
+    :param str filename: Filename to assign for the downloaded file, defaults to None
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :return _Path: The pathlib.Path of the downloaded file
     """
     # If the download_filename is not provided, use the filename from the URL
-    if not download_filename:
-        download_filename = url[url.rfind("/") + 1 :]
-    logging.info(f"Attempting URL Download of {type_of_file} file - {download_filename} to {download_dir}")
+    if not filename:
+        filename = url[url.rfind("/") + 1 :]
+    logging.info(f"Attempting URL Download of {type_of_file} file - {filename} to {download_dir}")
     # Use the check_whether_to_download function to determine whether to download the file
     download_filepath = check_whether_to_download(
-        filename=download_filename, download_dir=download_dir, if_file_present=if_file_present
+        filename=filename, download_dir=download_dir, if_file_present=if_file_present
     )
     if download_filepath:
         download_filepath = download_url(url, download_filepath)
@@ -940,7 +940,7 @@ def download_iau2000_file(download_dir: _Path, start_epoch: _datetime, if_file_p
         download_filepath = attempt_url_download(
             download_dir=download_dir,
             url="https://datacenter.iers.org/products/eop/rapid/" + url_dir + iau2000_filename,
-            download_filename=download_filename,
+            filename=download_filename,
             type_of_file=filetype,
             if_file_present=if_file_present,
         )
@@ -971,7 +971,7 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
         download_filepath = attempt_url_download(
             download_dir=download_dir,
             url=url_igs,
-            download_filename=atx_filename,
+            filename=atx_filename,
             type_of_file="ATX",
             if_file_present=if_file_present,
         )
@@ -979,7 +979,7 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
         download_filepath = attempt_url_download(
             download_dir=download_dir,
             url=url_bern,
-            download_filename=atx_filename,
+            filename=atx_filename,
             type_of_file="ATX",
             if_file_present=if_file_present,
         )
@@ -997,7 +997,7 @@ def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = 
     download_filepath = attempt_url_download(
         download_dir=download_dir,
         url=IGS_FILES_URL + "station/general/igs_satellite_metadata.snx",
-        download_filename="igs_satellite_metadata.snx",
+        filename="igs_satellite_metadata.snx",
         type_of_file="IGS satellite metadata",
         if_file_present=if_file_present,
     )
@@ -1018,7 +1018,7 @@ def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user"
         download_filepath = attempt_url_download(
             download_dir=download_dir,
             url=PRODUCT_BASE_URL + "tables/" + filename,
-            download_filename=filename,
+            filename=filename,
             type_of_file="Yaw Model SNX",
             if_file_present=if_file_present,
         )
