@@ -835,7 +835,7 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -
     """
     if epochwise:
         for epoch in b.index.get_level_values("J2000").unique():
-            b.loc[epoch].iloc[:, :3], hlm = hlm_trans(a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values)  # Eugene: hlm will be overwritten in the loop 
+            b.loc[epoch, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]], hlm = hlm_trans(a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values)  # Eugene: hlm will be overwritten in the loop 
     else:
         b.iloc[:, :3], hlm = hlm_trans(a.EST[["X", "Y", "Z"]].values, b.EST[["X", "Y", "Z"]].values)
 
