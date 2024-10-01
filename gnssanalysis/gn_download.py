@@ -427,9 +427,7 @@ def generate_product_filename(
 
 
 def check_whether_to_download(
-    filename: str,
-    download_dir: _Path,
-    if_file_present: str = "prompt_user",
+    filename: str, download_dir: _Path, if_file_present: str = "prompt_user"
 ) -> Union[_Path, None]:
     """Determine whether to download given file (filename) to the desired location (download_dir) based on whether it is
     already present and what action to take if it is (if_file_present)
@@ -508,11 +506,7 @@ def attempt_ftps_download(
 
 
 def attempt_url_download(
-    download_dir: _Path,
-    url: str,
-    filename: str = None,
-    type_of_file: str = None,
-    if_file_present: str = "prompt_user",
+    download_dir: _Path, url: str, filename: str = None, type_of_file: str = None, if_file_present: str = "prompt_user"
 ) -> Union[_Path, None]:
     """Attempt download of file given URL (url) to chosen location (download_dir)
 
@@ -771,11 +765,7 @@ def download_file_from_cddis(
     return download_filepath
 
 
-def download_multiple_files_from_cddis(
-    files: List[str],
-    ftp_folder: str,
-    output_folder: _Path,
-) -> None:
+def download_multiple_files_from_cddis(files: List[str], ftp_folder: str, output_folder: _Path) -> None:
     """Downloads multiple files in a single folder from cddis in a thread pool.
 
     :param files: List of str filenames
@@ -914,9 +904,7 @@ def download_product_from_cddis(
 
 
 def download_iau2000_file(
-    download_dir: _Path,
-    start_epoch: _datetime,
-    if_file_present: str = "prompt_user",
+    download_dir: _Path, start_epoch: _datetime, if_file_present: str = "prompt_user"
 ) -> Union[_Path, None]:
     """Download relevant IAU2000 file from CDDIS or IERS based on start_epoch of data
 
@@ -971,9 +959,7 @@ def download_iau2000_file(
 
 
 def download_atx(
-    download_dir: _Path,
-    reference_frame: str = "IGS20",
-    if_file_present: str = "prompt_user",
+    download_dir: _Path, reference_frame: str = "IGS20", if_file_present: str = "prompt_user"
 ) -> Union[_Path, None]:
     """Download the ATX file necessary for running the PEA provided the download directory (download_dir)
 
@@ -1013,10 +999,7 @@ def download_atx(
     return download_filepath
 
 
-def download_satellite_metadata_snx(
-    download_dir: _Path,
-    if_file_present: str = "prompt_user",
-) -> Union[_Path, None]:
+def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = "prompt_user") -> Union[_Path, None]:
     """Download the most recent IGS satellite metadata file
 
     :param _Path download_dir: Where to download files (local directory)
@@ -1034,10 +1017,7 @@ def download_satellite_metadata_snx(
     return download_filepath
 
 
-def download_yaw_files(
-    download_dir: _Path,
-    if_file_present: str = "prompt_user",
-) -> List[_Path]:
+def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> List[_Path]:
     """Download yaw rate / bias files needed to for Ginan's PEA
 
     :param _Path download_dir: Where to download files (local directory)
