@@ -1,9 +1,12 @@
 """
 Functions to download files necessary for Ginan processing:
 sp3
-erp
 clk
+erp
 rnx (including transformation from crx to rnx)
+atx
+sat meta
+yaw
 """
 
 import concurrent as _concurrent
@@ -333,7 +336,7 @@ def generate_long_filename(
     :param _datetime.timedelta timespan: Timespan of data in file (Start to End epoch), defaults to None
     :param str solution_type: 3-char string identifier for Solution Type of file, defaults to ""
     :param str sampling_rate: 3-char string identifier for Sampling Rate of the file, defaults to "15M"
-    :param str version: 3-char string identifier for Version of the file
+    :param str version: 1-char string identifier for Version of the file
     :param str project: 3-char string identifier for Project Type of the file
     :return str: The IGS long filename given all inputs
     """
@@ -432,7 +435,7 @@ def check_whether_to_download(
     :param str filename: Filename of the downloaded file
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path or None: pathlib.Path to the downloaded file if file should be downloaded, otherwise returns None
+    :return _Path or None: The pathlib.Path of the downloaded file if file should be downloaded, otherwise returns None
     """
     # Flag to determine whether to download:
     download = None
@@ -479,7 +482,7 @@ def attempt_ftps_download(
     filename: str,
     type_of_file: str = None,
     if_file_present: str = "prompt_user",
-) -> _Path:
+) -> Union[_Path, None]:
     """Attempt download of file (filename) given the ftps client object (ftps) to chosen location (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
@@ -487,7 +490,7 @@ def attempt_ftps_download(
     :param str filename: Filename to assign for the downloaded file
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path: The pathlib.Path of the downloaded file
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
     """
     ""
     logging.info(f"Attempting FTPS Download of {type_of_file} file - {filename} to {download_dir}")
@@ -504,7 +507,7 @@ def attempt_ftps_download(
 
 def attempt_url_download(
     download_dir: _Path, url: str, filename: str = None, type_of_file: str = None, if_file_present: str = "prompt_user"
-) -> _Path:
+) -> Union[_Path, None]:
     """Attempt download of file given URL (url) to chosen location (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
@@ -512,9 +515,9 @@ def attempt_url_download(
     :param str filename: Filename to assign for the downloaded file, defaults to None
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path: The pathlib.Path of the downloaded file
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
     """
-    # If the filename is not provided, use the filename from the URL
+    # If the download_filename is not provided, use the filename from the URL
     if not filename:
         filename = url[url.rfind("/") + 1 :]
     logging.info(f"Attempting URL Download of {type_of_file} file - {filename} to {download_dir}")
@@ -523,7 +526,7 @@ def attempt_url_download(
         filename=filename, download_dir=download_dir, if_file_present=if_file_present
     )
     if download_filepath:
-        download_url(url, download_filepath)
+        download_filepath = download_url(url, download_filepath)
     return download_filepath
 
 
@@ -715,7 +718,7 @@ def download_file_from_cddis(
     decompress: bool = True,
     if_file_present: str = "prompt_user",
     note_filetype: str = None,
-) -> _Path:
+) -> Union[_Path, None]:
     """Downloads a single file from the CDDIS ftp server
 
     :param str filename: Name of the file to download
@@ -726,7 +729,7 @@ def download_file_from_cddis(
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :param str note_filetype: How to label the file for STDOUT messages, defaults to None
     :raises e: Raise any error that is run into by ftplib
-    :return _Path: The pathlib.Path of the downloaded file
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
     """
     with ftp_tls(CDDIS_FTP) as ftps:
         ftps.cwd(ftp_folder)
@@ -751,7 +754,7 @@ def download_file_from_cddis(
             except _ftplib.all_errors as e:
                 retries += 1
                 if retries > max_retries:
-                    logging.info(f"Failed to download {filename} and reached maximum retry count ({max_retries}).")
+                    logging.error(f"Failed to download {filename} and reached maximum retry count ({max_retries}).")
                     if (output_folder / filename).is_file():
                         (output_folder / filename).unlink()
                     raise e
@@ -784,10 +787,11 @@ def download_product_from_cddis(
     analysis_center: str = "IGS",
     solution_type: str = "ULT",
     sampling_rate: str = "15M",
+    version: str = "0",
     project_type: str = "OPS",
     timespan: _datetime.timedelta = _datetime.timedelta(days=2),
     if_file_present: str = "prompt_user",
-) -> None:
+) -> List[_Path]:
     """Download the file/s from CDDIS based on start and end epoch, to the download directory (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
@@ -803,6 +807,7 @@ def download_product_from_cddis(
     :param _datetime.timedelta timespan: Timespan of the file/s to download, defaults to _datetime.timedelta(days=2)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
+    :return List[_Path]: Return list of paths of downloaded files
     """
     # Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
@@ -825,17 +830,21 @@ def download_product_from_cddis(
         timespan=timespan,
         solution_type=solution_type,
         sampling_rate=sampling_rate,
+        version=version,
         project=project_type,
     )
     logging.debug(
         f"Generated filename: {product_filename}, with GPS Date: {gps_date.gpswkD} and reference: {reference_start}"
     )
+
+    ensure_folders([download_dir])
+    download_filepaths = []
     with ftp_tls(CDDIS_FTP) as ftps:
         try:
             ftps.cwd(f"gnss/products/{gps_date.gpswk}")
         except _ftplib.all_errors as e:
-            logging.info(f"{reference_start} too recent")
-            logging.info(f"ftp_lib error: {e}")
+            logging.warning(f"{reference_start} too recent")
+            logging.warning(f"ftp_lib error: {e}")
             product_filename, gps_date, reference_start = generate_product_filename(
                 reference_start,
                 file_ext,
@@ -845,13 +854,14 @@ def download_product_from_cddis(
                 timespan=timespan,
                 solution_type=solution_type,
                 sampling_rate=sampling_rate,
+                version=version,
                 project=project_type,
             )
             ftps.cwd(f"gnss/products/{gps_date.gpswk}")
 
             all_files = ftps.nlst()
             if not (product_filename in all_files):
-                logging.info(f"{product_filename} not in gnss/products/{gps_date.gpswk} - too recent")
+                logging.warning(f"{product_filename} not in gnss/products/{gps_date.gpswk} - too recent")
                 raise FileNotFoundError
 
         # reference_start will be changed in the first run through while loop below
@@ -871,31 +881,93 @@ def download_product_from_cddis(
                     timespan=timespan,
                     solution_type=solution_type,
                     sampling_rate=sampling_rate,
+                    version=version,
                     project=project_type,
                 )
                 download_filepath = check_whether_to_download(
                     filename=product_filename, download_dir=download_dir, if_file_present=if_file_present
                 )
                 if download_filepath:
-                    download_file_from_cddis(
-                        filename=product_filename,
-                        ftp_folder=f"gnss/products/{gps_date.gpswk}",
-                        output_folder=download_dir,
-                        if_file_present=if_file_present,
-                        note_filetype=file_ext,
+                    download_filepaths.append(
+                        download_file_from_cddis(
+                            filename=product_filename,
+                            ftp_folder=f"gnss/products/{gps_date.gpswk}",
+                            output_folder=download_dir,
+                            if_file_present=if_file_present,
+                            note_filetype=file_ext,
+                        )
                     )
                 count += 1
                 remain = end_epoch - reference_start
 
+    return download_filepaths
 
-def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_present: str = "prompt_user") -> _Path:
+
+def download_iau2000_file(
+    download_dir: _Path, start_epoch: _datetime, if_file_present: str = "prompt_user"
+) -> Union[_Path, None]:
+    """Download relevant IAU2000 file from CDDIS or IERS based on start_epoch of data
+
+    :param _Path download_dir: Where to download files (local directory)
+    :param _datetime start_epoch: Start epoch of data in file
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
+    """
+    ensure_folders([download_dir])
+    # Download most recent daily IAU2000 file if running for a session within the past week (data is within 3 months)
+    if _datetime.datetime.now() - start_epoch < _datetime.timedelta(weeks=1):
+        url_dir = "daily/"
+        iau2000_filename = "finals2000A.daily"
+        download_filename = "finals.daily.iau2000.txt"
+        logging.info("Attempting Download of finals2000A.daily file")
+    # Otherwise download the IAU2000 file dating back to 1992
+    else:
+        url_dir = "standard/"
+        iau2000_filename = "finals2000A.data"
+        download_filename = "finals.data.iau2000.txt"
+        logging.info("Attempting Download of finals2000A.data file")
+    filetype = "EOP IAU2000"
+
+    if not check_whether_to_download(
+        filename=download_filename, download_dir=download_dir, if_file_present=if_file_present
+    ):
+        return None
+
+    # Attempt download from the CDDIS website first, if that fails try IERS
+    # Eugene: should try IERS first and then CDDIS?
+    try:
+        logging.info("Downloading IAU2000 file from CDDIS")
+        download_filepath = download_file_from_cddis(
+            filename=iau2000_filename,
+            ftp_folder="products/iers/",
+            output_folder=download_dir,
+            decompress=False,
+            if_file_present=if_file_present,
+            note_filetype=filetype
+        )
+        download_filepath = download_filepath.rename(download_dir / download_filename)
+    except:
+        logging.info("Failed CDDIS download - Downloading IAU2000 file from IERS")
+        download_filepath = attempt_url_download(
+            download_dir=download_dir,
+            url="https://datacenter.iers.org/products/eop/rapid/" + url_dir + iau2000_filename,
+            filename=download_filename,
+            type_of_file=filetype,
+            if_file_present=if_file_present,
+        )
+    return download_filepath
+
+
+def download_atx(
+    download_dir: _Path, reference_frame: str = "IGS20", if_file_present: str = "prompt_user"
+) -> Union[_Path, None]:
     """Download the ATX file necessary for running the PEA provided the download directory (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
     :param str reference_frame: Coordinate reference frame file to download, defaults to "IGS20"
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises ValueError: If an invalid option is given for reference_frame variable
-    :return _Path: The pathlib.Path of the downloaded file
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
     """
     reference_frame_to_filename = {"IGS20": "igs20.atx", "IGb14": "igs14.atx"}
     try:
@@ -927,12 +999,12 @@ def download_atx(download_dir: _Path, reference_frame: str = "IGS20", if_file_pr
     return download_filepath
 
 
-def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = "prompt_user") -> _Path:
+def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = "prompt_user") -> Union[_Path, None]:
     """Download the most recent IGS satellite metadata file
 
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return _Path: The pathlib.Path of the downloaded file
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
     """
     ensure_folders([download_dir])
     download_filepath = attempt_url_download(
@@ -950,7 +1022,7 @@ def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user"
 
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return List[_Path]: Return list of download files
+    :return List[_Path]: Return list paths of downloaded files
     """
     ensure_folders([download_dir])
     download_filepaths = []
