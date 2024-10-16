@@ -594,19 +594,34 @@ def gen_sp3_content(
     out_df = sp3_df["EST"]
     flags_df = sp3_df["FLAGS"]  # Prediction, maneuver, etc.
 
+    # Validate that all flags have valid values
+    if not (
+        flags_df["Clock_Event"].astype(str).isin(["E", " "]).all()
+        and flags_df["Clock_Pred"].astype(str).isin(["P", " "]).all()
+        and flags_df["Maneuver"].astype(str).isin(["M", " "]).all()
+        and flags_df["Orbit_Pred"].astype(str).isin(["P", " "]).all()
+    ):
+        raise ValueError(
+            "Invalid SP3 flag found! Valid values are 'E', 'P', 'M', ' '. "
+            "Actual values were: " + str(flags_df.values.astype(str))
+        )
+
     # (Another) Pandas output hack to ensure we don't get extra spaces between flags columns.
     # Squish all the flag columns into a single string with the required amount of space (or none), so that
     # DataFrame.to_string() can't mess it up for us by adding a compulsory space between columns that aren't meant
     # to have one.
-    # Types are also conformed to str here due to occaisional concat errors, where one of these flags is interpreted as an int.
-    flags_squished_df = _pd.DataFrame(
+
+    # Types are set to str here due to occaisional concat errors, where one of these flags is interpreted as an int.
+    flags_merged_series = _pd.Series(
+        # Concatenate all flags so arbitrary spaces don't get added later in rendering
         flags_df["Clock_Event"].astype(str)
         + flags_df["Clock_Pred"].astype(str)
         + "  "  # Two blanks (unused), as per spec. Should align with columns 77,78
         + flags_df["Maneuver"].astype(str)
-        + flags_df["Orbit_Pred"].astype(str)
+        + flags_df["Orbit_Pred"].astype(str),
+        # Cast the whole thing to a string for output TODO this seems to do nothing?
+        # dtype=_np.dtype("str"),
     )
-    flags_squished_df.columns = ["FLAGS_MERGED"]  # Give it a meaningful name (not needed for output)
 
     # If we have STD information transform it to the output format (integer exponents) and add to dataframe
     if "STD" in sp3_df:
@@ -638,7 +653,7 @@ def gen_sp3_content(
         std_df = std_df.transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
         std_df = std_df.rename(columns=lambda x: "STD_" + x)
         out_df = _pd.concat([out_df, std_df], axis="columns")
-        out_df["FLAGS_MERGED"] = flags_squished_df  # Re-inject the pre-concatenated flags column.
+        out_df["FLAGS_MERGED"] = flags_merged_series  # Re-inject the pre-concatenated flags column.
 
     def prn_formatter(x):
         return f"P{x}"
