@@ -598,8 +598,13 @@ def gen_sp3_content(
     # Squish all the flag columns into a single string with the required amount of space (or none), so that
     # DataFrame.to_string() can't mess it up for us by adding a compulsory space between columns that aren't meant
     # to have one.
+    # Types are also conformed to str here due to occaisional concat errors, where one of these flags is interpreted as an int.
     flags_squished_df = _pd.DataFrame(
-        flags_df["Clock_Event"] + flags_df["Clock_Pred"] + "  " + flags_df["Maneuver"] + flags_df["Orbit_Pred"]
+        flags_df["Clock_Event"].astype(str)
+        + flags_df["Clock_Pred"].astype(str)
+        + "  "  # Two blanks (unused), as per spec. Should align with columns 77,78
+        + flags_df["Maneuver"].astype(str)
+        + flags_df["Orbit_Pred"].astype(str)
     )
     flags_squished_df.columns = ["FLAGS_MERGED"]  # Give it a meaningful name (not needed for output)
 
