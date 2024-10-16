@@ -619,7 +619,7 @@ def gen_sp3_content(
         + "  "  # Two blanks (unused), as per spec. Should align with columns 77,78
         + flags_df["Maneuver"].astype(str)
         + flags_df["Orbit_Pred"].astype(str),
-        # Cast the whole thing to a string for output TODO this seems to do nothing?
+        # Cast the whole thing to a string for output (disabled as this seems to do nothing?)
         # dtype=_np.dtype("str"),
     )
 
