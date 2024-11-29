@@ -446,6 +446,20 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     return _pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
 
 
+def clean_sp3_orb(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
+    sp3_df = sp3_df.filter(items=[("EST", "X"), ("EST", "Y"), ("EST", "Z")])
+
+    # Drop any duplicates in the index
+    sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
+
+    # Drop satellites that have any NaN values
+    nan_mask = sp3_df.isna()
+    nan_prns = nan_mask.groupby("PRN").any().any(axis=1)
+    sp3_df_cleaned = sp3_df[~sp3_df.index.get_level_values("PRN").isin(nan_prns[nan_prns].index)]
+
+    return sp3_df_cleaned
+
+
 def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     """Returns the velocity spline of the input dataframe.
 
@@ -841,6 +855,7 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -
 def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,
+    ref_frame: Literal["ECF", "ECI"] = "ECF",
     hlm_mode: Literal[None, "ECF", "ECI"] = None,
     epochwise_hlm: bool = False,
     use_cubic_spline: bool = True,
@@ -855,24 +870,36 @@ def diff_sp3_rac(
     :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation.
     :return: The DataFrame containing the difference in RAC coordinates.
     """
+    ref_frames = ["ECF", "ECI"]
+    if ref_frame not in ref_frames:
+        raise ValueError(f"Invalid ref_frame. Expected one of: {ref_frames}")
+
     hlm_modes = [None, "ECF", "ECI"]
     if hlm_mode not in hlm_modes:
         raise ValueError(f"Invalid hlm_mode. Expected one of: {hlm_modes}")
 
-    # Drop any duplicates in the index
-    sp3_baseline = sp3_baseline[~sp3_baseline.index.duplicated(keep="first")]
-    sp3_test = sp3_test[~sp3_test.index.duplicated(keep="first")]
+    sp3_baseline = clean_sp3_orb(sp3_baseline)
+    sp3_test = clean_sp3_orb(sp3_test)
+
     # Ensure the test file is time-ordered so when we align the resulting dataframes will be time-ordered
     sp3_baseline = sp3_baseline.sort_index(axis="index", level="J2000")
     sp3_baseline, sp3_test = sp3_baseline.align(sp3_test, join="inner", axis=0)
 
+    # TODO Eugene: improve following code
     hlm = None  # init hlm var
     if hlm_mode == "ECF":
-        sp3_test, hlm = sp3_hlm_trans(sp3_baseline, sp3_test, epochwise_hlm)
-    sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline)
-    sp3_test_eci = _gn_transform.ecef2eci(sp3_test)
-    if hlm_mode == "ECI":
+        sp3_baseline_ecf = _gn_transform.eci2ecef(sp3_baseline) if ref_frame == "ECI" else sp3_baseline
+        sp3_test_ecf = _gn_transform.eci2ecef(sp3_test) if ref_frame == "ECI" else sp3_test
+        sp3_test_ecf, hlm = sp3_hlm_trans(sp3_baseline_ecf, sp3_test_ecf, epochwise_hlm)
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline_ecf)
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test_ecf)
+    elif hlm_mode == "ECI":
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline) if ref_frame == "ECF" else sp3_baseline
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test) if ref_frame == "ECF" else sp3_test
         sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci, epochwise_hlm)
+    else:
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline) if ref_frame == "ECF" else sp3_baseline
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test) if ref_frame == "ECF" else sp3_test
 
     diff_eci = sp3_test_eci - sp3_baseline_eci
 

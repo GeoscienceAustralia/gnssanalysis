@@ -410,6 +410,28 @@ def ecef2eci(sp3_in):
     )
 
 
+def eci2ecef(sp3_in):
+    """Simplified conversion of sp3 posiitons from ECI to ECEF"""
+    xyz_idx = _np.argwhere(sp3_in.columns.isin([("EST", "X"), ("EST", "Y"), ("EST", "Z")])).ravel()
+    theta = -_gn_const.OMEGA_E * (sp3_in.index.get_level_values(0).values)
+
+    cos_theta = _np.cos(theta)
+    sin_theta = _np.sin(theta)
+
+    sp3_nd = sp3_in.iloc[:, xyz_idx].values
+    x = sp3_nd[:, 0]
+    y = sp3_nd[:, 1]
+    z = sp3_nd[:, 2]
+
+    x_ecef = x * cos_theta - y * sin_theta
+    y_ecef = x * sin_theta + y * cos_theta
+    return _pd.DataFrame(
+        _np.concatenate([x_ecef, y_ecef, z]).reshape(3, -1).T,
+        index=sp3_in.index,
+        columns=[["EST", "EST", "EST"], ["X", "Y", "Z"]],
+    )
+
+
 def eci2rac_rot(a):
     """Computes rotation 3D stack for sp3 vector rotation into RAC/RTN
     RAC conventions of POD (to be discussed)

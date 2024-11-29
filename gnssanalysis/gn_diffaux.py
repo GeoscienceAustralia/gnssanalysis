@@ -709,6 +709,7 @@ def sp3_difference(
     base_sp3_file: _Path,
     test_sp3_file: _Path,
     svs: list[str],
+    orb_ref_frame: Literal["ECF", "ECI"] = "ECF",
     orb_hlm_mode: Literal[None, "ECF", "ECI"] = None,
     epochwise_hlm: bool = False,
     clk_norm_types: list = [],
@@ -738,7 +739,7 @@ def sp3_difference(
     diff_est_df = test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
     diff_xyz_df = diff_est_df.drop(columns=["CLK"]) * 1e3
 
-    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, hlm_mode=orb_hlm_mode, epochwise_hlm=epochwise_hlm)  # TODO Eugene: compare orbits by constellation
+    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, ref_frame=orb_ref_frame, hlm_mode=orb_hlm_mode, epochwise_hlm=epochwise_hlm)  # TODO Eugene: compare orbits by constellation
     diff_rac_df.columns = diff_rac_df.columns.droplevel(0)
     diff_rac_df = diff_rac_df * 1e3
 
