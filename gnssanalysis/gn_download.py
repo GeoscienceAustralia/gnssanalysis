@@ -931,7 +931,7 @@ def download_iau2000_file(
     if not check_whether_to_download(
         filename=download_filename, download_dir=download_dir, if_file_present=if_file_present
     ):
-        return None
+        return download_dir / download_filename
 
     # Attempt download from the CDDIS website first, if that fails try IERS
     # Eugene: should try IERS first and then CDDIS?
