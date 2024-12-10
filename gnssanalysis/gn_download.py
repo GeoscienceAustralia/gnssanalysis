@@ -281,7 +281,7 @@ def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: s
         "BIA": "01D",
         "SP3": {
             ("COD", "GFZ", "GRG", "IAC", "JAX", "MIT", "WUM"): "05M",
-            ("ESA"): {"FIN": "05M", "RAP": "15M", None: "15M"},
+            ("ESA", "IGS"): {"FIN": "05M", "RAP": "15M", None: "15M"},
             (): "15M",
         },
         "CLK": {
