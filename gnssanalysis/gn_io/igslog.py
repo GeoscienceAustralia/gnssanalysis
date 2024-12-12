@@ -23,10 +23,35 @@ _REGEX_ID = _re.compile(
     _re.IGNORECASE | _re.VERBOSE,
 )
 
+_REGEX_ID_V2 = _re.compile(
+    rb"""
+    (?:Nine\sCharacter\sID|Site\sID)\s+\:\s*(\w{4}).*\W+
+    .*\W+
+    (?:\s{25}.+\W+|)
+    IERS.+\:\s*(\w{9}|)
+    """,
+    _re.IGNORECASE | _re.VERBOSE,
+)
+
 _REGEX_LOC = _re.compile(
     rb"""
     2.+\W+City\sor\sTown\s+\:\s*(\w[^\(\n\,/\?]+|).*\W+
     State.+\W+Country\s+\:\s*([^\(\n\,\d]+|).*\W+(?:\s{25}.+\W+|)
+    Tectonic.+\W+(?:\s{25}.+\W+|).+\W+
+    X.{22}\:?\s*([\d\-\+\.\,]+|).*\W+
+    Y.{22}\:?\s*([\d\-\+\.\,]+|).*\W+
+    Z.{22}\:?\s*([\d\-\+\.\,]+|).*\W+
+    Latitude.+\:\s*([\d\.\,\-\+]+|).*\W+
+    Longitud.+\:\s*([\d\.\,\-\+]+|).*\W+
+    Elevatio.+\:\s*([\d\.\,\-\+]+|).*
+    """,
+    _re.IGNORECASE | _re.VERBOSE,
+)
+
+_REGEX_LOC_V2 = _re.compile(
+    rb"""
+    2.+\W+City\sor\sTown\s+\:\s*(\w[^\(\n\,/\?]+|).*\W+
+    State.+\W+Country\sor\sRegion\s+\:\s*([^\(\n\,\d]+|).*\W+(?:\s{25}.+\W+|)
     Tectonic.+\W+(?:\s{25}.+\W+|).+\W+
     X.{22}\:?\s*([\d\-\+\.\,]+|).*\W+
     Y.{22}\:?\s*([\d\-\+\.\,]+|).*\W+
@@ -109,10 +134,12 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
     with open(file_path, "rb") as file:
         data = file.read()
 
-    blk_id = _REGEX_ID.search(data)
+    blk_id = _REGEX_ID_V2.search(data)
     if blk_id is None:
-        tqdm.write(f"ID rejected from {file_path}")
-        return _np.array([]).reshape(0, 12)
+        blk_id = _REGEX_ID.search(data)
+        if blk_id is None:
+            tqdm.write(f"ID rejected from {file_path}")
+            return _np.array([]).reshape(0, 12)
 
     blk_id = [blk_id[1].decode().upper(), blk_id[2].decode().upper()]  # no .groups() thus 1 and 2
     code = blk_id[0]
@@ -120,10 +147,12 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
         tqdm.write(f"{code}!={file_code} at {file_path}")
         return _np.array([]).reshape(0, 12)
 
-    blk_loc = _REGEX_LOC.search(data)
+    blk_loc = _REGEX_LOC_V2.search(data)
     if blk_loc is None:
-        tqdm.write(f"LOC rejected from {file_path}")
-        return _np.array([]).reshape(0, 12)
+        blk_loc = _REGEX_LOC.search(data)
+        if blk_loc is None:
+            tqdm.write(f"LOC rejected from {file_path}")
+            return _np.array([]).reshape(0, 12)
 
     blk_rec = _REGEX_REC.findall(data)
     if blk_rec == []:
