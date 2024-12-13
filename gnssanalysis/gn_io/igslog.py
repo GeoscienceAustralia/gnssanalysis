@@ -1,5 +1,6 @@
 """IGS log files parser"""
 
+import logging
 import glob as _glob
 import re as _re
 from multiprocessing import Pool as _Pool
@@ -12,6 +13,8 @@ from .. import gn_frame as _gn_frame
 from .. import gn_io as _gn_io
 from .. import gn_transform as _gn_transform
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 _REGEX_ID = _re.compile(
     rb"""
@@ -126,6 +129,22 @@ def find_recent_logs(logs_glob_path: str, rnx_glob_path=None) -> _pd.DataFrame:
     return recent_logs_df
 
 
+def determine_log_version(data: bytes):
+    REGEX_VERSION_1 = _re.compile(rb"""(site log\))""")
+    REGEX_VERSION_2 = _re.compile(rb"""(site log v2)""")
+
+    # check for version 1:
+    result_v1 = REGEX_VERSION_1.search(data)
+    result_v2 = REGEX_VERSION_2.search(data)
+
+    if result_v1 is not None:
+        return "v1.0"
+    elif result_v2 is not None:
+        return "v2.0"
+    else:
+        return "Unknown"
+
+
 def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
     """Parses igs log and outputs ndarray with parsed data
     Expects ndarray of the form [CODE DATE PATH]"""
@@ -134,34 +153,39 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
     with open(file_path, "rb") as file:
         data = file.read()
 
-    blk_id = _REGEX_ID_V2.search(data)
+    version = determine_log_version(data)
+
+    if version == "v1.0":
+        REGEX_ID = _REGEX_ID
+        REGEX_LOC = _REGEX_LOC
+    elif version == "v2.0":
+        REGEX_ID = _REGEX_ID_V2
+        REGEX_LOC = _REGEX_LOC_V2
+
+    blk_id = REGEX_ID.search(data)
     if blk_id is None:
-        blk_id = _REGEX_ID.search(data)
-        if blk_id is None:
-            tqdm.write(f"ID rejected from {file_path}")
-            return _np.array([]).reshape(0, 12)
+        logger.warning(f"ID rejected from {file_path}")
+        return _np.array([]).reshape(0, 12)
 
     blk_id = [blk_id[1].decode().upper(), blk_id[2].decode().upper()]  # no .groups() thus 1 and 2
     code = blk_id[0]
     if code != file_code:
-        tqdm.write(f"{code}!={file_code} at {file_path}")
+        logger.warning(f"{code}!={file_code} at {file_path}")
         return _np.array([]).reshape(0, 12)
 
-    blk_loc = _REGEX_LOC_V2.search(data)
+    blk_loc = REGEX_LOC.search(data)
     if blk_loc is None:
-        blk_loc = _REGEX_LOC.search(data)
-        if blk_loc is None:
-            tqdm.write(f"LOC rejected from {file_path}")
-            return _np.array([]).reshape(0, 12)
+        logger.warning(f"LOC rejected from {file_path}")
+        return _np.array([]).reshape(0, 12)
 
     blk_rec = _REGEX_REC.findall(data)
     if blk_rec == []:
-        tqdm.write(f"REC rejected from {file_path}")
+        logger.warning(f"REC rejected from {file_path}")
         return _np.array([]).reshape(0, 12)
 
     blk_ant = _REGEX_ANT.findall(data)
     if blk_ant == []:
-        tqdm.write(f"ANT rejected from {file_path}")
+        logger.warning(f"ANT rejected from {file_path}")
         return _np.array([]).reshape(0, 12)
 
     blk_loc = [group.decode(encoding="utf8", errors="ignore") for group in blk_loc.groups()]
