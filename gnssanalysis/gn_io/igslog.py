@@ -12,11 +12,10 @@ from .. import gn_datetime as _gn_datetime
 from .. import gn_frame as _gn_frame
 from .. import gn_io as _gn_io
 from .. import gn_transform as _gn_transform
-from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-_REGEX_ID = _re.compile(
+_REGEX_ID_V1 = _re.compile(
     rb"""
     (?:Four\sCharacter\sID|Site\sID)\s+\:\s*(\w{4}).*\W+
     .*\W+
@@ -36,7 +35,7 @@ _REGEX_ID_V2 = _re.compile(
     _re.IGNORECASE | _re.VERBOSE,
 )
 
-_REGEX_LOC = _re.compile(
+_REGEX_LOC_V1 = _re.compile(
     rb"""
     2.+\W+City\sor\sTown\s+\:\s*(\w[^\(\n\,/\?]+|).*\W+
     State.+\W+Country\s+\:\s*([^\(\n\,\d]+|).*\W+(?:\s{25}.+\W+|)
@@ -129,20 +128,27 @@ def find_recent_logs(logs_glob_path: str, rnx_glob_path=None) -> _pd.DataFrame:
     return recent_logs_df
 
 
-def determine_log_version(data: bytes):
-    REGEX_VERSION_1 = _re.compile(rb"""(site log\))""")
-    REGEX_VERSION_2 = _re.compile(rb"""(site log v2)""")
+_REGEX_VERSION_1 = _re.compile(rb"""(site log\))""")
+_REGEX_VERSION_2 = _re.compile(rb"""(site log v2)""")
 
-    # check for version 1:
-    result_v1 = REGEX_VERSION_1.search(data)
-    result_v2 = REGEX_VERSION_2.search(data)
 
-    if result_v1 is not None:
+def determine_log_version(data: bytes) -> str:
+    """Given the byes object that results from reading an IGS log file, determine the version ("v1.0" or "v2.0")
+
+    :param bytes data: IGS log file bytes object to determine the version of
+    :return str: Return the version number: "v1.0" or "v2.0" (or "Unknown" if file does not confirm to standard)
+    """
+    # check for version:
+
+    result_v1 = _REGEX_VERSION_1.search(data)
+    if result_v1:
         return "v1.0"
-    elif result_v2 is not None:
+
+    result_v2 = _REGEX_VERSION_2.search(data)
+    if result_v2:
         return "v2.0"
-    else:
-        return "Unknown"
+
+    return "Unknown"
 
 
 def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
@@ -156,13 +162,13 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
     version = determine_log_version(data)
 
     if version == "v1.0":
-        REGEX_ID = _REGEX_ID
-        REGEX_LOC = _REGEX_LOC
+        _REGEX_ID = _REGEX_ID_V1
+        _REGEX_LOC = _REGEX_LOC_V1
     elif version == "v2.0":
-        REGEX_ID = _REGEX_ID_V2
-        REGEX_LOC = _REGEX_LOC_V2
+        _REGEX_ID = _REGEX_ID_V2
+        _REGEX_LOC = _REGEX_LOC_V2
 
-    blk_id = REGEX_ID.search(data)
+    blk_id = _REGEX_ID.search(data)
     if blk_id is None:
         logger.warning(f"ID rejected from {file_path}")
         return _np.array([]).reshape(0, 12)
@@ -173,7 +179,7 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
         logger.warning(f"{code}!={file_code} at {file_path}")
         return _np.array([]).reshape(0, 12)
 
-    blk_loc = REGEX_LOC.search(data)
+    blk_loc = _REGEX_LOC.search(data)
     if blk_loc is None:
         logger.warning(f"LOC rejected from {file_path}")
         return _np.array([]).reshape(0, 12)
@@ -280,13 +286,11 @@ def gather_metadata(logs_glob_path="/data/station_logs/station_logs_IGS/*/*.log"
     total = parsed_filenames.shape[0]
     if num_threads == 1:
         gather = []
-        for file in tqdm(parsed_filenames, miniters=total // 100, total=total):
+        for file in parsed_filenames:
             gather.append(parse_igs_log(file))
     else:
         with _Pool(processes=num_threads) as pool:
-            gather = list(
-                tqdm(pool.imap_unordered(parse_igs_log, parsed_filenames), total=total, miniters=total // 100)
-            )
+            gather = list(pool.imap_unordered(parse_igs_log, parsed_filenames))
 
     gather_raw = _np.concatenate(gather)
 
