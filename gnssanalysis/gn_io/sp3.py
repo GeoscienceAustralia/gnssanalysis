@@ -214,7 +214,6 @@ def _process_sp3_block(
 ) -> _pd.DataFrame:
     """Process a single block of SP3 data.
 
-
     :param    str date: The date of the SP3 data block.
     :param    str data: The SP3 data block.
     :param    List[int] widths: The widths of the columns in the SP3 data block.
@@ -250,7 +249,6 @@ def read_sp3(
     sp3_path_or_bytes: Union[str, Path, bytes], pOnly: bool = True, nodata_to_nan: bool = True
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
-
 
     :param str sp3_path: The path to the SP3 file.
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
@@ -448,6 +446,20 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     return _pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
 
 
+def clean_sp3_orb(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
+    sp3_df = sp3_df.filter(items=[("EST", "X"), ("EST", "Y"), ("EST", "Z")])
+
+    # Drop any duplicates in the index
+    sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
+
+    # Drop satellites that have any NaN values
+    nan_mask = sp3_df.isna()
+    nan_prns = nan_mask.groupby("PRN").any().any(axis=1)
+    sp3_df_cleaned = sp3_df[~sp3_df.index.get_level_values("PRN").isin(nan_prns[nan_prns].index)]
+
+    return sp3_df_cleaned
+
+
 def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     """Returns the velocity spline of the input dataframe.
 
@@ -474,7 +486,6 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     :param DataFrame sp3Df: A pandas DataFrame containing the sp3 data.
     :param int deg: Degree of the polynomial fit. Default is 35.
     :return DataFrame: A pandas DataFrame with the interpolated velocities added as a new column.
-
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
     times = est.index.get_level_values("J2000").values
@@ -580,7 +591,6 @@ def gen_sp3_content(
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
     it otherwise.
 
-    Args:
     :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
     :param io.TextIOBase  buf: The buffer to write the SP3 content to. Defaults to None.
@@ -812,7 +822,6 @@ def sp3merge(
     :param List[str] sp3paths: The list of paths to the sp3 files.
     :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
-
     :return pd.DataFrame: The merged sp3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
@@ -829,17 +838,36 @@ def sp3merge(
     return merged_sp3
 
 
-def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, list]:
+def hlm_trans(pt1: _np.ndarray, pt2: _np.ndarray) -> tuple[_np.ndarray, list]:
     """
-     Rotates sp3_b into sp3_a.
+    Rotates a set of points pt1 into pt2.
 
-     :param DataFrame a: The sp3_a DataFrame.
-     :param DataFrame b : The sp3_b DataFrame.
-
-    :returntuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    :param _np.ndarray pt1: The first set of points.
+    :param _np.ndarray pt2: The second set of points.
+    :return tuple[_np.ndarray, list]: A tuple containing the output array and the HLM array with applied computed parameters and residuals.
     """
-    hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
-    b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
+    hlm = _gn_transform.get_helmert7(pt1, pt2)
+    xyz_out = _gn_transform.transform7(xyz_in=pt2, hlm_params=hlm[0])
+    return xyz_out, hlm
+
+
+def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -> tuple[_pd.DataFrame, list]:
+    """
+    Rotates sp3_b into sp3_a.
+
+    :param DataFrame a: The sp3_a DataFrame.
+    :param DataFrame b : The sp3_b DataFrame.
+    :param bool epochwise: Epochwise HLM transformation.
+    :return tuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    """
+    hlm = []
+    if epochwise:
+        for epoch in b.index.get_level_values("J2000").unique():
+            b.loc[epoch, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]], hlm_epoch = hlm_trans(a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values)
+            hlm.append(hlm_epoch)
+    else:
+        b.iloc[:, :3], hlm = hlm_trans(a.EST[["X", "Y", "Z"]].values, b.EST[["X", "Y", "Z"]].values)
+
     return b, hlm
 
 
@@ -847,7 +875,9 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, li
 def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,
+    ref_frame: Literal["ECF", "ECI"] = "ECF",
     hlm_mode: Literal[None, "ECF", "ECI"] = None,
+    epochwise_hlm: bool = False,
     use_cubic_spline: bool = True,
 ) -> _pd.DataFrame:
     """
@@ -856,27 +886,40 @@ def diff_sp3_rac(
     :param DataFrame sp3_baseline: The baseline sp3 DataFrame.
     :param DataFrame sp3_test: The test sp3 DataFrame.
     :param string hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
+    :param bool epochwise_hlm: Epochwise HLM transformation.
     :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation.
     :return: The DataFrame containing the difference in RAC coordinates.
     """
+    ref_frames = ["ECF", "ECI"]
+    if ref_frame not in ref_frames:
+        raise ValueError(f"Invalid ref_frame. Expected one of: {ref_frames}")
+
     hlm_modes = [None, "ECF", "ECI"]
     if hlm_mode not in hlm_modes:
         raise ValueError(f"Invalid hlm_mode. Expected one of: {hlm_modes}")
 
-    # Drop any duplicates in the index
-    sp3_baseline = sp3_baseline[~sp3_baseline.index.duplicated(keep="first")]
-    sp3_test = sp3_test[~sp3_test.index.duplicated(keep="first")]
+    sp3_baseline = clean_sp3_orb(sp3_baseline)
+    sp3_test = clean_sp3_orb(sp3_test)
+
     # Ensure the test file is time-ordered so when we align the resulting dataframes will be time-ordered
     sp3_baseline = sp3_baseline.sort_index(axis="index", level="J2000")
     sp3_baseline, sp3_test = sp3_baseline.align(sp3_test, join="inner", axis=0)
 
+    # TODO Eugene: improve following code
     hlm = None  # init hlm var
     if hlm_mode == "ECF":
-        sp3_test, hlm = sp3_hlm_trans(sp3_baseline, sp3_test)
-    sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline)
-    sp3_test_eci = _gn_transform.ecef2eci(sp3_test)
-    if hlm_mode == "ECI":
-        sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci)
+        sp3_baseline_ecf = _gn_transform.eci2ecef(sp3_baseline) if ref_frame == "ECI" else sp3_baseline
+        sp3_test_ecf = _gn_transform.eci2ecef(sp3_test) if ref_frame == "ECI" else sp3_test
+        sp3_test_ecf, hlm = sp3_hlm_trans(sp3_baseline_ecf, sp3_test_ecf, epochwise_hlm)
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline_ecf)
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test_ecf)
+    elif hlm_mode == "ECI":
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline) if ref_frame == "ECF" else sp3_baseline
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test) if ref_frame == "ECF" else sp3_test
+        sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci, epochwise_hlm)
+    else:
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline) if ref_frame == "ECF" else sp3_baseline
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test) if ref_frame == "ECF" else sp3_test
 
     diff_eci = sp3_test_eci - sp3_baseline_eci
 

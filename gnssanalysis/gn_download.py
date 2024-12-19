@@ -281,7 +281,7 @@ def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: s
         "BIA": "01D",
         "SP3": {
             ("COD", "GFZ", "GRG", "IAC", "JAX", "MIT", "WUM"): "05M",
-            ("ESA"): {"FIN": "05M", "RAP": "15M", None: "15M"},
+            ("ESA", "IGS"): {"FIN": "05M", "RAP": "15M", None: "15M"},
             (): "15M",
         },
         "CLK": {
@@ -931,7 +931,7 @@ def download_iau2000_file(
     if not check_whether_to_download(
         filename=download_filename, download_dir=download_dir, if_file_present=if_file_present
     ):
-        return None
+        return download_dir / download_filename
 
     # Attempt download from the CDDIS website first, if that fails try IERS
     # Eugene: should try IERS first and then CDDIS?
