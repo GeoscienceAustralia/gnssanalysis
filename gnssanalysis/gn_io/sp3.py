@@ -282,7 +282,10 @@ def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Opt
 
 
 def read_sp3(
-    sp3_path_or_bytes: Union[str, Path, bytes], pOnly: bool = True, nodata_to_nan: bool = True
+    sp3_path_or_bytes: Union[str, Path, bytes],
+    pOnly: bool = True,
+    nodata_to_nan: bool = True,
+    drop_offline_sats: bool = False,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -291,6 +294,8 @@ def read_sp3(
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
     :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
+    :param bool drop_offline_sats: If True, drops satellites from the DataFrame if they have ANY missing (nodata)
+            values in the SP3 POS column.
     :return pandas.DataFrame: The SP3 data as a DataFrame.
     :raise FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
     :raise Exception: For other errors reading SP3 file/bytes
@@ -327,6 +332,8 @@ def read_sp3(
     date_lines, data_blocks = _split_sp3_content(content)
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
+    if drop_offline_sats:
+        sp3_df = remove_offline_sats(sp3_df)
     if nodata_to_nan:
         # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_pos_nodata_to_nan(sp3_df)
