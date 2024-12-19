@@ -191,20 +191,38 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
 
 
-def remove_offline_sats(sp3_df: _pd.DataFrame):
+def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     """
-    Remove any satellites that have "0.0" for all three coordinates (i.e. nodata) - indicates satellite offline.
+    Remove any satellites that have "0.0" or NaN for all three position coordinates - this indicates satellite offline.
     Note that this removes a satellite which has *any* missing coordinate data, meaning a satellite with partial
     observations will get removed entirely.
     Added in version 0.0.57
+
+    :param _pd.DataFrame sp3_df: SP3 DataFrame to remove offline / nodata satellites from
+    :param str df_friendly_name: Name to use when referring to the DataFrame in log output (purely for clarity). Empty
+           string by default.
+    :return _pd.DataFrame: the SP3 DataFrame, with the offline / nodata satellites removed
+
     """
-    # Get all entries with missing coordinates (i.e. nodata, which would become NaN), then get the satellite
-    # names (SVs) of these and dedupe them, giving a list of all SVs with one or more missing coordinates.
-    offline_sats = (
-        sp3_df[(sp3_df.EST.X == 0.0) & (sp3_df.EST.Y == 0.0) & (sp3_df.EST.Z == 0.0)].index.get_level_values(1).unique()
-    )
+    # Get all entries with missing positions (i.e. nodata value, represented as either 0 or NaN), then get the
+    # satellite names (SVs) of these and dedupe them, giving a list of all SVs with one or more missing positions.
+
+    # Mask for nodata POS values in raw form:
+    mask_zero = (sp3_df.EST.X == 0.0) & (sp3_df.EST.Y == 0.0) & (sp3_df.EST.Z == 0.0)
+    # Mask for converted values, as NaNs:
+    mask_nan = (sp3_df.EST.X.isna()) & (sp3_df.EST.Y.isna()) & (sp3_df.EST.Z.isna())
+    mask_either = _np.logical_or(mask_zero, mask_nan)
+
+    # With mask, filter for entries with no POS value, then get the sat name (SVs) from the entry, then dedupe:
+    offline_sats = sp3_df[mask_either].index.get_level_values(1).unique()
+
+    # Using that list of offline / partially offline sats, remove all entries for those sats from the SP3 DataFrame:
     sp3_df = sp3_df.drop(offline_sats, level=1, errors="ignore")
     sp3_df.attrs["HEADER"].HEAD.ORB_TYPE = "INT"  # Allow the file to be read again by read_sp3 - File ORB_TYPE changes
+    if len(offline_sats) > 0:
+        logger.info(f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame: {offline_sats.values}")
+    else:
+        logger.info(f"No offline / nodata sats detected to be dropped from {df_friendly_name} SP3 DataFrame")
     return sp3_df
 
 
