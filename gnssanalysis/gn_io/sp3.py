@@ -920,8 +920,8 @@ def diff_sp3_rac(
     # the SV from the whole file.
     # This step was added after velocity interpolation failures due to non-finite (NaN) values from offline SVs.
     if use_offline_sat_removal:
-        sp3_baseline = remove_offline_sats(sp3_baseline)
-        sp3_test = remove_offline_sats(sp3_test)
+        sp3_baseline = remove_offline_sats(sp3_baseline, df_friendly_name="baseline")
+        sp3_test = remove_offline_sats(sp3_test, df_friendly_name="test")
 
     # Ensure the test file is time-ordered so when we align the resulting dataframes will be time-ordered
     sp3_baseline = sp3_baseline.sort_index(axis="index", level="J2000")
