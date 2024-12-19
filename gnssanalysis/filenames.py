@@ -349,7 +349,7 @@ def nominal_span_string(span_seconds: float) -> str:
     # That is, if a span is longer than a day, then we will ignore any deviation from an
     # integer day that is smaller than an hour. But a time of 2 days, 3 hours and 30
     # minutes will be reported as 27 hours.
-    # If this would result in more than 99 periods, we return the 00U invalid code instead.
+    # If this would result in a value above 99 in the determined unit, we return the 00U invalid code instead.
     # We ignore months, because they're a little weird and not overly helpful.
     if span_seconds >= sec_in_year:
         if (span_seconds % sec_in_year) < gn_const.SEC_IN_WEEK:

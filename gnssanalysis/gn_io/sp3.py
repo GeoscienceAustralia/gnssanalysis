@@ -2,7 +2,8 @@ import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Literal, Union, List, Tuple
+from typing import Literal, Optional, Union, List, Tuple
+from pathlib import Path
 
 import numpy as _np
 import pandas as _pd
@@ -238,7 +239,16 @@ def _process_sp3_block(
     return temp_sp3
 
 
-def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _pd.DataFrame:
+def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Optional[str]:
+    if isinstance(path_or_bytes, str) or isinstance(path_or_bytes, Path):
+        return str(path_or_bytes)
+    else:
+        return "Data passed as bytes: no path available"
+
+
+def read_sp3(
+    sp3_path_or_bytes: Union[str, Path, bytes], pOnly: bool = True, nodata_to_nan: bool = True
+) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
 
@@ -247,7 +257,8 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
     :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
     :return pandas.DataFrame: The SP3 data as a DataFrame.
-    :raise FileNotFoundError: If the SP3 file specified by sp3_path does not exist.
+    :raise FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
+    :raise Exception: For other errors reading SP3 file/bytes
 
     :note: The SP3 file format is a standard format used for representing precise satellite ephemeris and clock data.
         This function reads the SP3 file, parses the header information, and extracts the data into a DataFrame.
@@ -256,7 +267,7 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
         (mm/ps) and remove unnecessary columns. If pOnly is True, only P* values are included in the DataFrame.
         If nodata_to_nan is True, nodata values in the SP3 POS and CLK columns are converted to NaN.
     """
-    content = _gn_io.common.path2bytes(str(sp3_path))
+    content = _gn_io.common.path2bytes(sp3_path_or_bytes)  # Will raise EOFError if file empty
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
     comments: list = _RE_SP3_COMMENT_STRIP.findall(content)
@@ -306,13 +317,13 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
         logging.warning(
             f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
             f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
-            f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
+            f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
         )
         # Now dedupe them, keeping the first of any clashes:
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
     # Write header data to dataframe attributes:
     sp3_df.attrs["HEADER"] = parsed_header
-    sp3_df.attrs["path"] = sp3_path
+    sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
     return sp3_df
 
 
@@ -583,14 +594,34 @@ def gen_sp3_content(
     out_df = sp3_df["EST"]
     flags_df = sp3_df["FLAGS"]  # Prediction, maneuver, etc.
 
+    # Validate that all flags have valid values
+    if not (
+        flags_df["Clock_Event"].astype(str).isin(["E", " "]).all()
+        and flags_df["Clock_Pred"].astype(str).isin(["P", " "]).all()
+        and flags_df["Maneuver"].astype(str).isin(["M", " "]).all()
+        and flags_df["Orbit_Pred"].astype(str).isin(["P", " "]).all()
+    ):
+        raise ValueError(
+            "Invalid SP3 flag found! Valid values are 'E', 'P', 'M', ' '. "
+            "Actual values were: " + str(flags_df.values.astype(str))
+        )
+
     # (Another) Pandas output hack to ensure we don't get extra spaces between flags columns.
     # Squish all the flag columns into a single string with the required amount of space (or none), so that
     # DataFrame.to_string() can't mess it up for us by adding a compulsory space between columns that aren't meant
     # to have one.
-    flags_squished_df = _pd.DataFrame(
-        flags_df["Clock_Event"] + flags_df["Clock_Pred"] + "  " + flags_df["Maneuver"] + flags_df["Orbit_Pred"]
+
+    # Types are set to str here due to occaisional concat errors, where one of these flags is interpreted as an int.
+    flags_merged_series = _pd.Series(
+        # Concatenate all flags so arbitrary spaces don't get added later in rendering
+        flags_df["Clock_Event"].astype(str)
+        + flags_df["Clock_Pred"].astype(str)
+        + "  "  # Two blanks (unused), as per spec. Should align with columns 77,78
+        + flags_df["Maneuver"].astype(str)
+        + flags_df["Orbit_Pred"].astype(str),
+        # Cast the whole thing to a string for output (disabled as this seems to do nothing?)
+        # dtype=_np.dtype("str"),
     )
-    flags_squished_df.columns = ["FLAGS_MERGED"]  # Give it a meaningful name (not needed for output)
 
     # If we have STD information transform it to the output format (integer exponents) and add to dataframe
     if "STD" in sp3_df:
@@ -622,7 +653,7 @@ def gen_sp3_content(
         std_df = std_df.transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
         std_df = std_df.rename(columns=lambda x: "STD_" + x)
         out_df = _pd.concat([out_df, std_df], axis="columns")
-        out_df["FLAGS_MERGED"] = flags_squished_df  # Re-inject the pre-concatenated flags column.
+        out_df["FLAGS_MERGED"] = flags_merged_series  # Re-inject the pre-concatenated flags column.
 
     def prn_formatter(x):
         return f"P{x}"
@@ -812,7 +843,7 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, li
     return b, hlm
 
 
-# Eugene: move to gn_diffaux.py (and other associated functions as well)?
+# TODO: move to gn_diffaux.py (and other associated functions as well)?
 def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,
