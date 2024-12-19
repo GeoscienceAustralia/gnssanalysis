@@ -477,28 +477,28 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
-    x = est.index.get_level_values("J2000").values
-    # x = est.index.values
-    y = est.values
+    times = est.index.get_level_values("J2000").values
+    positions = est.values
 
-    off, scl = mapparm([x.min(), x.max()], [-1, 1])  # map from input scale to [-1,1]
+    # map from input scale to [-1,1]
+    offset, scale_factor = mapparm([times.min(), times.max()], [-1, 1])
 
-    x_new = off + scl * (x)
-    coeff = _np.polyfit(x=x_new, y=y, deg=deg)
+    normalised_times = offset + scale_factor * (times)
+    coeff = _np.polyfit(x=normalised_times, y=positions, deg=deg)
 
-    x_prev = off + scl * (x - 1)
-    x_next = off + scl * (x + 1)
+    time_prev = offset + scale_factor * (times - 1)
+    time_next = offset + scale_factor * (times + 1)
 
-    xx_prev_combined = _np.broadcast_to((x_prev)[None], (deg + 1, x_prev.shape[0]))
-    xx_next_combined = _np.broadcast_to((x_next)[None], (deg + 1, x_prev.shape[0]))
+    time_prev_sqrd_combined = _np.broadcast_to((time_prev)[None], (deg + 1, time_prev.shape[0]))
+    time_next_sqrd_combined = _np.broadcast_to((time_next)[None], (deg + 1, time_prev.shape[0]))
 
-    inputs_prev = xx_prev_combined ** _np.flip(_np.arange(deg + 1))[:, None]
-    inputs_next = xx_next_combined ** _np.flip(_np.arange(deg + 1))[:, None]
+    inputs_prev = time_prev_sqrd_combined ** _np.flip(_np.arange(deg + 1))[:, None]
+    inputs_next = time_next_sqrd_combined ** _np.flip(_np.arange(deg + 1))[:, None]
 
     res_prev = coeff.T.dot(inputs_prev)
     res_next = coeff.T.dot(inputs_next)
     vel_i = _pd.DataFrame(
-        (((y - res_prev.T) + (res_next.T - y)) / 2),
+        (((positions - res_prev.T) + (res_next.T - positions)) / 2),
         columns=est.columns,
         index=est.index,
     ).stack(future_stack=True)
