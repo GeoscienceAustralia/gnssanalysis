@@ -191,6 +191,23 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
 
 
+def remove_offline_sats(sp3_df: _pd.DataFrame):
+    """
+    Remove any satellites that have "0.0" for all three coordinates (i.e. nodata) - indicates satellite offline.
+    Note that this removes a satellite which has *any* missing coordinate data, meaning a satellite with partial
+    observations will get removed entirely.
+    Added in version 0.0.57
+    """
+    # Get all entries with missing coordinates (i.e. nodata, which would become NaN), then get the satellite
+    # names (SVs) of these and dedupe them, giving a list of all SVs with one or more missing coordinates.
+    offline_sats = (
+        sp3_df[(sp3_df.EST.X == 0.0) & (sp3_df.EST.Y == 0.0) & (sp3_df.EST.Z == 0.0)].index.get_level_values(1).unique()
+    )
+    sp3_df = sp3_df.drop(offline_sats, level=1, errors="ignore")
+    sp3_df.attrs["HEADER"].HEAD.ORB_TYPE = "INT"  # Allow the file to be read again by read_sp3 - File ORB_TYPE changes
+    return sp3_df
+
+
 def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, float]:
     """
     Evaluate the offset and scale factor needed to map values from the old range to the new range.
@@ -454,6 +471,8 @@ def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     :param DataFrame sp3Df: The input dataframe containing position data.
     :return DataFrame: The dataframe containing the velocity spline.
 
+    :caution :This function cannot handle *any* NaN / nodata / non-finite position values. By contrast, getVelPoly()
+              is more forgiving, but accuracy of results, particulary in the presence of NaNs, has not been assessed.
     :note :The velocity is returned in the same units as the input dataframe, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard).
     """
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
@@ -849,6 +868,7 @@ def diff_sp3_rac(
     sp3_test: _pd.DataFrame,
     hlm_mode: Literal[None, "ECF", "ECI"] = None,
     use_cubic_spline: bool = True,
+    use_offline_sat_removal: bool = False,
 ) -> _pd.DataFrame:
     """
     Computes the difference between the two sp3 files in the radial, along-track and cross-track coordinates.
@@ -856,7 +876,12 @@ def diff_sp3_rac(
     :param DataFrame sp3_baseline: The baseline sp3 DataFrame.
     :param DataFrame sp3_test: The test sp3 DataFrame.
     :param string hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
-    :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation.
+    :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation. Caution: cubic
+           spline interpolation does not tolerate NaN / nodata values. Consider enabling use_offline_sat_removal if
+           using cubic spline, or alternatively use poly interpolation by setting use_cubic_spline to False.
+    :param bool use_offline_sat_removal: Flag indicating whether to remove satellites which are offline / have some
+           nodata position values. Caution: ensure you turn this on if using cubic spline interpolation with data
+           which may have holes in it (nodata).
     :return: The DataFrame containing the difference in RAC coordinates.
     """
     hlm_modes = [None, "ECF", "ECI"]
@@ -866,6 +891,20 @@ def diff_sp3_rac(
     # Drop any duplicates in the index
     sp3_baseline = sp3_baseline[~sp3_baseline.index.duplicated(keep="first")]
     sp3_test = sp3_test[~sp3_test.index.duplicated(keep="first")]
+
+    if use_cubic_spline and not use_offline_sat_removal:
+        logger.warning(
+            "Caution: use_cubic_spline is enabled, but use_offline_sat_removal is not. If there are any nodata "
+            "position values, the cubic interpolator will crash!"
+        )
+    # Drop any satellites (SVs) which are offline or partially offline.
+    # Note: this currently removes SVs with ANY nodata values for position, so a single glitch will remove
+    # the SV from the whole file.
+    # This step was added after velocity interpolation failures due to non-finite (NaN) values from offline SVs.
+    if use_offline_sat_removal:
+        sp3_baseline = remove_offline_sats(sp3_baseline)
+        sp3_test = remove_offline_sats(sp3_test)
+
     # Ensure the test file is time-ordered so when we align the resulting dataframes will be time-ordered
     sp3_baseline = sp3_baseline.sort_index(axis="index", level="J2000")
     sp3_baseline, sp3_test = sp3_baseline.align(sp3_test, join="inner", axis=0)
