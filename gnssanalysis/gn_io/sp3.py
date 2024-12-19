@@ -477,17 +477,17 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
-    time_values = est.index.get_level_values("J2000").values
-    xyz_positions = est.values
+    times = est.index.get_level_values("J2000").values
+    positions = est.values
 
     # map from input scale to [-1,1]
-    offset, scale_factor = mapparm([time_values.min(), time_values.max()], [-1, 1])
+    offset, scale_factor = mapparm([times.min(), times.max()], [-1, 1])
 
-    normalised_time_values = offset + scale_factor * (time_values)
-    coeff = _np.polyfit(x=normalised_time_values, y=xyz_positions, deg=deg)
+    normalised_times = offset + scale_factor * (times)
+    coeff = _np.polyfit(x=normalised_times, y=positions, deg=deg)
 
-    time_prev = offset + scale_factor * (time_values - 1)
-    time_next = offset + scale_factor * (time_values + 1)
+    time_prev = offset + scale_factor * (times - 1)
+    time_next = offset + scale_factor * (times + 1)
 
     time_prev_sqrd_combined = _np.broadcast_to((time_prev)[None], (deg + 1, time_prev.shape[0]))
     time_next_sqrd_combined = _np.broadcast_to((time_next)[None], (deg + 1, time_prev.shape[0]))
@@ -498,7 +498,7 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     res_prev = coeff.T.dot(inputs_prev)
     res_next = coeff.T.dot(inputs_next)
     vel_i = _pd.DataFrame(
-        (((xyz_positions - res_prev.T) + (res_next.T - xyz_positions)) / 2),
+        (((positions - res_prev.T) + (res_next.T - positions)) / 2),
         columns=est.columns,
         index=est.index,
     ).stack(future_stack=True)
