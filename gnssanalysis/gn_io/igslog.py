@@ -138,7 +138,7 @@ def determine_log_version(data: bytes) -> str:
     """Given the byes object that results from reading an IGS log file, determine the version ("v1.0" or "v2.0")
 
     :param bytes data: IGS log file bytes object to determine the version of
-    :return str: Return the version number: "v1.0" or "v2.0" (or "Unknown" if file does not confirm to standard)
+    :return str: Return the version number: "v1.0" or "v2.0" (or "Unknown" if file does not conform to standard)
     """
     # check for version:
 
@@ -150,7 +150,7 @@ def determine_log_version(data: bytes) -> str:
     if result_v2:
         return "v2.0"
 
-    return "Unknown"
+    raise ValueError("Log file does not conform to any known IGS version")
 
 
 def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
@@ -164,7 +164,10 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
     with open(file_path, "rb") as file:
         data = file.read()
 
-    version = determine_log_version(data)
+    try:
+        version = determine_log_version(data)
+    except ValueError as e:
+        logger.warning(f"Error: {e}, skipping parsing the log file")
 
     if version == "v1.0":
         _REGEX_ID = _REGEX_ID_V1
