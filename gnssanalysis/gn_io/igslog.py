@@ -159,7 +159,7 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
     :param _np.ndarray filename_array: Metadata on input log file. Expects ndarray of the form [CODE DATE PATH]
     :return _np.ndarray: Returns array with data from the IGS log file parsed
     """
-    file_code, __, file_path = filename_array
+    file_code, _, file_path = filename_array
 
     with open(file_path, "rb") as file:
         data = file.read()
