@@ -12,6 +12,7 @@ from test_datasets.sp3_test_data import (
     sp3_test_data_igs_benchmark_null_clock as input_data,
     # second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
     sp3_test_data_truncated_cod_final as input_data2,
+    sp3_test_data_partially_offline_sat as offline_sat_test_data,
 )
 
 
@@ -179,6 +180,22 @@ class TestSp3(unittest.TestCase):
         r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r)
         self.assertIsNotNone(r2)
+
+    @patch("builtins.open", new_callable=mock_open, read_data=offline_sat_test_data)
+    def test_sp3_offline_sat_removal(self, mock_file):
+        sp3_df = sp3.read_sp3("mock_path", pOnly=False)
+        self.assertEqual(
+            sp3_df.index.get_level_values(1).unique().array,
+            ["G02", "G03", "G19"],
+            "Should be three SVs in test file before removing offline ones",
+        )
+
+        sp3_df = sp3.remove_offline_sats(sp3_df)
+        self.assertEqual(
+            sp3_df.index.get_level_values(1).unique().array,
+            ["G02", "G03"],
+            "Should be two SVs after removing offline ones",
+        )
 
 
 class TestMergeSP3(TestCase):
