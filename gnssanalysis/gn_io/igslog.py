@@ -105,6 +105,14 @@ _REGEX_ANT = _re.compile(
 _REGEX_LOGNAME = r"(?:.*\/)(\w{4})(?:\w+_(\d{8})|_(\d{8})\-?\w?|(\d{8})|_.*|\d+|)"
 
 
+class LogVersionError(Exception):
+    """
+    Log file read does not conform to known IGS version standard
+    """
+
+    pass
+
+
 def find_recent_logs(logs_glob_path: str, rnx_glob_path: str = None) -> _pd.DataFrame:
     """Takes glob expression to create list of logs, parses names into site and date and selects most recent ones
 
@@ -150,7 +158,7 @@ def determine_log_version(data: bytes) -> str:
     if result_v2:
         return "v2.0"
 
-    raise ValueError("Log file does not conform to any known IGS version")
+    raise LogVersionError("Log file does not conform to any known IGS version")
 
 
 def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
@@ -166,7 +174,7 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
 
     try:
         version = determine_log_version(data)
-    except ValueError as e:
+    except LogVersionError as e:
         logger.warning(f"Error: {e}, skipping parsing the log file")
 
     if version == "v1.0":
