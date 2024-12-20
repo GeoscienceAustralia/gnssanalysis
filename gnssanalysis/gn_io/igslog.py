@@ -294,13 +294,13 @@ def translate_series(series: _pd.Series, translation: dict) -> _pd.Series:
 
 def gather_metadata(
     logs_glob_path: str = "/data/station_logs/station_logs_IGS/*/*.log", rnx_glob_path: str = None, num_threads: int = 1
-) -> _List[_pd.DataFrame, _pd.DataFrame, _pd.DataFrame]:
+) -> _List[_pd.DataFrame]:
     """Parses log files found with glob expressions into pd.DataFrames
 
     :param str logs_glob_path: A glob expression for log files, defaults to "/data/station_logs_IGS/*/*.log"
     :param str rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
     :param int num_threads: Number of threads to run, defaults to 1
-    :return _List[_pd.DataFrame, _pd.DataFrame, _pd.DataFrame]: List of DataFrames with [ID, Receiver, Antenna] data
+    :return _List[_pd.DataFrame]: List of DataFrames with [ID, Receiver, Antenna] data
     """
     parsed_filenames = find_recent_logs(logs_glob_path=logs_glob_path, rnx_glob_path=rnx_glob_path).values
 
