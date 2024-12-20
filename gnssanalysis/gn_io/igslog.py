@@ -4,6 +4,7 @@ import logging
 import glob as _glob
 import re as _re
 from multiprocessing import Pool as _Pool
+from typing import List as _List
 
 import numpy as _np
 import pandas as _pd
@@ -104,12 +105,13 @@ _REGEX_ANT = _re.compile(
 _REGEX_LOGNAME = r"(?:.*\/)(\w{4})(?:\w+_(\d{8})|_(\d{8})\-?\w?|(\d{8})|_.*|\d+|)"
 
 
-def find_recent_logs(logs_glob_path: str, rnx_glob_path=None) -> _pd.DataFrame:
-    """Takes glob expression to get the list of log files,
-     parses names into site and date and selects the ones
-     with most recent date
-    /data/station_logs/station_logs_IGS/*/*.log
-    /data/acs/pea/proc/exs/data/*.rnx"""
+def find_recent_logs(logs_glob_path: str, rnx_glob_path: str = None) -> _pd.DataFrame:
+    """Takes glob expression to create list of logs, parses names into site and date and selects most recent ones
+
+    :param str logs_glob_path: A glob expression for log files, e.g. /data/station_logs_IGS/*/*.log
+    :param str rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
+    :return _pd.DataFrame: Returns a dataframe containing information from all station logs processed
+    """
     paths = _pd.Series(_glob.glob(pathname=logs_glob_path, recursive=False), name="PATH")
 
     logs_df = paths.str.extract(expand=True, pat=_REGEX_LOGNAME)
@@ -153,7 +155,10 @@ def determine_log_version(data: bytes) -> str:
 
 def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
     """Parses igs log and outputs ndarray with parsed data
-    Expects ndarray of the form [CODE DATE PATH]"""
+
+    :param _np.ndarray filename_array: Metadata on input log file. Expects ndarray of the form [CODE DATE PATH]
+    :return _np.ndarray: Returns array with data from the IGS log file parsed
+    """
     file_code, __, file_path = filename_array
 
     with open(file_path, "rb") as file:
@@ -225,9 +230,12 @@ def parse_igs_log(filename_array: _np.ndarray) -> _np.ndarray:
     return _np.concatenate([blk_uni, file_path_arr], axis=1)
 
 
-def igslogdate2datetime64(stacked_rec_ant_dt: _np.ndarray):
-    """2010-01-01T00:00
-    - can be any non-space character. If parsing fails - None"""
+def igslogdate2datetime64(stacked_rec_ant_dt: _np.ndarray) -> _np.datetime64:
+    """Function to convert datetimes for IGS log files to np.datetime64 objects, e.g. 2010-01-01T00:00
+
+    :param _np.ndarray stacked_rec_ant_dt: Array of IGS log datetimes to convert but need to be non-space values
+    :return _np.datetime64: Return datetime64 object - if parsing fails returns None
+    """
     dt_array_float = (
         _pd.Series(stacked_rec_ant_dt)
         .str.extract(pat=r"(\d{4})\S?(\d{2})\S?(\d+)\D?(?:(\d{1,2})\:(\d{1,2})\D?|)")
@@ -271,16 +279,29 @@ def igslogdate2datetime64(stacked_rec_ant_dt: _np.ndarray):
     return dt_datetime64
 
 
-def translate_series(series, translation):
-    """changes values in the series according to the dictionary of old_value-new_value"""
+def translate_series(series: _pd.Series, translation: dict) -> _pd.Series:
+    """Changes values in the series according to the dictionary of input_value:output_value
+
+    :param _pd.Series series: _pd.Series to translate
+    :param dict translation: Dictionary that defines the translation (mapping) to carry out
+    :return _pd.Series: Return a _pd.Series with the resultant translation (mapping)
+    """
     series = series.copy()
     series.index = series.values
     series.update(translation)
     return series
 
 
-def gather_metadata(logs_glob_path="/data/station_logs/station_logs_IGS/*/*.log", rnx_glob_path=None, num_threads=1):
-    """parses logiles found with glob expression"""
+def gather_metadata(
+    logs_glob_path: str = "/data/station_logs/station_logs_IGS/*/*.log", rnx_glob_path: str = None, num_threads: int = 1
+) -> _List[_pd.DataFrame, _pd.DataFrame, _pd.DataFrame]:
+    """Parses log files found with glob expressions into pd.DataFrames
+
+    :param str logs_glob_path: A glob expression for log files, defaults to "/data/station_logs_IGS/*/*.log"
+    :param str rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
+    :param int num_threads: Number of threads to run, defaults to 1
+    :return _List[_pd.DataFrame, _pd.DataFrame, _pd.DataFrame]: List of DataFrames with [ID, Receiver, Antenna] data
+    """
     parsed_filenames = find_recent_logs(logs_glob_path=logs_glob_path, rnx_glob_path=rnx_glob_path).values
 
     total = parsed_filenames.shape[0]
@@ -413,8 +434,12 @@ def gather_metadata(logs_glob_path="/data/station_logs/station_logs_IGS/*/*.log"
     return id_loc_df, rec_df, ant_df
 
 
-def frame2snx_string(frame_of_day):
-    """frame_of_day dataframe to ESTIMATE sinex block"""
+def frame2snx_string(frame_of_day: _pd.DataFrame) -> str:
+    """Convert frame_of_day dataframe to ESTIMATE sinex block
+
+    :param _pd.DataFrame frame_of_day: Dataframe defining the reference frame of the day of interest
+    :return str: Returns a sinex block string from the frame definition
+    """
     code_pt = frame_of_day.index.to_series().str.split("_", expand=True)  # .to_frame().values
     code_pt.columns = ["CODE", "PT"]
     frame_dt = _gn_datetime.j20002datetime(frame_of_day.attrs["REF_EPOCH"])
@@ -466,8 +491,14 @@ def frame2snx_string(frame_of_day):
     return buf
 
 
-def meta2sting(id_loc_df, rec_df, ant_df):
-    """Converts three metadata dataframe to sinex blocks (string)"""
+def meta2string(id_loc_df: _pd.DataFrame, rec_df: _pd.DataFrame, ant_df: _pd.DataFrame) -> str:
+    """Converts the three metadata dataframes (Site ID, Receiver, Antenna) to sinex block
+
+    :param _pd.DataFrame id_loc_df: Dataframe detailing Site IDs / Locations
+    :param _pd.DataFrame rec_df: Dataframe detailing Receiver information
+    :param _pd.DataFrame ant_df: Dataframe detailing Antenna information
+    :return str: Returns a Sinex block str (in standard IGS Sinex format)
+    """
     rec_df["S/N"] = rec_df["S/N"].str.slice(0, 5)
     rec_df["FW"] = rec_df["FW"].str.slice(0, 11)
 
@@ -562,15 +593,26 @@ def meta2sting(id_loc_df, rec_df, ant_df):
 
 
 def write_meta_gather_master(
-    logs_glob_path="/data/station_logs/*/*.log",
-    rnx_glob_path="/data/acs/pea/proc/exs/data/*.rnx",
-    frame_datetime=None,
-    frame_snx_path="/data/ITRF/itrf2014/ITRF2014-IGS-TRF.SNX.gz",
-    frame_soln_path="/data/ITRF/itrf2014/ITRF2014-soln-gnss.snx",
-    frame_psd_path="/data/ITRF/itrf2014/ITRF2014-psd-gnss.snx",
-    out_path="/data/meta_gather.snx",
-    num_threads=None,
-):
+    logs_glob_path: str,
+    rnx_glob_path: str,
+    frame_snx_path: str,
+    frame_soln_path: str,
+    frame_psd_path: str,
+    frame_datetime: _np.datetime64 = None,
+    out_path: str = "/data/meta_gather.snx",
+    num_threads: int = 1,
+) -> None:
+    """Create a SNX file of stations, based on given reference frame projected to a datetime using site logs + rnxs
+
+    :param str logs_glob_path: A glob path to find desired log files, e.g. "/data/site_logs/*/*.log"
+    :param str rnx_glob_path: A glob path to find desired RNX files (optional), e.g. "/data/rinex-files/*.rnx"
+    :param str frame_snx_path: Path to reference frame sinex file, e.g. "/data/itrf2014/ITRF2014-IGS-TRF.SNX.gz"
+    :param str frame_soln_path: Path to solution file of reference frame, e.g. "/data/itrf2014/ITRF2014-soln-gnss.snx"
+    :param str frame_psd_path: Path to post-seismic deformation file, e.g. "/data/itrf2014/ITRF2014-psd-gnss.snx"
+    :param _np.datetime64 frame_datetime: Datetime to project the dataframe to, defaults to None
+    :param str out_path: Path of file to output, defaults to "/data/meta_gather.snx"
+    :param int num_threads: Number of threads to run on parsing log / rnx files, defaults to 1
+    """
     if frame_datetime is None:
         frame_datetime = _np.datetime64("today")
     else:
@@ -625,7 +667,7 @@ def write_meta_gather_master(
         ]
     )
     # ant/rec
-    buf.extend(meta2sting(id_loc_df, rec_df, ant_df))
+    buf.extend(meta2string(id_loc_df, rec_df, ant_df))
     # projected coordinates
     if gather_itrf is not None:
         buf.extend(frame2snx_string(gather_itrf))
