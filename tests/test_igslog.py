@@ -11,6 +11,7 @@ class Testregex(unittest.TestCase):
         # Ensure version 1 and 2 strings are produced as expected
         self.assertEqual(igslog.determine_log_version(v1_data), "v1.0")
         self.assertEqual(igslog.determine_log_version(v2_data), "v2.0")
+
         # Check that LogVersionError is raised on wrong data
         self.assertRaises(igslog.LogVersionError, igslog.determine_log_version, b"Wrong data")
 
@@ -18,15 +19,20 @@ class Testregex(unittest.TestCase):
         # Ensure the extract of ID information works and gives correct dome number:
         self.assertEqual(igslog.extract_id_block(v1_data, "/example/path", "ABMF", "v1.0"), ["ABMF", "97103M001"])
         self.assertEqual(igslog.extract_id_block(v2_data, "/example/path", "ABMF", "v2.0"), ["ABMF", "97103M001"])
-        # Check that automatic version determination works as expected:
+        # Check automatic version determination works as expected:
         self.assertEqual(igslog.extract_id_block(v1_data, "/example/path", "ABMF"), ["ABMF", "97103M001"])
-        # Check that LogVersionError is raised on wrong data
-        self.assertRaises(igslog.LogVersionError, igslog.extract_id_block, b"Wrong data", "/example/path", "ABMF")
-        # Check that LogVersionError is raised on wrong version number
-        self.assertRaises(igslog.LogVersionError, igslog.extract_id_block, v1_data, "/example/path", "ABMF", "v3.0")
+
+        # Check LogVersionError is raised on no data:
+        with self.assertRaises(igslog.LogVersionError):
+            igslog.extract_id_block(data=b"", file_path="/example/path", file_code="ABMF")
+        # Check LogVersionError is raised on wrong data:
+        with self.assertRaises(igslog.LogVersionError):
+            igslog.extract_id_block(data=b"Wrong data", file_path="/example/path", file_code="ABMF")
+        # Check LogVersionError is raised on wrong version number:
+        with self.assertRaises(igslog.LogVersionError):
+            igslog.extract_id_block(data=v1_data, file_path="/example/path", file_code="ABMF", version="v3.0")
 
     def test_extract_location_block(self):
-
         # Version 1 Location description results:
         v1_location_block = igslog.extract_location_block(v1_data, "/example/path", "v1.0")
         self.assertEqual(v1_location_block.group(1), b"Les Abymes")
@@ -40,8 +46,17 @@ class Testregex(unittest.TestCase):
         # Coordinate information remains the same:
         self.assertEqual(v2_location_block.group(3), v1_location_block.group(3))
 
-    def test_extract_receiver_block(self):
+        # Check LogVersionError is rasied on no data:
+        with self.assertRaises(igslog.LogVersionError):
+            igslog.extract_location_block(data=b"", file_path="/example/path")
+        # Check LogVersionError is rasied on wrong data:
+        with self.assertRaises(igslog.LogVersionError):
+            igslog.extract_location_block(data=b"Wrong data", file_path="/example/path")
+        # Check LogVersionError raised on wrong version number:
+        with self.assertRaises(igslog.LogVersionError):
+            igslog.extract_location_block(data=v1_data, file_path="/example/path", version="v3.0")
 
+    def test_extract_receiver_block(self):
         # Testing version 1:
         v1_receiver_block = igslog.extract_receiver_block(v1_data, "/example/path")
         self.assertEqual(v1_receiver_block[0][0], b"LEICA GR25")
@@ -65,7 +80,6 @@ class Testregex(unittest.TestCase):
         self.assertEqual(v2_receiver_block[-1][-1], b"")
 
     def test_extract_antenna_block(self):
-
         # Testing version 1:
         v1_antenna_block = igslog.extract_antenna_block(v1_data, "/example/path")
         self.assertEqual(v1_antenna_block[0][0], b"AERAT2775_43")  # Check antenna type of first entry
