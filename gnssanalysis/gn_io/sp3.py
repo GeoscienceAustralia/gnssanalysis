@@ -229,9 +229,9 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
 
 def filter_by_svs(
     sp3_df: _pd.DataFrame,
-    filter_by_count: Optional[int],
-    filter_by_name: Optional[list[str]],
-    filter_to_sat_letter: Optional[str],
+    filter_by_count: Optional[int] = None,
+    filter_by_name: Optional[list[str]] = None,
+    filter_to_sat_letter: Optional[str] = None,
 ) -> _pd.DataFrame:
     """
     Utility function to trim an SP3 DataFrame down, intended for creating small sample SP3 files for
