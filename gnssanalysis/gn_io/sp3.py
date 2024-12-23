@@ -325,7 +325,7 @@ def read_sp3(
     header = content[:header_end]
     content = content[header_end:]
     parsed_header = parse_sp3_header(header)
-    header_sv_count = parsed_header.SV_INFO.count()
+    header_sv_count = parsed_header.SV_INFO.count()  # count() of non-NA/null, vs shape: dims of whole structure
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
@@ -440,7 +440,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     head_svs = _np.asarray(sv_id_matches)[_np.newaxis].view("S3").astype(str)
 
     # Sanity check that the number of SVs the regex found, matches what the header said should be there.
-    found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array.
+    found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array. Note this could include null/NA/NaN
     if head_sv_expected_count is not None and found_sv_count != head_sv_expected_count:
         logger.warning(
             "Number of Satellite Vehicle (SV) entries extracted from the SP3 header, did not match the "
