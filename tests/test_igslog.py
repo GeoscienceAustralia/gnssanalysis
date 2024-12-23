@@ -11,11 +11,19 @@ class Testregex(unittest.TestCase):
         # Ensure version 1 and 2 strings are produced as expected
         self.assertEqual(igslog.determine_log_version(v1_data), "v1.0")
         self.assertEqual(igslog.determine_log_version(v2_data), "v2.0")
+        # Check that LogVersionError is raised on wrong data
+        self.assertRaises(igslog.LogVersionError, igslog.determine_log_version, b"Wrong data")
 
     def test_extract_id_block(self):
         # Ensure the extract of ID information works and gives correct dome number:
         self.assertEqual(igslog.extract_id_block(v1_data, "/example/path", "ABMF", "v1.0"), ["ABMF", "97103M001"])
         self.assertEqual(igslog.extract_id_block(v2_data, "/example/path", "ABMF", "v2.0"), ["ABMF", "97103M001"])
+        # Check that automatic version determination works as expected:
+        self.assertEqual(igslog.extract_id_block(v1_data, "/example/path", "ABMF"), ["ABMF", "97103M001"])
+        # Check that LogVersionError is raised on wrong data
+        self.assertRaises(igslog.LogVersionError, igslog.extract_id_block, b"Wrong data", "/example/path", "ABMF")
+        # Check that LogVersionError is raised on wrong version number
+        self.assertRaises(igslog.LogVersionError, igslog.extract_id_block, v1_data, "/example/path", "ABMF", "v3.0")
 
     def test_extract_location_block(self):
 
