@@ -429,10 +429,10 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
 
     # How many SVs did the header say were there (start of first line of SV entries) E.g 30 here: +   30   G02G03...
     head_sv_expected_count = None
-    try:
+    if sv_regex_matches:  # Result found
         head_sv_expected_count = int(sv_regex_matches[0][0])  # Line 1, group 1
-    except Exception as e:
-        logger.warning("Failed to extract count of expected SVs from SP3 header.", e)
+    else:
+        logger.warning("Failed to extract count of expected SVs from SP3 header.")
 
     # Get second capture group from each match, concat into byte string. These are the actual SVs. i.e. 'G02G03G04'...
     sv_id_matches = b"".join([x[1] for x in sv_regex_matches])
