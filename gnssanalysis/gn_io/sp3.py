@@ -420,26 +420,6 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     :param bytes header: The header of the SP3 file (as a byte string).
     :return pandas.Series: A Series containing the parsed information from the SP3 header.
     """
-    try:
-        sp3_heading = _pd.Series(
-            data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
-                str
-            ),
-            index=[
-                "VERSION",
-                "PV_FLAG",
-                "DATETIME",
-                "N_EPOCHS",
-                "DATA_USED",
-                "COORD_SYS",
-                "ORB_TYPE",
-                "AC",
-                "FILE_TYPE",
-                "TIME_SYS",
-            ],
-        )
-    except AttributeError as e:  # Make the exception slightly clearer.
-        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
     # Find all Satellite Vehicle (SV) entries
     # Updated to also extract the count of expected SVs from the header, and compare that to the number of SVs we get.
@@ -490,6 +470,34 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
             "error expressed as 2^x mm, so negative values are unrealistic and likely an error. "
             f"Parsed SVs and ACCs: {sv_tbl}"
         )
+
+    try:
+        claimed_sv_count_str = str(head_sv_expected_count) if head_sv_expected_count is not None else ""
+        header_array = _np.asarray(
+            _RE_SP3_HEAD.search(header).groups()
+            + _RE_SP3_HEAD_FDESCR.search(header).groups()
+            + (bytes(str(found_sv_count), "utf-8"),)  # Number of SVs listed in header
+            + (bytes(claimed_sv_count_str, "utf-8"),)  # Number of SVs header states should be there
+        ).astype(str)
+        sp3_heading = _pd.Series(
+            data=header_array,
+            index=[
+                "VERSION",
+                "PV_FLAG",
+                "DATETIME",
+                "N_EPOCHS",
+                "DATA_USED",
+                "COORD_SYS",
+                "ORB_TYPE",
+                "AC",
+                "FILE_TYPE",
+                "TIME_SYS",
+                "SV_COUNT_ACTUAL",  # (Here for convenience) Calculated, not parsed from header by above regex
+                "SV_COUNT_STATED",  # (Here for convenience) Parsed earlier, not by above regex
+            ],
+        )
+    except AttributeError as e:  # Make the exception slightly clearer.
+        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
     return _pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
 
@@ -587,13 +595,35 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     sats = sv_tbl.index.to_list()
     n_sats = sv_tbl.shape[0]
 
+    # Check that number of SVs the header metadata says should be here, matches the number of SVs *listed* in
+    # header metadata (which we use to output the new header). Then check that this in turn matches the number of
+    # unique SVs in the SP3 DataFrame itself.
+    dataframe_sv_count = sp3_df.index.get_level_values(1).unique().size
+    header_sv_stated_count = int(head["SV_COUNT_STATED"])
+    header_sv_actual_count = int(n_sats)
+
+    # Check header internal consistency, regarding number of SVs
+    if header_sv_actual_count != header_sv_stated_count:
+        raise AttributeError(
+            f"Number of SVs listed in SP3 header ({str(header_sv_actual_count)}), did not match "
+            f"the number of SVs the header says are there ({header_sv_stated_count})"
+        )
+    # Check header vs DataFrame content regarding number of SVs
+    if header_sv_actual_count != dataframe_sv_count:
+        raise AttributeError(
+            f"Number of SVs listed in SP3 header ({header_sv_actual_count}) did not match "
+            f"SP3 DataFrame contents ({dataframe_sv_count})!"
+        )
+
+    # Alternatively: max(n_sats // 17, 5) # As many lines as needed, minimum 5
     sats_rows = (n_sats // 17) + 1 if n_sats > (17 * 5) else 5  # should be 5 but MGEX need more lines (e.g. CODE sp3)
     sats_header = (
         _np.asarray(sats + ["  0"] * (17 * sats_rows - n_sats), dtype=object).reshape(sats_rows, -1).sum(axis=1) + "\n"
     )
 
+    # Add *calculated, not stated* SV count within the lead-in / padding of the first row of SVs
     sats_header[0] = "+ {:4}   ".format(n_sats) + sats_header[0]
-    sats_header[1:] = "+        " + sats_header[1:]
+    sats_header[1:] = "+        " + sats_header[1:]  # Format remaining rows of SVs with just their lead-in string
 
     sv_orb_head = (
         _np.asarray(sv_tbl.astype(str).str.rjust(3).to_list() + ["  0"] * (17 * sats_rows - n_sats), dtype=object)
