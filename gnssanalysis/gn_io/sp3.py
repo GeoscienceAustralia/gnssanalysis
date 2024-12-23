@@ -867,8 +867,13 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     ac_str = "".join([pv[:2] for pv in sorted(set(heads[7]))])[
         :4
     ]  # Use all 4 chars assigned in spec - combine 2 char from each
+
+    # The following values (at the time of writing) align to: VERSION, PV_FLAG, DATETIME, N_EPOCHS, DATA_USED,
+    # COORD_SYS, ORB_TYPE, AC, FILE_TYPE, TIME_SYS (index 9), SV_COUNT_STATED (index 10)
     # Assign values when mixed:
-    values_if_mixed = _np.asarray([version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX"])
+    values_if_mixed = _np.asarray(
+        [version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX", None]
+    )
     head = df[0].loc["HEAD"].values
     head[mask_mixed] = values_if_mixed[mask_mixed]
     # total_num_epochs needs to be assigned manually - length can be the same but have different epochs in each file
@@ -876,8 +881,18 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     first_set_of_epochs = set(df_list[0].index.get_level_values("J2000"))
     total_num_epochs = len(first_set_of_epochs.union(*[set(df.index.get_level_values("J2000")) for df in df_list[1:]]))
     head[3] = str(total_num_epochs)
-    sv_info = df.loc["SV_INFO"].max(axis=1).values.astype(int)
-    return _pd.Series(_np.concatenate([head, sv_info]), index=df.index)
+
+    # Combine the *SV & SV accuracy code* part of the header, from across all input DataFrames.
+    # This gives us an NDArray containing the union of all SV names.
+    # For the accuracy codes part of it (axis 1), we take the max (i.e worst) accuracy seen for each SV, across all
+    # the input DataFrames (i.e. lowest common denominator of accuracies for each SV).
+    sv_info_unioned_worst_accuracy = df.loc["SV_INFO"].max(axis=1).values.astype(int)
+
+    # Use the number of SVs in the union of all SV headers, as the new *stated* number of SVs (which we store in our
+    # internal representation of the SP3 header (in DataFrame metadata), as sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED)
+    head[10] = sv_info_unioned_worst_accuracy.shape[0]
+
+    return _pd.Series(_np.concatenate([head, sv_info_unioned_worst_accuracy]), index=df.index)
 
 
 def sp3merge(
