@@ -325,13 +325,17 @@ def read_sp3(
     header = content[:header_end]
     content = content[header_end:]
     parsed_header = parse_sp3_header(header)
-    counts = parsed_header.SV_INFO.count()
+    header_sv_count = parsed_header.SV_INFO.count()
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
     date_lines, data_blocks = _split_sp3_content(content)
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
+    # Check that count of SVs from header matches number of unique SVs we read in.
+    df_sv_count = sp3_df.index.get_level_values(1).unique().size
+    if header_sv_count != df_sv_count:
+        logger.warning(f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!")
     if drop_offline_sats:
         sp3_df = remove_offline_sats(sp3_df)
     if nodata_to_nan:
@@ -555,6 +559,8 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
+    Caution: much of the header data is based on the dataframe's attrs["HEADER"] field, which may no
+    longer reflect the contents!
 
     :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :return str: The generated SP3 header as a string.
