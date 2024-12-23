@@ -1,3 +1,4 @@
+from datetime import timedelta
 import logging
 import io as _io
 import os as _os
@@ -223,6 +224,65 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
         logger.info(f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame: {offline_sats.values}")
     else:
         logger.info(f"No offline / nodata sats detected to be dropped from {df_friendly_name} SP3 DataFrame")
+    return sp3_df
+
+
+def filter_by_svs(
+    sp3_df: _pd.DataFrame,
+    filter_by_count: Optional[int],
+    filter_by_name: Optional[list[str]],
+    filter_to_sat_letter: Optional[str],
+) -> _pd.DataFrame:
+    """
+    Utility function to trim an SP3 DataFrame down, intended for creating small sample SP3 files for
+    unit testing (but could be used for other purposes).
+    Can filter to a specific number of SVs, to specific SV names, and to a specific constellation.
+
+    These filters can be used together (though filter by name and filter by sat letter i.e. constellation, does
+    not make sense).
+    E.g. you may filter sats to a set of possible SV names, and also to a maximum of n sats. Or you might filter to
+    a specific constellation, then cap at a max of n sats.
+
+    :param _pd.DataFrame sp3_df: input SP3 DataFrame to perform filtering on
+    :param Optional[int] filter_by_count: max number of sats to return
+    :param Optional[list[str]] filter_by_name: names of sats to constrain to
+    :param Optional[str] filter_to_sat_letter: name of constellation (single letter) to constrain to
+    :return _pd.DataFrame: new SP3 DataFrame after filtering
+    """
+
+    # Get all SV names
+    all_sv_names = sp3_df.index.get_level_values(1).unique().array
+    total_svs = len(all_sv_names)
+    logger.info(f"Total SVs: {total_svs}")
+
+    # Drop SVs which don't match given names
+    if filter_by_name:
+        # Make set of every SV name to drop (exclude everything besides what we want to keep)
+        exclusion_list: list[str] = list(set(all_sv_names) - set(filter_by_name))
+        sp3_df = sp3_df.drop(exclusion_list, level=1)
+
+    # Drop SVs which don't match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
+    if filter_to_sat_letter:
+        if len(filter_to_sat_letter) != 1:
+            raise ValueError(
+                "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GR'"
+            )
+        # Make set of every SV name to drop (exclude everything besides what we want to keep)
+        other_constellation_sats = [sv for sv in all_sv_names if not filter_to_sat_letter.upper() in sv]
+        sp3_df = sp3_df.drop(other_constellation_sats, level=1)
+
+    # Drop SVs beyond n (i.e. keep only the first n SVs)
+    if filter_by_count:
+        if filter_by_count < 0:
+            raise ValueError("Cannot filter to a negative number of SVs!")
+        if total_svs <= filter_by_count:
+            raise ValueError(
+                f"Cannot filter to max of {filter_by_count} sats, as there are only {total_svs} sats total!"
+            )
+        # Exclusion list built by taking all sats *beyond* the amount we want to keep.
+        exclusion_list = all_sv_names[filter_by_count:]
+        sp3_df = sp3_df.drop(exclusion_list, level=1)
+
     return sp3_df
 
 
@@ -873,7 +933,48 @@ def sp3merge(
     return merged_sp3
 
 
-def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, list]:
+def transform_sp3(src_sp3: str, dest_sp3: str, transform_fn, *args, **kwargs):
+    """
+    Apply a transformation to an sp3 file
+    """
+    logger.info(f"Reading file: " + str(src_sp3))
+    sp3_df = read_sp3(src_sp3)
+    transformed_df = transform_fn(sp3_df, *args, **kwargs)
+    write_sp3(transformed_df, dest_sp3)
+
+
+def trim_df(
+    sp3_df: _pd.DataFrame,
+    trim_start: timedelta = timedelta(),
+    trim_end: timedelta = timedelta(),
+    keep_first_delta_amount: Optional[timedelta] = None,
+):
+    """
+    Trim data from the start and end of an sp3 dataframe
+    """
+    time_axis = sp3_df.index.get_level_values(0)
+    # Work out the new time range that we care about
+    first_time = min(time_axis)
+    first_keep_time = first_time + trim_start.total_seconds()
+    last_time = max(time_axis)
+    last_keep_time = last_time - trim_end.total_seconds()
+
+    # Operating in mode of trimming from start, to start + x amount of time in. As opposed to trimming a delta from each end.
+    if keep_first_delta_amount:
+        first_keep_time = first_time
+        last_keep_time = first_time + keep_first_delta_amount.total_seconds()
+
+    # Slice to the subset that we actually care about
+    trimmed_df = sp3_df.loc[first_keep_time:last_keep_time]
+    trimmed_df.index = trimmed_df.index.remove_unused_levels()
+    # trimmed_df.attrs["HEADER"].HEAD.ORB_TYPE = "FIT"
+    return trimmed_df
+
+
+def sp3_hlm_trans(
+    a: _pd.DataFrame,
+    b: _pd.DataFrame,
+) -> tuple[_pd.DataFrame, list]:
     """
      Rotates sp3_b into sp3_a.
 
