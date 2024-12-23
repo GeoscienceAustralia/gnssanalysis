@@ -223,3 +223,16 @@ class TestMergeSP3(TestCase):
         self.assertEqual(result.attrs["HEADER"].HEAD.AC, "AIES")
         self.assertEqual(result.attrs["HEADER"].HEAD.COORD_SYS, None)
         self.assertEqual(result.attrs["HEADER"].HEAD.PV_FLAG, "P")
+        self.assertEqual(
+            int(result.attrs["HEADER"].HEAD.SV_COUNT_STATED),
+            34,
+            "Header stated count of SVs should be 34, matching actual number of SVs",
+        )
+        self.assertEqual(result.attrs["HEADER"].SV_INFO.shape[0], 34, "Union of SV lists should have 34 SVs in it")
+        # Sample first three orbit accuracy codes and ensure that for each SV, the accuracy code value is the
+        # *worst* seen across all inputs. I.e. lowest common denominator of input files.
+        self.assertEqual(
+            all(result.attrs["HEADER"].SV_INFO.values.astype(int)[0:3]),
+            all([10, 8, 4]),
+            "Combining SV accuracy codes should give the *worst* value seen for each SV",
+        )
