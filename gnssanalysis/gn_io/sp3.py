@@ -476,7 +476,6 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
         header_array = _np.asarray(
             _RE_SP3_HEAD.search(header).groups()
             + _RE_SP3_HEAD_FDESCR.search(header).groups()
-            + (bytes(str(found_sv_count), "utf-8"),)  # Number of SVs listed in header
             + (bytes(claimed_sv_count_str, "utf-8"),)  # Number of SVs header states should be there
         ).astype(str)
         sp3_heading = _pd.Series(
@@ -492,8 +491,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
                 "AC",
                 "FILE_TYPE",
                 "TIME_SYS",
-                "SV_COUNT_ACTUAL",  # (Here for convenience) Calculated, not parsed from header by above regex
-                "SV_COUNT_STATED",  # (Here for convenience) Parsed earlier, not by above regex
+                "SV_COUNT_STATED",  # (Here for convenience) parsed earlier with _RE_SP3_HEADER_SV, not by above regex
             ],
         )
     except AttributeError as e:  # Make the exception slightly clearer.
