@@ -10,6 +10,8 @@ import gnssanalysis.gn_io.sp3 as sp3
 from test_datasets.sp3_test_data import (
     # first dataset is part of the IGS benchmark (modified to include non null data on clock):
     sp3_test_data_igs_benchmark_null_clock as input_data,
+    # Test exception raising when encountering EP, EV rows
+    sp3_test_data_ep_ev_rows,
     # second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
     sp3_test_data_truncated_cod_final as input_data2,
     sp3_test_data_partially_offline_sat as offline_sat_test_data,
@@ -55,6 +57,13 @@ class TestSp3(unittest.TestCase):
             result.attrs["HEADER"]["HEAD"]["DATETIME"], "2007  4 12  0  0  0.00000000"
         )
         self.assertEqual(result.index[0][0], 229608000)  # Same date, as J2000
+
+    @patch("builtins.open", new_callable=mock_open, read_data=sp3_test_data_ep_ev_rows)
+    def test_read_sp3_pv_with_ev_ep_rows(self, mock_file):
+        # Expect exception relating to the EV and EP rows, as we can't currently handle them properly.
+        self.assertRaises(
+            NotImplementedError, sp3.read_sp3, "mock_path", pOnly=False, continue_on_ep_ev_encountered=False
+        )
 
     @patch("builtins.open", new_callable=mock_open, read_data=input_data)
     def test_read_sp3_header_svs_basic(self, mock_file):
