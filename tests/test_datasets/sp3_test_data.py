@@ -202,3 +202,5 @@ PG03 -12170.453519 -15798.978021  17431.310591    598.861113  8  8 10
 PG19      0.000000      0.000000      0.000000 999999.999999                    
 EOF
 """
+
+# TODO add some test data that actually has flags!! And write tests for those.

@@ -143,6 +143,9 @@ class TestSp3(unittest.TestCase):
             end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18"
         )
 
+    # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
+    # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
+    # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame(
             {("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]}
