@@ -273,14 +273,14 @@ class TestSp3(unittest.TestCase):
             sample_rate, timedelta(minutes=5), "Sample rate should've been parsed as 5 minutes, from filename"
         )
 
-        sp3_df_trimmed = sp3.trim_to_epoch_count(sp3_df, epoch_count=2, sp3_sample_rate=sample_rate)
+        sp3_df_trimmed = sp3.trim_to_first_n_epochs(sp3_df, epoch_count=2, sp3_sample_rate=sample_rate)
         self.assertEqual(
             sp3_df_trimmed.index.get_level_values(0).unique().array.tolist(),
             [784792800, 784793100],
             "Should be first two epochs after trimming with trim_to_epoch_count() using sample_rate",
         )
 
-        sp3_df_trimmed = sp3.trim_to_epoch_count(sp3_df, epoch_count=2, sp3_filename=filename)
+        sp3_df_trimmed = sp3.trim_to_first_n_epochs(sp3_df, epoch_count=2, sp3_filename=filename)
         self.assertEqual(
             sp3_df_trimmed.index.get_level_values(0).unique().array.tolist(),
             [784792800, 784793100],

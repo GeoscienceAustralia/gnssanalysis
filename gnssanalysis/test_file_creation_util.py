@@ -1,7 +1,7 @@
 from datetime import timedelta
 from typing import Optional
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
-from gnssanalysis.gn_io.sp3 import filter_by_svs, read_sp3, trim_df, write_sp3, remove_offline_sats
+from gnssanalysis.gn_io.sp3 import filter_by_svs, read_sp3, trim_to_first_n_epochs, write_sp3, remove_offline_sats
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,18 +32,13 @@ print(f"Filename is: {filename}")
 sample_rate: timedelta = convert_nominal_span(determine_properties_from_filename(filename)["sampling_rate"])
 print(f"sample_rate is: {sample_rate}")
 
-
-# time_start_offset: timedelta = timedelta(0)
-time_offset_from_start: timedelta = sample_rate * (trim_to_num_epochs - 1)
-
-
 # Load
 print("Loading SP3 into DataFrame...")
 sp3_df = read_sp3(src_path)
 
 # Trim to first x epochs
-print(f"Trimming to first {trim_to_num_epochs} epochs (timedelta from start: {time_offset_from_start})")
-sp3_df = trim_df(sp3_df, keep_first_delta_amount=time_offset_from_start)
+print(f"Trimming to first {trim_to_num_epochs} epochs")
+sp3_df = trim_to_first_n_epochs(sp3_df=sp3_df, epoch_count=trim_to_num_epochs, sp3_filename=filename)
 
 # Filter to chosen SVs or number of SVs...
 print(

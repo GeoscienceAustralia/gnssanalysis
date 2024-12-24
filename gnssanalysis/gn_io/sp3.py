@@ -10,6 +10,7 @@ import numpy as _np
 import pandas as _pd
 from scipy import interpolate as _interpolate
 
+from .. import filenames
 from .. import gn_aux as _gn_aux
 from .. import gn_const as _gn_const
 from .. import gn_datetime as _gn_datetime
@@ -967,8 +968,28 @@ def trim_df(
     # Slice to the subset that we actually care about
     trimmed_df = sp3_df.loc[first_keep_time:last_keep_time]
     trimmed_df.index = trimmed_df.index.remove_unused_levels()
-    # trimmed_df.attrs["HEADER"].HEAD.ORB_TYPE = "FIT"
     return trimmed_df
+
+
+def trim_to_first_n_epochs(
+    sp3_df: _pd.DataFrame,
+    epoch_count: int,
+    sp3_filename: Optional[str] = None,
+    sp3_sample_rate: Optional[timedelta] = None,
+) -> _pd.DataFrame:
+    """
+    Utility function to trim an SP3 dataframe to the first n epochs, given either the filename, or sample rate
+    """
+    sample_rate = sp3_sample_rate
+    if not sample_rate:
+        if not sp3_filename:
+            raise ValueError("Either sp3_sample_rate or sp3_filename must be provided")
+        sample_rate = filenames.convert_nominal_span(
+            filenames.determine_properties_from_filename(sp3_filename)["sampling_rate"]
+        )
+
+    time_offset_from_start: timedelta = sample_rate * (epoch_count - 1)
+    return trim_df(sp3_df, keep_first_delta_amount=time_offset_from_start)
 
 
 def sp3_hlm_trans(
