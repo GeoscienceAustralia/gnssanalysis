@@ -136,6 +136,10 @@ class TestSp3(unittest.TestCase):
             end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18"
         )
 
+    # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
+    # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
+    # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
+
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame(
             {("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]}
@@ -176,6 +180,7 @@ class TestSp3(unittest.TestCase):
         """
         Checking if the velocity interpolation works, right now there is no data to validate, the only thing done
         is to check if the function runs without errors
+        TODO: update that to check actual expected values
         """
         result = sp3.read_sp3("mock_path", pOnly=True)
         r = sp3.getVelSpline(result)
@@ -300,6 +305,11 @@ class TestSp3(unittest.TestCase):
             "Should be two epochs after trimming with keep_first_delta_amount parameter",
         )
 
+    # Don't bother trying to unit test transform_df(). It is a wrapper which basically does:
+    # - read (parse)
+    # - apply function
+    # - write (generate content)
+    # TODO notes added above to implement those bits separately
 
 class TestMergeSP3(TestCase):
     def setUp(self):
