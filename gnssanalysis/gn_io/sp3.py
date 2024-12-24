@@ -191,20 +191,38 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
 
 
-def remove_offline_sats(sp3_df: _pd.DataFrame):
+def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     """
-    Remove any satellites that have "0.0" for all three coordinates (i.e. nodata) - indicates satellite offline.
+    Remove any satellites that have "0.0" or NaN for all three position coordinates - this indicates satellite offline.
     Note that this removes a satellite which has *any* missing coordinate data, meaning a satellite with partial
     observations will get removed entirely.
     Added in version 0.0.57
+
+    :param _pd.DataFrame sp3_df: SP3 DataFrame to remove offline / nodata satellites from
+    :param str df_friendly_name: Name to use when referring to the DataFrame in log output (purely for clarity). Empty
+           string by default.
+    :return _pd.DataFrame: the SP3 DataFrame, with the offline / nodata satellites removed
+
     """
-    # Get all entries with missing coordinates (i.e. nodata, which would become NaN), then get the satellite
-    # names (SVs) of these and dedupe them, giving a list of all SVs with one or more missing coordinates.
-    offline_sats = (
-        sp3_df[(sp3_df.EST.X == 0.0) & (sp3_df.EST.Y == 0.0) & (sp3_df.EST.Z == 0.0)].index.get_level_values(1).unique()
-    )
+    # Get all entries with missing positions (i.e. nodata value, represented as either 0 or NaN), then get the
+    # satellite names (SVs) of these and dedupe them, giving a list of all SVs with one or more missing positions.
+
+    # Mask for nodata POS values in raw form:
+    mask_zero = (sp3_df.EST.X == 0.0) & (sp3_df.EST.Y == 0.0) & (sp3_df.EST.Z == 0.0)
+    # Mask for converted values, as NaNs:
+    mask_nan = (sp3_df.EST.X.isna()) & (sp3_df.EST.Y.isna()) & (sp3_df.EST.Z.isna())
+    mask_either = _np.logical_or(mask_zero, mask_nan)
+
+    # With mask, filter for entries with no POS value, then get the sat name (SVs) from the entry, then dedupe:
+    offline_sats = sp3_df[mask_either].index.get_level_values(1).unique()
+
+    # Using that list of offline / partially offline sats, remove all entries for those sats from the SP3 DataFrame:
     sp3_df = sp3_df.drop(offline_sats, level=1, errors="ignore")
     sp3_df.attrs["HEADER"].HEAD.ORB_TYPE = "INT"  # Allow the file to be read again by read_sp3 - File ORB_TYPE changes
+    if len(offline_sats) > 0:
+        logger.info(f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame: {offline_sats.values}")
+    else:
+        logger.info(f"No offline / nodata sats detected to be dropped from {df_friendly_name} SP3 DataFrame")
     return sp3_df
 
 
@@ -264,7 +282,10 @@ def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Opt
 
 
 def read_sp3(
-    sp3_path_or_bytes: Union[str, Path, bytes], pOnly: bool = True, nodata_to_nan: bool = True
+    sp3_path_or_bytes: Union[str, Path, bytes],
+    pOnly: bool = True,
+    nodata_to_nan: bool = True,
+    drop_offline_sats: bool = False,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -273,6 +294,8 @@ def read_sp3(
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
     :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
+    :param bool drop_offline_sats: If True, drops satellites from the DataFrame if they have ANY missing (nodata)
+            values in the SP3 POS column.
     :return pandas.DataFrame: The SP3 data as a DataFrame.
     :raise FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
     :raise Exception: For other errors reading SP3 file/bytes
@@ -309,6 +332,8 @@ def read_sp3(
     date_lines, data_blocks = _split_sp3_content(content)
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
+    if drop_offline_sats:
+        sp3_df = remove_offline_sats(sp3_df)
     if nodata_to_nan:
         # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_pos_nodata_to_nan(sp3_df)
@@ -496,28 +521,28 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
-    x = est.index.get_level_values("J2000").values
-    # x = est.index.values
-    y = est.values
+    times = est.index.get_level_values("J2000").values
+    positions = est.values
 
-    off, scl = mapparm([x.min(), x.max()], [-1, 1])  # map from input scale to [-1,1]
+    # map from input scale to [-1,1]
+    offset, scale_factor = mapparm([times.min(), times.max()], [-1, 1])
 
-    x_new = off + scl * (x)
-    coeff = _np.polyfit(x=x_new, y=y, deg=deg)
+    normalised_times = offset + scale_factor * (times)
+    coeff = _np.polyfit(x=normalised_times, y=positions, deg=deg)
 
-    x_prev = off + scl * (x - 1)
-    x_next = off + scl * (x + 1)
+    time_prev = offset + scale_factor * (times - 1)
+    time_next = offset + scale_factor * (times + 1)
 
-    xx_prev_combined = _np.broadcast_to((x_prev)[None], (deg + 1, x_prev.shape[0]))
-    xx_next_combined = _np.broadcast_to((x_next)[None], (deg + 1, x_prev.shape[0]))
+    time_prev_sqrd_combined = _np.broadcast_to((time_prev)[None], (deg + 1, time_prev.shape[0]))
+    time_next_sqrd_combined = _np.broadcast_to((time_next)[None], (deg + 1, time_prev.shape[0]))
 
-    inputs_prev = xx_prev_combined ** _np.flip(_np.arange(deg + 1))[:, None]
-    inputs_next = xx_next_combined ** _np.flip(_np.arange(deg + 1))[:, None]
+    inputs_prev = time_prev_sqrd_combined ** _np.flip(_np.arange(deg + 1))[:, None]
+    inputs_next = time_next_sqrd_combined ** _np.flip(_np.arange(deg + 1))[:, None]
 
     res_prev = coeff.T.dot(inputs_prev)
     res_next = coeff.T.dot(inputs_next)
     vel_i = _pd.DataFrame(
-        (((y - res_prev.T) + (res_next.T - y)) / 2),
+        (((positions - res_prev.T) + (res_next.T - positions)) / 2),
         columns=est.columns,
         index=est.index,
     ).stack(future_stack=True)
@@ -902,8 +927,8 @@ def diff_sp3_rac(
     # the SV from the whole file.
     # This step was added after velocity interpolation failures due to non-finite (NaN) values from offline SVs.
     if use_offline_sat_removal:
-        sp3_baseline = remove_offline_sats(sp3_baseline)
-        sp3_test = remove_offline_sats(sp3_test)
+        sp3_baseline = remove_offline_sats(sp3_baseline, df_friendly_name="baseline")
+        sp3_test = remove_offline_sats(sp3_test, df_friendly_name="test")
 
     # Ensure the test file is time-ordered so when we align the resulting dataframes will be time-ordered
     sp3_baseline = sp3_baseline.sort_index(axis="index", level="J2000")
