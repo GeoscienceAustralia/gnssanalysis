@@ -286,6 +286,7 @@ def read_sp3(
     pOnly: bool = True,
     nodata_to_nan: bool = True,
     drop_offline_sats: bool = False,
+    continue_on_ep_ev_encountered: bool = True,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -296,6 +297,9 @@ def read_sp3(
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
     :param bool drop_offline_sats: If True, drops satellites from the DataFrame if they have ANY missing (nodata)
             values in the SP3 POS column.
+    :param bool continue_on_ep_ev_encountered: If True, logs a warning and continues if EV or EP rows are found in
+            the input SP3. These are currently unsupported by this function and will be ignored. Set to false to
+            raise a NotImplementedError instead.
     :return pandas.DataFrame: The SP3 data as a DataFrame.
     :raise FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
     :raise Exception: For other errors reading SP3 file/bytes
@@ -339,10 +343,18 @@ def read_sp3(
         sp3_pos_nodata_to_nan(sp3_df)
         # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)
+
+    # P/V/EP/EV flag handling is currently incomplete. The current implementation truncates to the first letter,
+    # so can't parse nor differenitate between EP and EV!
+    if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
+        if not continue_on_ep_ev_encountered:
+            raise NotImplementedError("EP and EV flag rows are currently not supported")
+        logger.warning("EP / EV flag rows encountered. These are not yet supported, and will be ignored!")
+
+    # Check very top of the header to see if this SP3 is Position only , or also contains Velocities
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
         sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
-        # TODO consider exception handling if EP rows encountered
     else:
         position_df = sp3_df.xs("P", level="PV_FLAG")
         velocity_df = sp3_df.xs("V", level="PV_FLAG")
@@ -350,7 +362,6 @@ def read_sp3(
         velocity_df.columns = SP3_VELOCITY_COLUMNS
         sp3_df = _pd.concat([position_df, velocity_df], axis=1)
 
-    # sp3_df.drop(columns="PV_FLAG", inplace=True)
     # Check for duplicate epochs, dedupe and log warning
     if sp3_df.index.has_duplicates:  # a literaly free check
         # This typically runs in sub ms time. Marks all but first instance as duped:
