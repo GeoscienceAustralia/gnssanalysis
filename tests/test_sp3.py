@@ -10,6 +10,8 @@ import gnssanalysis.gn_io.sp3 as sp3
 from test_datasets.sp3_test_data import (
     # first dataset is part of the IGS benchmark (modified to include non null data on clock):
     sp3_test_data_igs_benchmark_null_clock as input_data,
+    # Expected content section we want gnssanalysis to write out
+    expected_sp3_output_igs_benchmark_null_clock,
     # Test exception raising when encountering EP, EV rows
     sp3_test_data_ep_ev_rows,
     # second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
