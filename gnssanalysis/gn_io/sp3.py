@@ -356,9 +356,21 @@ def read_sp3(
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
         sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
     else:
+        # DF contains interlaced Position & Velocity measurements for each sat. Split the data based on this, and
+        # recombine, turning Pos and Vel into separate columns.
         position_df = sp3_df.xs("P", level="PV_FLAG")
         velocity_df = sp3_df.xs("V", level="PV_FLAG")
-        # TODO consider exception handling if EV rows encountered
+
+        # NOTE: care must now be taken to ensure this split and merge operation does not duplicate the FLAGS columns!
+
+        # Remove the (per sat per epoch, not per pos / vel section) FLAGS from one of our DFs so when we concat them
+        # back togetehr we don't have duplicated flags.
+        # The param axis=1, removes from columns rather than indexes (i.e. we want to drop the column from the data,
+        # not drop all the data to which the column previously applied!)
+        # We drop from pos rather than vel, because vel is on the right hand side, so the layout resembles the
+        # layout of an SP3 file better. Functionally, this shouldn't make a difference.
+        position_df = position_df.drop(axis=1, columns="FLAGS")
+
         velocity_df.columns = SP3_VELOCITY_COLUMNS
         sp3_df = _pd.concat([position_df, velocity_df], axis=1)
 
@@ -641,6 +653,17 @@ def gen_sp3_content(
     :param io.TextIOBase  buf: The buffer to write the SP3 content to. Defaults to None.
     :return str or None: The SP3 content if `buf` is None, otherwise None.
     """
+
+    # TODO ensure we correctly handle outputting Velocity data! I.e. does this need to be interlaced back in,
+    # not printed as additional columns?!
+    # E.g. do we need:
+    # PG01... X Y Z CLK ...
+    # VG01... VX VY VZ ...
+    #
+    # Rather than:
+    # PG01... X Y Z CLK ... VX VY VZ ...
+    # ?
+
     out_buf = buf if buf is not None else _io.StringIO()
     if sort_outputs:
         # If we need to do particular sorting/ordering of satellites and constellations we can use some of the
@@ -649,7 +672,8 @@ def gen_sp3_content(
     out_df = sp3_df["EST"]
     flags_df = sp3_df["FLAGS"]  # Prediction, maneuver, etc.
 
-    # Validate that all flags have valid values
+    # Valid values for the respective flags are 'E' 'P' 'M' 'P' (or blank), as per page 11-12 of the SP3d standard:
+    # https://files.igs.org/pub/data/format/sp3d.pdf
     if not (
         flags_df["Clock_Event"].astype(str).isin(["E", " "]).all()
         and flags_df["Clock_Pred"].astype(str).isin(["P", " "]).all()
