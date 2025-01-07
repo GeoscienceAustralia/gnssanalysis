@@ -288,12 +288,6 @@ class TestSp3(unittest.TestCase):
             "Should be two epochs after trimming with keep_first_delta_amount parameter",
         )
 
-    # Don't bother trying to unit test transform_df(). It is a wrapper which basically does:
-    # - read (parse)
-    # - apply function
-    # - write (generate content)
-    # TODO notes added above to implement those bits separately
-
 
 class TestMergeSP3(TestCase):
     def setUp(self):
