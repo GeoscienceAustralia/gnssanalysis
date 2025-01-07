@@ -364,7 +364,7 @@ def read_sp3(
         # NOTE: care must now be taken to ensure this split and merge operation does not duplicate the FLAGS columns!
 
         # Remove the (per sat per epoch, not per pos / vel section) FLAGS from one of our DFs so when we concat them
-        # back togetehr we don't have duplicated flags.
+        # back together we don't have duplicated flags.
         # The param axis=1, removes from columns rather than indexes (i.e. we want to drop the column from the data,
         # not drop all the data to which the column previously applied!)
         # We drop from pos rather than vel, because vel is on the right hand side, so the layout resembles the
