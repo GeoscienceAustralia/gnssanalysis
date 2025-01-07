@@ -642,6 +642,7 @@ def gen_sp3_content(
     sp3_df: _pd.DataFrame,
     sort_outputs: bool = False,
     buf: Union[None, _io.TextIOBase] = None,
+    continue_on_unhandled_velocity_data: bool = True,
 ) -> str:
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
@@ -651,18 +652,10 @@ def gen_sp3_content(
     :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
     :param io.TextIOBase  buf: The buffer to write the SP3 content to. Defaults to None.
+    :param bool continue_on_unhandled_velocity_data: If (currently unsupported) velocity data exists in the DataFrame,
+        log a warning and skip velocity data, but write out position data. Set to false to raise an exception instead.
     :return str or None: The SP3 content if `buf` is None, otherwise None.
     """
-
-    # TODO ensure we correctly handle outputting Velocity data! I.e. does this need to be interlaced back in,
-    # not printed as additional columns?!
-    # E.g. do we need:
-    # PG01... X Y Z CLK ...
-    # VG01... VX VY VZ ...
-    #
-    # Rather than:
-    # PG01... X Y Z CLK ... VX VY VZ ...
-    # ?
 
     out_buf = buf if buf is not None else _io.StringIO()
     if sort_outputs:
@@ -670,7 +663,23 @@ def gen_sp3_content(
         # options that .sort_index() provides
         sp3_df = sp3_df.sort_index(ascending=True)
     out_df = sp3_df["EST"]
-    flags_df = sp3_df["FLAGS"]  # Prediction, maneuver, etc.
+
+    # Check for velocity columns (named by read_sp3() with a V prefix)
+    if any([col.startswith("V") for col in out_df.columns.values]):
+        if not continue_on_unhandled_velocity_data:
+            raise NotImplementedError("Output of SP3 velocity data not currently supported")
+
+        # Drop any of the defined velocity columns that are present, so it doesn't mess up the output.
+        logger.warning("SP3 velocity output not currently supported! Dropping velocity columns before writing out.")
+        # Remove any defined velocity column we have, don't raise exceptions for defined vel columns we may not have:
+        out_df = out_df.drop(columns=SP3_VELOCITY_COLUMNS[1], errors="ignore")
+
+        # NOTE: correctly writing velocity records would involve interlacing records, i.e.:
+        # PG01... X Y Z CLK ...
+        # VG01... VX VY VZ ...
+
+    # Extract flags for Prediction, maneuver, etc.
+    flags_df = sp3_df["FLAGS"]
 
     # Valid values for the respective flags are 'E' 'P' 'M' 'P' (or blank), as per page 11-12 of the SP3d standard:
     # https://files.igs.org/pub/data/format/sp3d.pdf
