@@ -22,7 +22,7 @@ trim_to_num_epochs: int = 3
 
 drop_offline_sats: bool = False
 
-####
+#### End configuration ####
 
 
 filename = src_path.rsplit("/")[-1]

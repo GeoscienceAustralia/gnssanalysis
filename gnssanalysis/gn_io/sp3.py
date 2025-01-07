@@ -639,6 +639,8 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
+    NOTE: much of the header information is drawn from the DataFrame attrs structure. If this has not been
+    updated as the DataFrame has been transformed, the header will not reflect the data.
 
     :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :return str: The generated SP3 header as a string.
@@ -724,6 +726,8 @@ def gen_sp3_content(
     # Rather than:
     # PG01... X Y Z CLK ... VX VY VZ ...
     # ?
+    # TODO raise warnings if VEL columns are still present, and drop them before writing out, to ensure we remain
+    # compliant with the spec.
 
     out_buf = buf if buf is not None else _io.StringIO()
     if sort_outputs:
@@ -953,7 +957,7 @@ def sp3merge(
     :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
 
-    :return pd.DataFrame: The merged sp3 DataFrame.
+    :return DataFrame: The merged sp3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
     # Create a new attrs dictionary to be used for the output DataFrame
@@ -971,7 +975,13 @@ def sp3merge(
 
 def transform_sp3(src_sp3: str, dest_sp3: str, transform_fn, *args, **kwargs):
     """
-    Apply a transformation to an sp3 file
+    Apply a transformation to an sp3 file, by reading the file from the given path, applying the supplied
+    transformation function and args, and writing out a new file to the path given.
+
+    :param str src_sp3: Path of the source SP3 file to read in.
+    :param str dest_sp3: Path to write out the new SP3 file to.
+    :param callable transform_fn: The transformation function to apply to the SP3 data once loaded. *args
+        and **kwargs following, are passed to this function.
     """
     logger.info(f"Reading file: " + str(src_sp3))
     sp3_df = read_sp3(src_sp3)
@@ -987,6 +997,14 @@ def trim_df(
 ):
     """
     Trim data from the start and end of an sp3 dataframe
+
+    :param DataFrame sp3_df: The input SP3 DataFrame.
+    :param timedelta trim_start: Amount of time to trim off the start of the dataframe.
+    :param timedelta trim_end: Amount of time to trim off the end of the dataframe.
+    :param Optional[timedelta] keep_first_delta_amount: If supplied, trim the dataframe to this length. Not
+        compatible with trim_start and trim_end.
+    :return DataFrame: Dataframe trimmed to the requested time range, or requested initial amount
+
     """
     time_axis = sp3_df.index.get_level_values(0)
     # Work out the new time range that we care about
@@ -999,6 +1017,8 @@ def trim_df(
     if keep_first_delta_amount:
         first_keep_time = first_time
         last_keep_time = first_time + keep_first_delta_amount.total_seconds()
+        if trim_start.total_seconds() != 0 or trim_end.total_seconds() != 0:
+            raise ValueError("keep_first_delta_amount option is not compatible with start/end time options")
 
     # Slice to the subset that we actually care about
     trimmed_df = sp3_df.loc[first_keep_time:last_keep_time]
@@ -1014,6 +1034,13 @@ def trim_to_first_n_epochs(
 ) -> _pd.DataFrame:
     """
     Utility function to trim an SP3 dataframe to the first n epochs, given either the filename, or sample rate
+
+    :param DataFrame sp3_df: The input SP3 DataFrame.
+    :param int epoch_count: Trim to this many epochs from start of SP3 data (i.e. first n epochs).
+    :param Optional[str] sp3_filename: Name of SP3 file, just used to derive sample_rate.
+    :param Optional[timedelta] sp3_sample_rate: Sample rate of the SP3 data. Alternatively this can be
+        derived from a filename.
+    :return DataFrame: Dataframe trimmed to the requested number of epochs.
     """
     sample_rate = sp3_sample_rate
     if not sample_rate:
@@ -1037,7 +1064,7 @@ def sp3_hlm_trans(
      :param DataFrame a: The sp3_a DataFrame.
      :param DataFrame b : The sp3_b DataFrame.
 
-    :returntuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    :return tuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
     """
     hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
     b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
@@ -1064,7 +1091,7 @@ def diff_sp3_rac(
     :param bool use_offline_sat_removal: Flag indicating whether to remove satellites which are offline / have some
            nodata position values. Caution: ensure you turn this on if using cubic spline interpolation with data
            which may have holes in it (nodata).
-    :return: The DataFrame containing the difference in RAC coordinates.
+    :return DataFrame: The DataFrame containing the difference in RAC coordinates.
     """
     hlm_modes = [None, "ECF", "ECI"]
     if hlm_mode not in hlm_modes:
