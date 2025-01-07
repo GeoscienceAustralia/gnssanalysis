@@ -230,10 +230,22 @@ class TestMergeSP3(TestCase):
     def setUp(self):
         self.setUpPyfakefs()
 
+    # Not sure if this is helpful
+    def tearDown(self):
+        self.tearDownPyfakefs()
+
     def test_sp3merge(self):
+        # Surprisingly, this reset step must be done explicitly. The fake filesystem is backed by the real one, and
+        # the temp directory used may retain files from a previous run!
+        self.fs.reset()
+
         # Create some fake files
         file_paths = ["/fake/dir/file1.sp3", "/fake/dir/file2.sp3"]
-        self.fs.create_file(file_paths[0], contents=input_data)
+        # Note this fails if the fake file has previously been created in the fakefs (which does actually exist somewhere on the real filesystem)
+        self.fs.create_file(
+            file_paths[0],
+            contents=input_data,
+        )
         self.fs.create_file(file_paths[1], contents=input_data2)
 
         # Call the function to test
