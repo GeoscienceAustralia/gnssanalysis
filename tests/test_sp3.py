@@ -12,6 +12,10 @@ import gnssanalysis.gn_io.sp3 as sp3
 from test_datasets.sp3_test_data import (
     # first dataset is part of the IGS benchmark (modified to include non null data on clock):
     sp3_test_data_igs_benchmark_null_clock as input_data,
+    # Expected content section we want gnssanalysis to write out
+    expected_sp3_output_igs_benchmark_null_clock,
+    # Test exception raising when encountering EP, EV rows
+    sp3_test_data_ep_ev_rows,
     # second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
     sp3_test_data_truncated_cod_final as input_data2,
     sp3_test_data_partially_offline_sat as offline_sat_test_data,
@@ -53,10 +57,15 @@ class TestSp3(unittest.TestCase):
         self.assertEqual(len(result), 6)
         # Ensure first epoch is correct / not skipped by incorrect detection of data start.
         # Check output of both header and data section.
-        self.assertEqual(
-            result.attrs["HEADER"]["HEAD"]["DATETIME"], "2007  4 12  0  0  0.00000000"
-        )
+        self.assertEqual(result.attrs["HEADER"]["HEAD"]["DATETIME"], "2007  4 12  0  0  0.00000000")
         self.assertEqual(result.index[0][0], 229608000)  # Same date, as J2000
+
+    @patch("builtins.open", new_callable=mock_open, read_data=sp3_test_data_ep_ev_rows)
+    def test_read_sp3_pv_with_ev_ep_rows(self, mock_file):
+        # Expect exception relating to the EV and EP rows, as we can't currently handle them properly.
+        self.assertRaises(
+            NotImplementedError, sp3.read_sp3, "mock_path", pOnly=False, continue_on_ep_ev_encountered=False
+        )
 
     @patch("builtins.open", new_callable=mock_open, read_data=input_data)
     def test_read_sp3_header_svs_basic(self, mock_file):
@@ -64,15 +73,9 @@ class TestSp3(unittest.TestCase):
         Minimal test of reading SVs from header
         """
         result = sp3.read_sp3("mock_path", pOnly=False)
-        self.assertEqual(
-            result.attrs["HEADER"]["SV_INFO"].shape[0], 2, "Should be two SVs in data"
-        )
-        self.assertEqual(
-            result.attrs["HEADER"]["SV_INFO"].index[1], "G02", "Second SV should be G02"
-        )
-        self.assertEqual(
-            result.attrs["HEADER"]["SV_INFO"].iloc[1], 8, "Second ACC should be 8"
-        )
+        self.assertEqual(result.attrs["HEADER"]["SV_INFO"].shape[0], 2, "Should be two SVs in data")
+        self.assertEqual(result.attrs["HEADER"]["SV_INFO"].index[1], "G02", "Second SV should be G02")
+        self.assertEqual(result.attrs["HEADER"]["SV_INFO"].iloc[1], 8, "Second ACC should be 8")
 
     def test_read_sp3_header_svs_detailed(self):
         """
@@ -83,16 +86,12 @@ class TestSp3(unittest.TestCase):
         """
         # We check that negative values parse correctly, but override the default behaviour of warning about them,
         # to keep the output clean.
-        result = sp3.parse_sp3_header(
-            sample_header_svs, warn_on_negative_sv_acc_values=False
-        )
+        result = sp3.parse_sp3_header(sample_header_svs, warn_on_negative_sv_acc_values=False)
         # Pull out SV info header section, which contains SVs and their accuracy codes
         # Note: .attrs['HEADER'] nesting gets added by parent function.
         sv_info = result["SV_INFO"]
         sv_count = sv_info.shape[0]  # Effectively len()
-        self.assertEqual(
-            sv_count, 30, msg="There should be 30 SVs parsed from the test data"
-        )
+        self.assertEqual(sv_count, 30, msg="There should be 30 SVs parsed from the test data")
 
         # Ensure no SVs are read as empty
         self.assertFalse(
@@ -104,23 +103,15 @@ class TestSp3(unittest.TestCase):
         first_sv = sv_info.index[0]
         self.assertEqual(first_sv, "G02", msg="First SV in test data should be G02")
         end_line1_sv = sv_info.index[16]
-        self.assertEqual(
-            end_line1_sv, "G18", msg="Last SV on test line 1 (pos 17) should be G18"
-        )
+        self.assertEqual(end_line1_sv, "G18", msg="Last SV on test line 1 (pos 17) should be G18")
         start_line2_sv = sv_info.index[17]
-        self.assertEqual(
-            start_line2_sv, "G19", msg="First SV on test line 2 (pos 18) should be G19"
-        )
+        self.assertEqual(start_line2_sv, "G19", msg="First SV on test line 2 (pos 18) should be G19")
         end_line2_sv = sv_info.index[29]
-        self.assertEqual(
-            end_line2_sv, "G32", msg="Last SV on test line 2 (pos 30) should be G32"
-        )
+        self.assertEqual(end_line2_sv, "G32", msg="Last SV on test line 2 (pos 30) should be G32")
 
         # Ensure first, wrap around, and last accuracy codes came out correctly. Data is artificial to differentiate.
         first_acc = sv_info.iloc[0]
-        self.assertEqual(
-            first_acc, 10, msg="First accuracy code in test data should be 10"
-        )
+        self.assertEqual(first_acc, 10, msg="First accuracy code in test data should be 10")
         end_line1_acc = sv_info.iloc[16]
         self.assertEqual(
             end_line1_acc,
@@ -128,26 +119,18 @@ class TestSp3(unittest.TestCase):
             msg="Accuracy code end line 1 in test data should be -14",
         )
         start_line2_acc = sv_info.iloc[17]
-        self.assertEqual(
-            start_line2_acc, 11, msg="First ACC on test line 2 (pos 18) should be 11"
-        )
+        self.assertEqual(start_line2_acc, 11, msg="First ACC on test line 2 (pos 18) should be 11")
         end_line2_acc = sv_info.iloc[29]
-        self.assertEqual(
-            end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18"
-        )
+        self.assertEqual(end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18")
 
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
 
     def test_sp3_clock_nodata_to_nan(self):
-        sp3_df = pd.DataFrame(
-            {("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]}
-        )
+        sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
         sp3.sp3_clock_nodata_to_nan(sp3_df)
-        expected_result = pd.DataFrame(
-            {("EST", "CLK"): [np.nan, 123456.789, np.nan, 987654.321]}
-        )
+        expected_result = pd.DataFrame({("EST", "CLK"): [np.nan, 123456.789, np.nan, 987654.321]})
         self.assertTrue(sp3_df.equals(expected_result))
 
     def test_sp3_pos_nodata_to_nan(self):
@@ -310,6 +293,7 @@ class TestSp3(unittest.TestCase):
     # - apply function
     # - write (generate content)
     # TODO notes added above to implement those bits separately
+
 
 class TestMergeSP3(TestCase):
     def setUp(self):
