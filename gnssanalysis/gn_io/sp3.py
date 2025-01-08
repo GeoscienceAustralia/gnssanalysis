@@ -351,8 +351,7 @@ def read_sp3(
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
-
-    :param str sp3_path: The path to the SP3 file.
+    :param Union[str, Path, bytes] sp3_path_or_bytes: SP3 file path (as str or Path) or SP3 data as bytes object.
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
     :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
@@ -361,9 +360,9 @@ def read_sp3(
     :param bool continue_on_ep_ev_encountered: If True, logs a warning and continues if EV or EP rows are found in
             the input SP3. These are currently unsupported by this function and will be ignored. Set to false to
             raise a NotImplementedError instead.
-    :return pandas.DataFrame: The SP3 data as a DataFrame.
-    :raise FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
-    :raise Exception: For other errors reading SP3 file/bytes
+    :return _pd.DataFrame: The SP3 data as a DataFrame.
+    :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
+    :raises Exception: For other errors reading SP3 file/bytes
 
     :note: The SP3 file format is a standard format used for representing precise satellite ephemeris and clock data.
         This function reads the SP3 file, parses the header information, and extracts the data into a DataFrame.
@@ -457,7 +456,7 @@ def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
     """
     Reformat the SP3 DataFrame for internal use
 
-    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :return _pd.DataFrame: reformated SP3 data as a DataFrame.
     """
     name_float = [
@@ -498,7 +497,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     Parse the header of an SP3 file and extract relevant information.
 
     :param bytes header: The header of the SP3 file (as a byte string).
-    :return pandas.Series: A Series containing the parsed information from the SP3 header.
+    :return _pd.Series: A pandas Series containing the parsed information from the SP3 header.
     """
     try:
         sp3_heading = _pd.Series(
@@ -577,7 +576,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
 def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     """Returns the velocity spline of the input dataframe.
 
-    :param _pd.DataFrame sp3Df: The input dataframe containing position data.
+    :param _pd.DataFrame sp3Df: The input pandas DataFrame containing SP3 position data.
     :return _pd.DataFrame: The dataframe containing the velocity spline.
 
     :caution :This function cannot handle *any* NaN / nodata / non-finite position values. By contrast, getVelPoly()
@@ -642,7 +641,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     NOTE: much of the header information is drawn from the DataFrame attrs structure. If this has not been
     updated as the DataFrame has been transformed, the header will not reflect the data.
 
-    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :return str: The generated SP3 header as a string.
     """
     sp3_j2000 = sp3_df.index.levels[0].values
@@ -705,29 +704,20 @@ def gen_sp3_content(
     sp3_df: _pd.DataFrame,
     sort_outputs: bool = False,
     buf: Union[None, _io.TextIOBase] = None,
+    continue_on_unhandled_velocity_data: bool = True,
 ) -> str:
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
     it otherwise.
 
     Args:
-    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
-    :param io.TextIOBase  buf: The buffer to write the SP3 content to. Defaults to None.
+    :param _io.TextIOBase buf: The buffer to write the SP3 content to. Defaults to None.
+    :param bool continue_on_unhandled_velocity_data: If (currently unsupported) velocity data exists in the DataFrame,
+        log a warning and skip velocity data, but write out position data. Set to false to raise an exception instead.
     :return str or None: The SP3 content if `buf` is None, otherwise None.
     """
-
-    # TODO ensure we correctly handle outputting Velocity data! I.e. does this need to be interlaced back in,
-    # not printed as additional columns?!
-    # E.g. do we need:
-    # PG01... X Y Z CLK ...
-    # VG01... VX VY VZ ...
-    #
-    # Rather than:
-    # PG01... X Y Z CLK ... VX VY VZ ...
-    # ?
-    # TODO raise warnings if VEL columns are still present, and drop them before writing out, to ensure we remain
-    # compliant with the spec.
 
     out_buf = buf if buf is not None else _io.StringIO()
     if sort_outputs:
@@ -735,7 +725,23 @@ def gen_sp3_content(
         # options that .sort_index() provides
         sp3_df = sp3_df.sort_index(ascending=True)
     out_df = sp3_df["EST"]
-    flags_df = sp3_df["FLAGS"]  # Prediction, maneuver, etc.
+
+    # Check for velocity columns (named by read_sp3() with a V prefix)
+    if any([col.startswith("V") for col in out_df.columns.values]):
+        if not continue_on_unhandled_velocity_data:
+            raise NotImplementedError("Output of SP3 velocity data not currently supported")
+
+        # Drop any of the defined velocity columns that are present, so it doesn't mess up the output.
+        logger.warning("SP3 velocity output not currently supported! Dropping velocity columns before writing out.")
+        # Remove any defined velocity column we have, don't raise exceptions for defined vel columns we may not have:
+        out_df = out_df.drop(columns=SP3_VELOCITY_COLUMNS[1], errors="ignore")
+
+        # NOTE: correctly writing velocity records would involve interlacing records, i.e.:
+        # PG01... X Y Z CLK ...
+        # VG01... VX VY VZ ...
+
+    # Extract flags for Prediction, maneuver, etc.
+    flags_df = sp3_df["FLAGS"]
 
     # Valid values for the respective flags are 'E' 'P' 'M' 'P' (or blank), as per page 11-12 of the SP3d standard:
     # https://files.igs.org/pub/data/format/sp3d.pdf
@@ -905,9 +911,9 @@ def gen_sp3_content(
 
 
 def write_sp3(sp3_df: _pd.DataFrame, path: str) -> None:
-    """sp3 writer, dataframe to sp3 file
+    """Takes a DataFrame representation of SP3 data, formats and writes it out as an SP3 file at the given path.
 
-    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param str path: The path to write the SP3 file to.
     """
     content = gen_sp3_header(sp3_df) + gen_sp3_content(sp3_df) + "EOF"
@@ -919,7 +925,7 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     """Merges attributes of a list of sp3 dataframes into a single set of attributes.
 
     :param List[pd.DataFrame] df_list: The list of sp3 dataframes.
-    :return pd.Series: The merged attributes.
+    :return _pd.Series: The merged attributes.
     """
     df = _pd.concat(list(map(lambda obj: obj.attrs["HEADER"], df_list)), axis=1)
     mask_mixed = ~_gn_aux.unique_cols(df.loc["HEAD"])
@@ -957,7 +963,7 @@ def sp3merge(
     :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
 
-    :return _pd.DataFrame: The merged sp3 DataFrame.
+    :return _pd.DataFrame: The merged SP3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
     # Create a new attrs dictionary to be used for the output DataFrame
@@ -1059,12 +1065,11 @@ def sp3_hlm_trans(
     b: _pd.DataFrame,
 ) -> tuple[_pd.DataFrame, list]:
     """
-     Rotates sp3_b into sp3_a.
+    Rotates sp3_b into sp3_a.
 
-     :param _pd.DataFrame a: The sp3_a DataFrame.
-     :param _pd.DataFrame b: The sp3_b DataFrame.
-
-    :return tuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    :param _pd.DataFrame a: The sp3_a DataFrame.
+    :param _pd.DataFrame b: The sp3_b DataFrame.
+    :return tuple[_pd.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
     """
     hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
     b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
@@ -1084,7 +1089,7 @@ def diff_sp3_rac(
 
     :param _pd.DataFrame sp3_baseline: The baseline sp3 DataFrame.
     :param _pd.DataFrame sp3_test: The test sp3 DataFrame.
-    :param string hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
+    :param str hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
     :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation. Caution: cubic
            spline interpolation does not tolerate NaN / nodata values. Consider enabling use_offline_sat_removal if
            using cubic spline, or alternatively use poly interpolation by setting use_cubic_spline to False.

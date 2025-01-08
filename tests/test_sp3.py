@@ -127,6 +127,20 @@ class TestSp3(unittest.TestCase):
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
 
+    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
+    def test_gen_sp3_content_velocity_exception_handling(self, mock_file):
+        """
+        gen_sp3_content() velocity output should raise exception (currently unsupported).\
+            If asked to continue with warning, it should remove velocity columns before output.
+        """
+        sp3_df = sp3.read_sp3("mock_path", pOnly=False)
+        with self.assertRaises(NotImplementedError):
+            generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=False)
+
+        generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=True)
+        self.assertTrue("VX" not in generated_sp3_content, "Velocity data should be removed before outputting SP3")
+
+
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
         sp3.sp3_clock_nodata_to_nan(sp3_df)
@@ -293,10 +307,22 @@ class TestMergeSP3(TestCase):
     def setUp(self):
         self.setUpPyfakefs()
 
+    # Not sure if this is helpful
+    def tearDown(self):
+        self.tearDownPyfakefs()
+
     def test_sp3merge(self):
+        # Surprisingly, this reset step must be done explicitly. The fake filesystem is backed by the real one, and
+        # the temp directory used may retain files from a previous run!
+        self.fs.reset()
+
         # Create some fake files
         file_paths = ["/fake/dir/file1.sp3", "/fake/dir/file2.sp3"]
-        self.fs.create_file(file_paths[0], contents=input_data)
+        # Note this fails if the fake file has previously been created in the fakefs (which does actually exist somewhere on the real filesystem)
+        self.fs.create_file(
+            file_paths[0],
+            contents=input_data,
+        )
         self.fs.create_file(file_paths[1], contents=input_data2)
 
         # Call the function to test
