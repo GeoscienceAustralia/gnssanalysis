@@ -173,11 +173,15 @@ def extract_id_block(data: bytes, file_path: str, file_code: str, version: str =
     if version == None:
         version = determine_log_version(data)
 
+    print(f"Version is {version}")
+
     if version == "v1.0":
         _REGEX_ID = _REGEX_ID_V1
+        print("Reached here")
     elif version == "v2.0":
         _REGEX_ID = _REGEX_ID_V2
     else:
+        print("but also reached here")
         raise LogVersionError("Incorrect version string passed to the extract_id_block() function")
 
     id_block = _REGEX_ID.search(data)
@@ -260,14 +264,15 @@ def parse_igs_log(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
 
     try:
         version = determine_log_version(data)
+        print(f"File found to be version: {version}")
     except LogVersionError as e:
         logger.warning(f"Error: {e}, skipping parsing the log file")
         return
 
-    blk_id = extract_id_block(data, version, file_path, file_code)
-    blk_loc = extract_location_block(data, version, file_path)
-    blk_rec = extract_receiver_block(data, file_path)
-    blk_ant = extract_antenna_block(data, file_path)
+    blk_id = extract_id_block(data = data, file_path=file_path, file_code=file_code, version=version)
+    blk_loc = extract_location_block(data=data, file_path=file_path, version=version,)
+    blk_rec = extract_receiver_block(data=data, file_path=file_path)
+    blk_ant = extract_antenna_block(data=data, file_path=file_path)
 
     blk_loc = [group.decode(encoding="utf8", errors="ignore") for group in blk_loc.groups()]
     blk_rec = _np.asarray(blk_rec, dtype=str)
@@ -277,8 +282,8 @@ def parse_igs_log(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
     len_ants = blk_ant.shape[0]
 
     blk_id_loc = _np.asarray([0] + blk_id + blk_loc, dtype=object)[_np.newaxis]
-
-    code = [code]
+    
+    code = [blk_id[0]]
     blk_rec = _np.concatenate(
         [
             _np.asarray([1] * len_recs, dtype=object)[:, _np.newaxis],
