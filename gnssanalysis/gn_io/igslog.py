@@ -125,11 +125,11 @@ class LogVersionError(Exception):
     pass
 
 
-def find_recent_logs(logs_glob_path: str, rnx_glob_path: str = None) -> _pd.DataFrame:
+def find_recent_logs(logs_glob_path: str, rnx_glob_path: Union[str, None] = None) -> _pd.DataFrame:
     """Takes glob expression to create list of logs, parses names into site and date and selects most recent ones
 
     :param str logs_glob_path: A glob expression for log files, e.g. /data/station_logs_IGS/*/*.log
-    :param str rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
+    :param Union[str, None] rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
     :return _pd.DataFrame: Returns a dataframe containing information from all station logs processed
     """
     paths = _pd.Series(_glob.glob(pathname=logs_glob_path, recursive=False), name="PATH")
@@ -167,7 +167,7 @@ def ensure_supported_site_log_version(version_string: str):
 
 
 def determine_log_version(data: bytes) -> str:
-    """Given the byes object that results from reading an IGS log file, determine the version ("v1.0" or "v2.0")
+    """Given the byes object that results from reading an IGS site log file, determine the version e.g. "v1.0" or "v2.0"
 
     :param bytes data: IGS log file bytes object to determine the version of
     :return str: The version number string e.g. "v1.0", "v2.0", etc. Note: 'v1.0' is returned for version 1, which
@@ -209,7 +209,9 @@ def determine_log_version(data: bytes) -> str:
     return log_version_str
 
 
-def extract_id_block(data: bytes, file_path: str, file_code: str, version: str = None) -> Union[List[str], _np.array]:
+def extract_id_block(
+    data: bytes, file_path: str, file_code: str, version: Union[str, None] = None
+) -> Union[List[str], _np.ndarray]:
     """Extract the site ID block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
@@ -247,7 +249,7 @@ def extract_id_block(data: bytes, file_path: str, file_code: str, version: str =
     return id_block
 
 
-def extract_location_block(data: bytes, file_path: str, version: str = None) -> Union[_re.Match[bytes], _np.array]:
+def extract_location_block(data: bytes, file_path: str, version: Union[str, None] = None) -> _np.ndarray:
     """Extract the location block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
@@ -255,7 +257,7 @@ def extract_location_block(data: bytes, file_path: str, version: str = None) -> 
     :param str version: Version number of log file (e.g. "v2.0") - will be determined from input data unless
         provided here.
     :raises LogVersionError: Raises an error if an unknown version string is passed in
-    :return bytes: The location block of the IGS site log
+    :return _np.ndarray: The location block of the IGS site log, as a numpy NDArray of strings
     """
     if version == None:
         version = determine_log_version(data)  # Raises exception if version not supported
@@ -286,12 +288,13 @@ def extract_location_block(data: bytes, file_path: str, version: str = None) -> 
     return _np.asarray(match_group_strings)
 
 
-def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.array]:
+def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.ndarray]:
     """Extract the location block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :return List[Tuple[bytes]]: The receiver block of the data. Each list element specifies an receiver
+    :return List[Tuple[bytes]] or _np.ndarray: The receiver block of the data. Each list element specifies an receiver.
+        If regex doesn't match, an empty numpy NDArray is returned instead.
     """
     receiver_block = _REGEX_REC.findall(data)
     if receiver_block == []:
@@ -300,12 +303,13 @@ def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[byte
     return receiver_block
 
 
-def extract_antenna_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.array]:
+def extract_antenna_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.ndarray]:
     """Extract the antenna block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :return List[Tuple[bytes]]: The antenna block of the data. Each list element specifies an antenna
+    :return List[Tuple[bytes]] or _np.ndarray: The antenna block of the data. Each list element specifies an antenna.
+        If regex doesn't match, an empty numpy NDArray is returned instead.
     """
     antenna_block = _REGEX_ANT.findall(data)
     if antenna_block == []:
