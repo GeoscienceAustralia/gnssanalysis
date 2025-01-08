@@ -577,8 +577,8 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
 def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
     """Returns the velocity spline of the input dataframe.
 
-    :param DataFrame sp3Df: The input dataframe containing position data.
-    :return DataFrame: The dataframe containing the velocity spline.
+    :param _pd.DataFrame sp3Df: The input dataframe containing position data.
+    :return _pd.DataFrame: The dataframe containing the velocity spline.
 
     :caution :This function cannot handle *any* NaN / nodata / non-finite position values. By contrast, getVelPoly()
               is more forgiving, but accuracy of results, particulary in the presence of NaNs, has not been assessed.
@@ -599,9 +599,9 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     """
     Interpolates the positions for -1s and +1s in the sp3_df DataFrame and outputs velocities.
 
-    :param DataFrame sp3Df: A pandas DataFrame containing the sp3 data.
+    :param _pd.DataFrame sp3Df: A pandas DataFrame containing the sp3 data.
     :param int deg: Degree of the polynomial fit. Default is 35.
-    :return DataFrame: A pandas DataFrame with the interpolated velocities added as a new column.
+    :return _pd.DataFrame: A pandas DataFrame with the interpolated velocities added as a new column.
 
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
@@ -957,7 +957,7 @@ def sp3merge(
     :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
 
-    :return DataFrame: The merged sp3 DataFrame.
+    :return _pd.DataFrame: The merged sp3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
     # Create a new attrs dictionary to be used for the output DataFrame
@@ -998,12 +998,12 @@ def trim_df(
     """
     Trim data from the start and end of an sp3 dataframe
 
-    :param DataFrame sp3_df: The input SP3 DataFrame.
+    :param _pd.DataFrame sp3_df: The input SP3 DataFrame.
     :param timedelta trim_start: Amount of time to trim off the start of the dataframe.
     :param timedelta trim_end: Amount of time to trim off the end of the dataframe.
     :param Optional[timedelta] keep_first_delta_amount: If supplied, trim the dataframe to this length. Not
         compatible with trim_start and trim_end.
-    :return DataFrame: Dataframe trimmed to the requested time range, or requested initial amount
+    :return _pd.DataFrame: Dataframe trimmed to the requested time range, or requested initial amount
 
     """
     time_axis = sp3_df.index.get_level_values(0)
@@ -1035,12 +1035,12 @@ def trim_to_first_n_epochs(
     """
     Utility function to trim an SP3 dataframe to the first n epochs, given either the filename, or sample rate
 
-    :param DataFrame sp3_df: The input SP3 DataFrame.
+    :param _pd.DataFrame sp3_df: The input SP3 DataFrame.
     :param int epoch_count: Trim to this many epochs from start of SP3 data (i.e. first n epochs).
     :param Optional[str] sp3_filename: Name of SP3 file, just used to derive sample_rate.
     :param Optional[timedelta] sp3_sample_rate: Sample rate of the SP3 data. Alternatively this can be
         derived from a filename.
-    :return DataFrame: Dataframe trimmed to the requested number of epochs.
+    :return _pd.DataFrame: Dataframe trimmed to the requested number of epochs.
     """
     sample_rate = sp3_sample_rate
     if not sample_rate:
@@ -1061,8 +1061,8 @@ def sp3_hlm_trans(
     """
      Rotates sp3_b into sp3_a.
 
-     :param DataFrame a: The sp3_a DataFrame.
-     :param DataFrame b : The sp3_b DataFrame.
+     :param _pd.DataFrame a: The sp3_a DataFrame.
+     :param _pd.DataFrame b: The sp3_b DataFrame.
 
     :return tuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
     """
@@ -1082,8 +1082,8 @@ def diff_sp3_rac(
     """
     Computes the difference between the two sp3 files in the radial, along-track and cross-track coordinates.
 
-    :param DataFrame sp3_baseline: The baseline sp3 DataFrame.
-    :param DataFrame sp3_test: The test sp3 DataFrame.
+    :param _pd.DataFrame sp3_baseline: The baseline sp3 DataFrame.
+    :param _pd.DataFrame sp3_test: The test sp3 DataFrame.
     :param string hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
     :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation. Caution: cubic
            spline interpolation does not tolerate NaN / nodata values. Consider enabling use_offline_sat_removal if
@@ -1091,7 +1091,7 @@ def diff_sp3_rac(
     :param bool use_offline_sat_removal: Flag indicating whether to remove satellites which are offline / have some
            nodata position values. Caution: ensure you turn this on if using cubic spline interpolation with data
            which may have holes in it (nodata).
-    :return DataFrame: The DataFrame containing the difference in RAC coordinates.
+    :return _pd.DataFrame: The DataFrame containing the difference in RAC coordinates.
     """
     hlm_modes = [None, "ECF", "ECI"]
     if hlm_mode not in hlm_modes:
