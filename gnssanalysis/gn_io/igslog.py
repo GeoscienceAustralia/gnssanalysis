@@ -16,6 +16,11 @@ from .. import gn_transform as _gn_transform
 
 logger = logging.getLogger(__name__)
 
+# Defines what IGS Site Log format versions we currently support.
+# Example logs for the first two versions can be found at:
+# Version 1: https://files.igs.org/pub/station/general/blank.log
+# Version 2: https://files.igs.org/pub/station/general/blank_v2.0.log
+
 _REGEX_LOG_VERSION_1 = _re.compile(rb"""(site log\))""")
 _REGEX_LOG_VERSION_2 = _re.compile(rb"""(site log v2.0)""")
 
