@@ -153,11 +153,14 @@ def determine_log_version(data: bytes) -> str:
     :return str: Return the version number: "v1.0" or "v2.0" (or "Unknown" if file does not conform to standard)
     """
 
-    result_v1 = _REGEX_LOG_VERSION_1.search(data)
+    # Remove leading newline if present, to be safe, then truncate to first line
+    first_line_bytes = data.lstrip(b"\n").split(b"\n")[0]
+
+    result_v1 = _REGEX_LOG_VERSION_1.search(first_line_bytes)
     if result_v1:
         return "v1.0"
 
-    result_v2 = _REGEX_LOG_VERSION_2.search(data)
+    result_v2 = _REGEX_LOG_VERSION_2.search(first_line_bytes)
     if result_v2:
         return "v2.0"
 
