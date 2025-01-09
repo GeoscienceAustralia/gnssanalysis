@@ -342,12 +342,123 @@ def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Opt
         return "Data passed as bytes: no path available"
 
 
+def try_get_sp3_filename(path_or_bytes: Union[str, Path, bytes]) -> Union[str, None]:
+    """
+    Utility for validation during parsing. Attempts to pull the filename from the path or bytes SP3 source.
+    :param Union[str, Path, bytes] path_or_bytes: path or bytes SP3 source to try and get filename from
+    :return Union[str, None]: filename if able to extract, otherwise `None`
+    """
+    if isinstance(path_or_bytes, bytes):
+        return None
+
+    if isinstance(path_or_bytes, Path):
+        return path_or_bytes.name
+
+    if isinstance(path_or_bytes, str):
+        return path_or_bytes.rsplit("/")[-1]
+
+    logger.warning("sp3_path_or_bytes was of an unexpected type. Filename not extracted")
+    return None
+
+
+def check_epoch_counts_for_discrepancies(
+    draft_sp3_df: _pd.DataFrame,
+    parsed_sp3_header: _pd.Series,
+    sp3_path_or_bytes: Union[Path, str, bytes, None] = None,
+    continue_on_error: bool = True,
+):
+    """
+    Utility function for use during SP3 parsing. Checks for discrepancies in the number of epochs the SP3 header
+    states are there, how many *unique* epochs exist in the content, and how many epochs we would expect based on
+    the period and sample_rate specified in the SP3 filename (if available to check - not possible when reading
+    from bytes object rather than filepath)
+
+    :param _pd.DataFrame draft_sp3_df: the work-in-progress dataframe currently being parsed. Used to access
+        indexes. Header is not added till late in parsing, so it is passed in separately.
+    :param _pd.Series parsed_sp3_header: draft SP3 header, passed in separately as it gets added to the DataFrame
+        later in the SP3 reading process.
+    :param Union[Path, str, bytes, None] sp3_path_or_bytes: representation of the source SP3 file path or binary data,
+        used to determine whether a filename can be found, and extract it if so.
+
+    :raises ValueError: if discrepancies found in number of epochs indicated by SP3 filename/header/contents
+    """
+    sp3_filename: Union[str, None] = None
+    if sp3_path_or_bytes is not None:
+        sp3_filename = try_get_sp3_filename(sp3_path_or_bytes)
+
+    # Could potentially check has_duplicates first for speed?
+    content_unique_epoch_count = draft_sp3_df.index.get_level_values(0).unique().size
+    # content_total_epoch_count = draft_sp3_df.index.get_level_values(0).size
+
+    header_epoch_count = int(parsed_sp3_header.HEAD.N_EPOCHS)
+
+    if content_unique_epoch_count != header_epoch_count:
+        if not continue_on_error:
+            raise ValueError(
+                f"Header says there should be {header_epoch_count} epochs, however there are "
+                f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
+            )
+        logger.warning(
+            f"Header says there should be {header_epoch_count} epochs, however there are "
+            f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
+        )
+
+    if not sp3_filename:
+        logger.info("SP3 filename not available to check for epoch count discrepancies, continuing")
+        return
+    # Filename available to validate
+    # Derive epoch count from filename period(as timedelta) / filename sampeleRate(as timedelta).
+    # We shouldn't need sample rate to check for off by one as we're working in epochs this time.
+    filename_derived_epoch_count: Union[int, None] = None
+
+    # Try extracting properties from filename
+    try:
+        filename_props: dict = filenames.determine_properties_from_filename(sp3_filename)
+        filename_timespan_timedelta = filename_props.get("timespan")
+        if not isinstance(filename_timespan_timedelta, timedelta):
+            raise KeyError(f"Failed to get timespan from filename '{sp3_filename}'")
+
+        filename_sample_rate = filename_props.get("sampling_rate")
+        if not isinstance(filename_sample_rate, str):
+            raise KeyError(f"Failed to get sampling_rate from filename '{sp3_filename}'")
+
+        filename_sample_rate_timedelta = filenames.convert_nominal_span(filename_sample_rate)
+        filename_derived_epoch_count = int(
+            timedelta(
+                seconds=filename_timespan_timedelta.total_seconds() / filename_sample_rate_timedelta.total_seconds()
+            ).total_seconds()
+        )
+    except Exception as e:
+        logger.warning("Failed to extract filename properties to validate against header / contents: ", e)
+        return
+
+    # Now for the actual checks.
+    # Check if the header states a number of epochs equal to (or one less than) the filename period implies
+    # Note filename is allowed to indicate a period one epoch longer than the data. E.g. 01D can end at 23:55
+    # if in 5 min epochs.
+    if header_epoch_count not in (filename_derived_epoch_count, filename_derived_epoch_count - 1):
+        if not continue_on_error:
+            raise ValueError(
+                f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+                f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
+            )
+        logger.warning(
+            f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+            f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
+        )
+    # All good, validation passed.
+
+
 def read_sp3(
     sp3_path_or_bytes: Union[str, Path, bytes],
     pOnly: bool = True,
     nodata_to_nan: bool = True,
     drop_offline_sats: bool = False,
     continue_on_ep_ev_encountered: bool = True,
+    check_header_vs_filename_vs_content_discrepancies: bool = False,
+    # These only apply when the above is enabled:
+    skip_filename_in_discrepancy_check: bool = False,
+    continue_on_discrepancies: bool = False,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -360,6 +471,13 @@ def read_sp3(
     :param bool continue_on_ep_ev_encountered: If True, logs a warning and continues if EV or EP rows are found in
             the input SP3. These are currently unsupported by this function and will be ignored. Set to false to
             raise a NotImplementedError instead.
+    :param bool check_header_vs_filename_vs_content_discrepancies: enable discrepancy checks on SP3 content vs
+        header vs filename.
+    :param bool continue_on_discrepancies: (Only applicable with check_header_vs_filename_vs_content_discrepancies)
+        If True, logs a warning and continues if major discrepancies are detected between the SP3 content, SP3 header,
+        and SP3 filename (if available). Set to false to raise a ValueError instead.
+    :param bool skip_filename_in_discrepancy_check: If discrepancy checks enabled (see above), this allows skipping
+        the filename part of the checks, even if filename is available.
     :return _pd.DataFrame: The SP3 data as a DataFrame.
     :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
     :raises Exception: For other errors reading SP3 file/bytes
@@ -396,10 +514,40 @@ def read_sp3(
     date_lines, data_blocks = _split_sp3_content(content)
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
-    # Check that count of SVs from header matches number of unique SVs we read in.
-    df_sv_count = sp3_df.index.get_level_values(1).unique().size
-    if header_sv_count != df_sv_count:
-        logger.warning(f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!")
+
+    # Are we running discrepancy checks?
+    if check_header_vs_filename_vs_content_discrepancies:
+        # SV count discrepancy check
+
+        # Check that count of SVs from header matches number of unique SVs we read in.
+        # To determine the unique SVs in the content we:
+        # 1. Index into the work-in-progress sp3 dataframe, filtering out anything where the PV flag is E (these entries
+        #   contain EP or EV data, not the name of an SV).
+        # 2. Get the index from that, filter down to level 1 (which has the SVs).
+        # 3. Make these SVs unique (as when you have P and V data, you will get two copies of every SV).
+        # 4. Get the size of this index, to determine the total number of unique SVs in the SP3 content.
+        df_sv_count = (
+            sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique().size
+        )
+        if header_sv_count != df_sv_count:
+            if not continue_on_discrepancies:
+                raise ValueError(
+                    f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!"
+                )
+            logger.warning(
+                f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!"
+            )
+
+        # Epoch count discrepancy check
+        # Are we including the filename in the check?
+        path_bytes_to_pass = None if skip_filename_in_discrepancy_check else sp3_path_or_bytes
+        check_epoch_counts_for_discrepancies(
+            draft_sp3_df=sp3_df,
+            parsed_sp3_header=parsed_header,
+            sp3_path_or_bytes=path_bytes_to_pass,
+            continue_on_error=continue_on_discrepancies,
+        )
+
     if drop_offline_sats:
         sp3_df = remove_offline_sats(sp3_df)
     if nodata_to_nan:

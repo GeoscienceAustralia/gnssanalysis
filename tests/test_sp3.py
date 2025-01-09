@@ -125,6 +125,19 @@ class TestSp3(unittest.TestCase):
         end_line2_acc = sv_info.iloc[29]
         self.assertEqual(end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18")
 
+    @patch("builtins.open", new_callable=mock_open, read_data=sp3_test_data_cod_broken_missing_sv_in_content)
+    def test_read_sp3_validation_sv_count_mismatch_header_vs_content(self, mock_file):
+        with self.assertRaises(ValueError) as context_manager:
+            result = sp3.read_sp3(
+                "COD0OPSFIN_20242010000_10M_05M_ORB.SP3",
+                pOnly=False,
+                check_header_vs_filename_vs_content_discrepancies=True,  # Actually enable the checks for this one
+            )
+        self.assertEqual(
+            str(context_manager.exception),  # What did the exception message say?
+            "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
+            "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
+        )
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
