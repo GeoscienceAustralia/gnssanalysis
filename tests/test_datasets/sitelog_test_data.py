@@ -1,6 +1,6 @@
 # Central record of IGS site log test data sets to be shared across unit tests
 
-# first dataset is a truncated version of file abmf_20240710.log
+# Dataset below is a truncated version of file abmf_20240710.log
 
 abmf_site_log_v1 = bytes(
     """
@@ -165,6 +165,8 @@ abmf_site_log_v1 = bytes(
     "utf-8",
 )
 
+# Dataset below is a truncated version of file abmf00glp_20240710.log
+
 abmf_site_log_v2 = bytes(
     """
      ABMF00GLP Site Information Form (site log v2.0)
@@ -327,6 +329,8 @@ abmf_site_log_v2 = bytes(
     """,
     "utf-8",
 )
+
+# Dataset below is a truncated version of file aggo00arg_20230608.log
 
 aggo_site_log_v2 = bytes(
     """
