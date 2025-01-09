@@ -16,6 +16,14 @@ from .. import gn_transform as _gn_transform
 
 logger = logging.getLogger(__name__)
 
+# Defines what IGS Site Log format versions we currently support.
+# Example logs for the first two versions can be found at:
+# Version 1: https://files.igs.org/pub/station/general/blank.log
+# Version 2: https://files.igs.org/pub/station/general/blank_v2.0.log
+
+_REGEX_LOG_VERSION_1 = _re.compile(rb"""(site log\))""")
+_REGEX_LOG_VERSION_2 = _re.compile(rb"""(site log v2.0)""")
+
 _REGEX_ID_V1 = _re.compile(
     rb"""
     (?:Four\sCharacter\sID|Site\sID)\s+\:\s*(\w{4}).*\W+
@@ -113,11 +121,11 @@ class LogVersionError(Exception):
     pass
 
 
-def find_recent_logs(logs_glob_path: str, rnx_glob_path: str = None) -> _pd.DataFrame:
+def find_recent_logs(logs_glob_path: str, rnx_glob_path: Union[str, None] = None) -> _pd.DataFrame:
     """Takes glob expression to create list of logs, parses names into site and date and selects most recent ones
 
     :param str logs_glob_path: A glob expression for log files, e.g. /data/station_logs_IGS/*/*.log
-    :param str rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
+    :param Union[str, None] rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
     :return _pd.DataFrame: Returns a dataframe containing information from all station logs processed
     """
     paths = _pd.Series(_glob.glob(pathname=logs_glob_path, recursive=False), name="PATH")
@@ -138,10 +146,6 @@ def find_recent_logs(logs_glob_path: str, rnx_glob_path: str = None) -> _pd.Data
     return recent_logs_df
 
 
-_REGEX_VERSION_1 = _re.compile(rb"""(site log\))""")
-_REGEX_VERSION_2 = _re.compile(rb"""(site log v2)""")
-
-
 def determine_log_version(data: bytes) -> str:
     """Given the byes object that results from reading an IGS log file, determine the version ("v1.0" or "v2.0")
 
@@ -149,18 +153,23 @@ def determine_log_version(data: bytes) -> str:
     :return str: Return the version number: "v1.0" or "v2.0" (or "Unknown" if file does not conform to standard)
     """
 
-    result_v1 = _REGEX_VERSION_1.search(data)
+    # Remove leading newline if present, to be safe, then truncate to first line
+    first_line_bytes = data.lstrip(b"\n").split(b"\n")[0]
+
+    result_v1 = _REGEX_LOG_VERSION_1.search(first_line_bytes)
     if result_v1:
         return "v1.0"
 
-    result_v2 = _REGEX_VERSION_2.search(data)
+    result_v2 = _REGEX_LOG_VERSION_2.search(first_line_bytes)
     if result_v2:
         return "v2.0"
 
-    raise LogVersionError("Log file does not conform to any known IGS version")
+    raise LogVersionError(f"File does not conform to any known IGS Site Log version. First line is: {first_line_bytes}")
 
 
-def extract_id_block(data: bytes, file_path: str, file_code: str, version: str = None) -> Union[List[str], _np.array]:
+def extract_id_block(
+    data: bytes, file_path: str, file_code: str, version: Union[str, None] = None
+) -> Union[List[str], _np.ndarray]:
     """Extract the site ID block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
@@ -178,7 +187,7 @@ def extract_id_block(data: bytes, file_path: str, file_code: str, version: str =
     elif version == "v2.0":
         _REGEX_ID = _REGEX_ID_V2
     else:
-        raise LogVersionError("Incorrect version string passed to the extract_id_block() function")
+        raise LogVersionError(f"Incorrect version string '{version}' passed to the extract_id_block() function")
 
     id_block = _REGEX_ID.search(data)
     if id_block is None:
@@ -193,14 +202,15 @@ def extract_id_block(data: bytes, file_path: str, file_code: str, version: str =
     return id_block
 
 
-def extract_location_block(data: bytes, file_path: str, version: str = None) -> Union[_re.Match[bytes], _np.array]:
+def extract_location_block(data: bytes, file_path: str, version: Union[str, None] = None) -> _np.ndarray:
     """Extract the location block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :param str version: Version number of log file (e.g. "v2.0") - determined if version=None, defaults to None
+    :param str version: Version number of log file (e.g. "v2.0") - will be determined from input data unless
+        provided here.
     :raises LogVersionError: Raises an error if an unknown version string is passed in
-    :return bytes: The location block of the IGS site log
+    :return _np.ndarray: The location block of the IGS site log, as a numpy NDArray of strings
     """
     if version == None:
         version = determine_log_version(data)
@@ -210,7 +220,7 @@ def extract_location_block(data: bytes, file_path: str, version: str = None) -> 
     elif version == "v2.0":
         _REGEX_LOC = _REGEX_LOC_V2
     else:
-        raise LogVersionError("Incorrect version string passed to extract_location_block() function")
+        raise LogVersionError(f"Incorrect version string '{version}' passed to extract_location_block() function")
 
     location_block = _REGEX_LOC.search(data)
     if location_block is None:
@@ -219,12 +229,13 @@ def extract_location_block(data: bytes, file_path: str, version: str = None) -> 
     return location_block
 
 
-def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.array]:
+def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.ndarray]:
     """Extract the location block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :return List[Tuple[bytes]]: The receiver block of the data. Each list element specifies an receiver
+    :return List[Tuple[bytes]] or _np.ndarray: The receiver block of the data. Each list element specifies an receiver.
+        If regex doesn't match, an empty numpy NDArray is returned instead.
     """
     receiver_block = _REGEX_REC.findall(data)
     if receiver_block == []:
@@ -233,12 +244,13 @@ def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[byte
     return receiver_block
 
 
-def extract_antenna_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.array]:
+def extract_antenna_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.ndarray]:
     """Extract the antenna block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :return List[Tuple[bytes]]: The antenna block of the data. Each list element specifies an antenna
+    :return List[Tuple[bytes]] or _np.ndarray: The antenna block of the data. Each list element specifies an antenna.
+        If regex doesn't match, an empty numpy NDArray is returned instead.
     """
     antenna_block = _REGEX_ANT.findall(data)
     if antenna_block == []:
@@ -247,38 +259,38 @@ def extract_antenna_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes
     return antenna_block
 
 
-def parse_igs_log(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
-    """Parses igs log and outputs ndarray with parsed data
+def parse_igs_log_data(data: bytes, file_path: str, file_code: str) -> Union[_np.ndarray, None]:
+    """Given the bytes object returned opening a IGS log file, parse to produce an ndarray with relevant data
 
-    :param _np.ndarray filename_array: Metadata on input log file. Expects ndarray of the form [CODE DATE PATH]
-    :return _np.ndarray: Returns array with data from the IGS log file parsed
+    :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
+    :param str file_path: The path to the file from which the "data" bytes object was obtained
+    :param str file_code: Code from the filename_array passed to the parse_igs_log() function
+    :return Union[_np.ndarray, None]: Returns array with relevant data from the IGS log file bytes object,
+        or `None` for unsupported version of the IGS Site log format.
     """
-    file_code, _, file_path = filename_array
-
-    with open(file_path, "rb") as file:
-        data = file.read()
-
+    # Determine the version of the IGS log based on the data, Warn if unrecognised
     try:
         version = determine_log_version(data)
     except LogVersionError as e:
         logger.warning(f"Error: {e}, skipping parsing the log file")
-        return
+        return None
 
-    blk_id = extract_id_block(data, version, file_path, file_code)
-    blk_loc = extract_location_block(data, version, file_path)
-    blk_rec = extract_receiver_block(data, file_path)
-    blk_ant = extract_antenna_block(data, file_path)
-
+    # Extract information from ID block
+    blk_id = extract_id_block(data=data, file_path=file_path, file_code=file_code, version=version)
+    code = [blk_id[0]]  # Site code
+    # Extract information from Location block
+    blk_loc = extract_location_block(
+        data=data,
+        file_path=file_path,
+        version=version,
+    )
     blk_loc = [group.decode(encoding="utf8", errors="ignore") for group in blk_loc.groups()]
-    blk_rec = _np.asarray(blk_rec, dtype=str)
-    blk_ant = _np.asarray(blk_ant, dtype=str)
-
-    len_recs = blk_rec.shape[0]
-    len_ants = blk_ant.shape[0]
-
+    # Combine ID and Location information:
     blk_id_loc = _np.asarray([0] + blk_id + blk_loc, dtype=object)[_np.newaxis]
-
-    code = [code]
+    # Extract and re-format information from receiver block:
+    blk_rec = extract_receiver_block(data=data, file_path=file_path)
+    blk_rec = _np.asarray(blk_rec, dtype=str)
+    len_recs = blk_rec.shape[0]
     blk_rec = _np.concatenate(
         [
             _np.asarray([1] * len_recs, dtype=object)[:, _np.newaxis],
@@ -287,6 +299,10 @@ def parse_igs_log(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
         ],
         axis=1,
     )
+    # Extract and re-format information from antenna block:
+    blk_ant = extract_antenna_block(data=data, file_path=file_path)
+    blk_ant = _np.asarray(blk_ant, dtype=str)
+    len_ants = blk_ant.shape[0]
     blk_ant = _np.concatenate(
         [
             _np.asarray([2] * len_ants, dtype=object)[:, _np.newaxis],
@@ -295,9 +311,26 @@ def parse_igs_log(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
         ],
         axis=1,
     )
+    # Create unified information block:
     blk_uni = _np.concatenate([blk_id_loc, blk_rec, blk_ant], axis=0)
     file_path_arr = _np.asarray([file_path] * (1 + len_ants + len_recs))[:, _np.newaxis]
     return _np.concatenate([blk_uni, file_path_arr], axis=1)
+
+
+def parse_igs_log_file(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
+    """Reads igs log file and outputs ndarray with parsed data
+
+    :param _np.ndarray filename_array: Metadata on input log file. Expects ndarray of the form [CODE DATE PATH]
+    :return Union[_np.ndarray, None]: Returns array with data from the parsed IGS log file, or `None` for unsupported
+        version of the IGS Site log format.
+    """
+    # Split filename_array out into its three components (CODE, DATE, PATH), discarding the second element (DATE):
+    file_code, _, file_path = filename_array
+
+    with open(file_path, "rb") as file:
+        data = file.read()
+
+    return parse_igs_log_data(data=data, file_path=file_path, file_code=file_code)
 
 
 def igslogdate2datetime64(stacked_rec_ant_dt: _np.ndarray) -> _np.datetime64:
@@ -378,10 +411,10 @@ def gather_metadata(
     if num_threads == 1:
         gather = []
         for file in parsed_filenames:
-            gather.append(parse_igs_log(file))
+            gather.append(parse_igs_log_file(file))
     else:
         with _Pool(processes=num_threads) as pool:
-            gather = list(pool.imap_unordered(parse_igs_log, parsed_filenames))
+            gather = list(pool.imap_unordered(parse_igs_log_file, parsed_filenames))
 
     gather_raw = _np.concatenate(gather)
 
