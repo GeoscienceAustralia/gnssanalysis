@@ -257,14 +257,15 @@ def parse_igs_log_data(data: bytes, file_path: str, file_code: str) -> Union[_np
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
     :param str file_code: Code from the filename_array passed to the parse_igs_log() function
-    :return Union[_np.ndarray, None]: Returns array with relevant data from the IGS log file bytes object
+    :return Union[_np.ndarray, None]: Returns array with relevant data from the IGS log file bytes object,
+        or `None` for unsupported version of the IGS Site log format.
     """
     # Determine the version of the IGS log based on the data, Warn if unrecognised
     try:
         version = determine_log_version(data)
     except LogVersionError as e:
         logger.warning(f"Error: {e}, skipping parsing the log file")
-        return
+        return None
 
     # Extract information from ID block
     blk_id = extract_id_block(data=data, file_path=file_path, file_code=file_code, version=version)
@@ -312,8 +313,10 @@ def parse_igs_log_file(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
     """Reads igs log file and outputs ndarray with parsed data
 
     :param _np.ndarray filename_array: Metadata on input log file. Expects ndarray of the form [CODE DATE PATH]
-    :return _np.ndarray: Returns array with data from the parsed IGS log file
+    :return Union[_np.ndarray, None]: Returns array with data from the parsed IGS log file, or `None` for unsupported
+        version of the IGS Site log format.
     """
+    # Split filename_array out into its three components (CODE, DATE, PATH), discarding the second element (DATE):
     file_code, _, file_path = filename_array
 
     with open(file_path, "rb") as file:

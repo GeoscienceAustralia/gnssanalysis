@@ -132,6 +132,7 @@ class TestFileParsing(TestCase):
         self.setUpPyfakefs()
 
     def test_gather_metadata(self):
+        self.fs.reset()  # Ensure fake filesystem is cleared from any previous tests, as it is backed by real filesystem.
         # Create some fake files
         file_paths = ["/fake/dir/abmf.log", "/fake/dir/aggo.log"]
         self.fs.create_file(file_paths[0], contents=v2_data)
