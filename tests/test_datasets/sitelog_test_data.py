@@ -3,8 +3,7 @@
 # Dataset below is a truncated version of file abmf_20240710.log
 
 abmf_site_log_v1 = bytes(
-    """
-     ABMF Site Information Form (site log)
+    """     ABMF Site Information Form (site log)
      International GNSS Service
      See Instructions at:
        https://files.igs.org/pub/station/general/sitelog_instr.txt
@@ -168,8 +167,7 @@ abmf_site_log_v1 = bytes(
 # Dataset below is a truncated version of file abmf00glp_20240710.log
 
 abmf_site_log_v2 = bytes(
-    """
-     ABMF00GLP Site Information Form (site log v2.0)
+    """     ABMF00GLP Site Information Form (site log v2.0)
      International GNSS Service
      See Instructions at:
        https://files.igs.org/pub/station/general/sitelog_instr_v2.0.txt
@@ -333,8 +331,7 @@ abmf_site_log_v2 = bytes(
 # Dataset below is a truncated version of file aggo00arg_20230608.log
 
 aggo_site_log_v2 = bytes(
-    """
-     AGGO00ARG Site Information Form (site log v2.0)
+    """     AGGO00ARG Site Information Form (site log v2.0)
      International GNSS Service
      See Instructions at:
        https://files.igs.org/pub/station/general/sitelog_instr_v2.0.txt
