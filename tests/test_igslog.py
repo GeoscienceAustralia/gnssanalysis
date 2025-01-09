@@ -2,7 +2,11 @@ import unittest
 from pyfakefs.fake_filesystem_unittest import TestCase
 
 from gnssanalysis.gn_io import igslog
-from test_datasets.sitelog_test_data import abmf_site_log_v1 as v1_data, abmf_site_log_v2 as v2_data
+from test_datasets.sitelog_test_data import (
+    abmf_site_log_v1 as v1_data,
+    abmf_site_log_v2 as v2_data,
+    aggo_site_log_v2 as aggo_v2_data,
+)
 
 
 class TestRegex(unittest.TestCase):
@@ -129,23 +133,27 @@ class TestFileParsing(TestCase):
 
     def test_gather_metadata(self):
         # Create some fake files
-        file_paths = ["/fake/dir/v1/abmf-v1.log", "/fake/dir/v2/abmf-v2.log"]
-        self.fs.create_file(file_paths[0], contents=v1_data)
-        self.fs.create_file(file_paths[1], contents=v2_data)
+        file_paths = ["/fake/dir/abmf.log", "/fake/dir/aggo.log"]
+        self.fs.create_file(file_paths[0], contents=v2_data)
+        self.fs.create_file(file_paths[1], contents=aggo_v2_data)
 
-        # Call gather_metadata to grab log files - Version 2 file will be ignored - same station
-        result = igslog.gather_metadata(logs_glob_path="/fake/dir/*/*")
+        # Call gather_metadata to grab log files for two stations
+        result = igslog.gather_metadata(logs_glob_path="/fake/dir/*")
 
         # Test that various data has been read correctly:
-        # CODE
-        self.assertEqual(result[0].CODE[0], "ABMF")
-        # Country - V1
-        self.assertEqual(result[0].COUNTRY[0], "GUADELOUPE")
-        # Last Receiver
-        self.assertEqual(result[1].RECEIVER[2], "SEPT POLARX5")
-        # Last Receiver start time:
-        self.assertEqual(result[1].BEGIN_RAW[2], "2019-10-01T16:00Z")
-        # Last Receiver end time:
-        self.assertEqual(result[1].END_RAW[2], "")
-        # First Antenna serial number:
-        self.assertEqual(result[2]["S/N"][0], "5546")
+        # ID/Location Info: test CODE and Country / region
+        id_loc_results = result[0]
+        self.assertEqual(id_loc_results.CODE[0], "ABMF")
+        self.assertEqual(id_loc_results.COUNTRY[0], "GLP")
+        self.assertEqual(id_loc_results.CODE[1], "AGGO")
+        self.assertEqual(id_loc_results.COUNTRY[1], "ARG")
+        # Receiver info: test a couple receivers
+        receiver_results = result[1]
+        record_0 = receiver_results.loc[0]
+        record_3 = receiver_results.loc[3]
+        self.assertEqual(record_0.RECEIVER, "LEICA GR25")
+        self.assertEqual(record_0.END_RAW, "2019-04-15T12:00Z")
+        self.assertEqual(record_3.RECEIVER, "SEPT POLARX4TR")
+        self.assertEqual(record_3.CODE, "AGGO")
+        # Antenna info: test for antenna serial number
+        self.assertEqual(result[2]["S/N"][4], "726722")
