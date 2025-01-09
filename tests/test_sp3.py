@@ -15,10 +15,12 @@ from test_datasets.sp3_test_data import (
     # Expected content section we want gnssanalysis to write out
     expected_sp3_output_igs_benchmark_null_clock,
     # Test exception raising when encountering EP, EV rows
-    sp3_test_data_ep_ev_rows,
+    sp3c_example2_data,
     # second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
     sp3_test_data_truncated_cod_final as input_data2,
     sp3_test_data_partially_offline_sat as offline_sat_test_data,
+    # For header vs content validation tests:
+    sp3_test_data_cod_broken_missing_sv_in_content,
 )
 
 
@@ -60,7 +62,7 @@ class TestSp3(unittest.TestCase):
         self.assertEqual(result.attrs["HEADER"]["HEAD"]["DATETIME"], "2007  4 12  0  0  0.00000000")
         self.assertEqual(result.index[0][0], 229608000)  # Same date, as J2000
 
-    @patch("builtins.open", new_callable=mock_open, read_data=sp3_test_data_ep_ev_rows)
+    @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
     def test_read_sp3_pv_with_ev_ep_rows(self, mock_file):
         # Expect exception relating to the EV and EP rows, as we can't currently handle them properly.
         self.assertRaises(
@@ -139,7 +141,6 @@ class TestSp3(unittest.TestCase):
 
         generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=True)
         self.assertTrue("VX" not in generated_sp3_content, "Velocity data should be removed before outputting SP3")
-
 
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
