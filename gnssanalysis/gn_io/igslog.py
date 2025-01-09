@@ -164,7 +164,7 @@ def determine_log_version(data: bytes) -> str:
     if result_v2:
         return "v2.0"
 
-    raise LogVersionError("Log file does not conform to any known IGS version")
+    raise LogVersionError(f"File does not conform to any known IGS Site Log version. First line is: {first_line_bytes}")
 
 
 def extract_id_block(data: bytes, file_path: str, file_code: str, version: str = None) -> Union[List[str], _np.array]:
@@ -185,7 +185,7 @@ def extract_id_block(data: bytes, file_path: str, file_code: str, version: str =
     elif version == "v2.0":
         _REGEX_ID = _REGEX_ID_V2
     else:
-        raise LogVersionError("Incorrect version string passed to the extract_id_block() function")
+        raise LogVersionError(f"Incorrect version string '{version}' passed to the extract_id_block() function")
 
     id_block = _REGEX_ID.search(data)
     if id_block is None:
@@ -217,7 +217,7 @@ def extract_location_block(data: bytes, file_path: str, version: str = None) -> 
     elif version == "v2.0":
         _REGEX_LOC = _REGEX_LOC_V2
     else:
-        raise LogVersionError("Incorrect version string passed to extract_location_block() function")
+        raise LogVersionError(f"Incorrect version string '{version}' passed to extract_location_block() function")
 
     location_block = _REGEX_LOC.search(data)
     if location_block is None:
