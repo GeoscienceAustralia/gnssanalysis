@@ -16,6 +16,9 @@ from .. import gn_transform as _gn_transform
 
 logger = logging.getLogger(__name__)
 
+_REGEX_LOG_VERSION_1 = _re.compile(rb"""(site log\))""")
+_REGEX_LOG_VERSION_2 = _re.compile(rb"""(site log v2.0)""")
+
 _REGEX_ID_V1 = _re.compile(
     rb"""
     (?:Four\sCharacter\sID|Site\sID)\s+\:\s*(\w{4}).*\W+
@@ -138,10 +141,6 @@ def find_recent_logs(logs_glob_path: str, rnx_glob_path: str = None) -> _pd.Data
     return recent_logs_df
 
 
-_REGEX_VERSION_1 = _re.compile(rb"""(site log\))""")
-_REGEX_VERSION_2 = _re.compile(rb"""(site log v2)""")
-
-
 def determine_log_version(data: bytes) -> str:
     """Given the byes object that results from reading an IGS log file, determine the version ("v1.0" or "v2.0")
 
@@ -149,11 +148,11 @@ def determine_log_version(data: bytes) -> str:
     :return str: Return the version number: "v1.0" or "v2.0" (or "Unknown" if file does not conform to standard)
     """
 
-    result_v1 = _REGEX_VERSION_1.search(data)
+    result_v1 = _REGEX_LOG_VERSION_1.search(data)
     if result_v1:
         return "v1.0"
 
-    result_v2 = _REGEX_VERSION_2.search(data)
+    result_v2 = _REGEX_LOG_VERSION_2.search(data)
     if result_v2:
         return "v2.0"
 
@@ -247,42 +246,37 @@ def extract_antenna_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes
     return antenna_block
 
 
-def parse_igs_log(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
-    """Parses igs log and outputs ndarray with parsed data
+def parse_igs_log_data(data: bytes, file_path: str, file_code: str) -> Union[_np.ndarray, None]:
+    """Given the bytes object returned opening a IGS log file, parse to produce an ndarray with relevant data
 
-    :param _np.ndarray filename_array: Metadata on input log file. Expects ndarray of the form [CODE DATE PATH]
-    :return _np.ndarray: Returns array with data from the IGS log file parsed
+    :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
+    :param str file_path: The path to the file from which the "data" bytes object was obtained
+    :param str file_code: Code from the filename_array passed to the parse_igs_log() function
+    :return Union[_np.ndarray, None]: Returns array with relevant data from the IGS log file bytes object
     """
-    file_code, _, file_path = filename_array
-
-    with open(file_path, "rb") as file:
-        data = file.read()
-
+    # Determine the version of the IGS log based on the data, Warn if unrecognised
     try:
         version = determine_log_version(data)
     except LogVersionError as e:
         logger.warning(f"Error: {e}, skipping parsing the log file")
         return
 
+    # Extract information from ID block
     blk_id = extract_id_block(data=data, file_path=file_path, file_code=file_code, version=version)
+    code = [blk_id[0]]  # Site code
+    # Extract information from Location block
     blk_loc = extract_location_block(
         data=data,
         file_path=file_path,
         version=version,
     )
-    blk_rec = extract_receiver_block(data=data, file_path=file_path)
-    blk_ant = extract_antenna_block(data=data, file_path=file_path)
-
     blk_loc = [group.decode(encoding="utf8", errors="ignore") for group in blk_loc.groups()]
-    blk_rec = _np.asarray(blk_rec, dtype=str)
-    blk_ant = _np.asarray(blk_ant, dtype=str)
-
-    len_recs = blk_rec.shape[0]
-    len_ants = blk_ant.shape[0]
-
+    # Combine ID and Location information:
     blk_id_loc = _np.asarray([0] + blk_id + blk_loc, dtype=object)[_np.newaxis]
-
-    code = [blk_id[0]]
+    # Extract and re-format information from receiver block:
+    blk_rec = extract_receiver_block(data=data, file_path=file_path)
+    blk_rec = _np.asarray(blk_rec, dtype=str)
+    len_recs = blk_rec.shape[0]
     blk_rec = _np.concatenate(
         [
             _np.asarray([1] * len_recs, dtype=object)[:, _np.newaxis],
@@ -291,6 +285,10 @@ def parse_igs_log(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
         ],
         axis=1,
     )
+    # Extract and re-format information from antenna block:
+    blk_ant = extract_antenna_block(data=data, file_path=file_path)
+    blk_ant = _np.asarray(blk_ant, dtype=str)
+    len_ants = blk_ant.shape[0]
     blk_ant = _np.concatenate(
         [
             _np.asarray([2] * len_ants, dtype=object)[:, _np.newaxis],
@@ -299,9 +297,24 @@ def parse_igs_log(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
         ],
         axis=1,
     )
+    # Create unified information block:
     blk_uni = _np.concatenate([blk_id_loc, blk_rec, blk_ant], axis=0)
     file_path_arr = _np.asarray([file_path] * (1 + len_ants + len_recs))[:, _np.newaxis]
     return _np.concatenate([blk_uni, file_path_arr], axis=1)
+
+
+def parse_igs_log_file(filename_array: _np.ndarray) -> Union[_np.ndarray, None]:
+    """Reads igs log file and outputs ndarray with parsed data
+
+    :param _np.ndarray filename_array: Metadata on input log file. Expects ndarray of the form [CODE DATE PATH]
+    :return _np.ndarray: Returns array with data from the parsed IGS log file
+    """
+    file_code, _, file_path = filename_array
+
+    with open(file_path, "rb") as file:
+        data = file.read()
+
+    return parse_igs_log_data(data=data, file_path=file_path, file_code=file_code)
 
 
 def igslogdate2datetime64(stacked_rec_ant_dt: _np.ndarray) -> _np.datetime64:
@@ -382,10 +395,10 @@ def gather_metadata(
     if num_threads == 1:
         gather = []
         for file in parsed_filenames:
-            gather.append(parse_igs_log(file))
+            gather.append(parse_igs_log_file(file))
     else:
         with _Pool(processes=num_threads) as pool:
-            gather = list(pool.imap_unordered(parse_igs_log, parsed_filenames))
+            gather = list(pool.imap_unordered(parse_igs_log_file, parsed_filenames))
 
     gather_raw = _np.concatenate(gather)
 
