@@ -202,17 +202,42 @@ class TestSp3(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open, read_data=offline_sat_test_data)
     def test_sp3_offline_sat_removal(self, mock_file):
         sp3_df = sp3.read_sp3("mock_path", pOnly=False)
+
+        # Confirm starting state of content
         self.assertEqual(
             sp3_df.index.get_level_values(1).unique().array.tolist(),
             ["G02", "G03", "G19"],
             "Should be three SVs in test file before removing offline ones",
         )
 
+        # Confirm header matches (this is doubling up on header update test)
+        self.assertEqual(
+            sp3_df.attrs["HEADER"].SV_INFO.index.array.tolist(),
+            ["G02", "G03", "G19"],
+            "Should be three SVs in parsed header before removing offline ones",
+        )
+        self.assertEqual(
+            sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "3", "Header should have 2 SVs before removing offline"
+        )
+
+        # Now make the changes - this should also update the header
         sp3_df = sp3.remove_offline_sats(sp3_df)
+
+        # Check contents
         self.assertEqual(
             sp3_df.index.get_level_values(1).unique().array.tolist(),
             ["G02", "G03"],
             "Should be two SVs after removing offline ones",
+        )
+
+        # Check header
+        self.assertEqual(
+            sp3_df.attrs["HEADER"].SV_INFO.index.array.tolist(),
+            ["G02", "G03"],
+            "Should be two SVs in parsed header after removing offline ones",
+        )
+        self.assertEqual(
+            sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "2", "Header should have 2 SVs after removing offline"
         )
 
     # sp3_test_data_truncated_cod_final is input_data2
@@ -314,6 +339,43 @@ class TestSp3(unittest.TestCase):
             sp3_df_trimmed.index.get_level_values(0).unique().array.tolist(),
             [784792800, 784793100],
             "Should be two epochs after trimming with keep_first_delta_amount parameter",
+        )
+
+
+class TestSP3Utils(TestCase):
+
+    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
+    def test_get_unique_svs(self, mock_file):
+        sp3_df = sp3.read_sp3("mock_path", pOnly=True)
+
+        unique_svs = set(sp3.get_unique_svs(sp3_df).values)
+        self.assertEqual(unique_svs, set(["G01", "G02"]))
+
+    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
+    def test_get_unique_epochs(self, mock_file):
+        sp3_df = sp3.read_sp3("mock_path", pOnly=True)
+
+        unique_epochs = set(sp3.get_unique_epochs(sp3_df).values)
+        self.assertEqual(unique_epochs, set([229608000, 229608900, 229609800]))
+
+    @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
+    def test_remove_svs_from_header(self, mock_file):
+        sp3_df = sp3.read_sp3("mock_path", pOnly=True)
+        self.assertEqual(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "5", "Header should have 5 SVs to start with")
+        self.assertEqual(
+            set(sp3_df.attrs["HEADER"].SV_INFO.index.values),
+            set(["G01", "G02", "G03", "G04", "G05"]),
+            "Header SV list should have the 5 SVs expected to start with",
+        )
+
+        # Remove two specific SVs
+        sp3.remove_svs_from_header(sp3_df, set(["G02", "G04"]))
+
+        self.assertEqual(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "3", "Header should have 3 SVs after removal")
+        self.assertEqual(
+            set(sp3_df.attrs["HEADER"].SV_INFO.index.values),
+            set(["G01", "G03", "G05"]),
+            "Header SV list should have the 3 SVs expected",
         )
 
 

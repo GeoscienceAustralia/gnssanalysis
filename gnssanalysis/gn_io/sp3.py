@@ -193,6 +193,32 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
 
 
+def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]):
+    """
+    Utility function to update the internal representation of an SP3 header, when SVs are removed from the SP3
+    DataFrame. This is useful e.g. when removing offline satellites.
+    :param _pd.DataFrame sp3_df: SP3 DataFrame on which to update the header (in place).
+    :param list[str] sats_to_remove: list of SV names to remove from the header.
+    """
+    num_to_remove: int = len(sats_to_remove)
+
+    # Update header SV count (bunch of type conversion because header is stored as strings)
+    sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED = str(int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove)
+
+    # Remove sats from the multi-index which contains SV_INFO and HEAD. This does both SV list and accuracy code list.
+    sp3_df.attrs["HEADER"].drop(level=1, labels=sats_to_remove, inplace=True)
+
+    # Notes on the multi-index update:
+
+    # The hierarchy here is:
+    # dict (HEADER) > series (unnamed) > HEAD (part of multi-index) > str (SV_COUNT_STATED)
+    # So we operate on the overall Series in the dict.
+
+    # In the above statement, Level 1 gets us to the 'column' names (like G02), not the 'section' names (like SV_INFO).
+    # Labels will apply to anything at that level (including things in HEAD - but those columns should never share a
+    # name with an SV).
+
+
 def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     """
     Remove any satellites that have "0.0" or NaN for all three position coordinates - this indicates satellite offline.
