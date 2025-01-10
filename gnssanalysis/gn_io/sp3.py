@@ -226,7 +226,7 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     observations will get removed entirely.
     Added in version 0.0.57
 
-    :param _pd.DataFrame sp3_df: SP3 DataFrame to remove offline / nodata satellites from
+    :param _pd.DataFrame sp3_df: SP3 DataFrame to remove offline / nodata satellites from.
     :param str df_friendly_name: Name to use when referring to the DataFrame in log output (purely for clarity). Empty
            string by default.
     :return _pd.DataFrame: the SP3 DataFrame, with the offline / nodata satellites removed
@@ -241,14 +241,25 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     mask_nan = (sp3_df.EST.X.isna()) & (sp3_df.EST.Y.isna()) & (sp3_df.EST.Z.isna())
     mask_either = _np.logical_or(mask_zero, mask_nan)
 
+    # We expect EV, EP rows to have already been filtered out
+    if "PV_FLAG" in sp3_df.index.names:
+        raise Exception(
+            "PV_FLAG index level found in dataframe while trying to remove offline sats. "
+            "De-interlacing of Pos, Vel and EV / EP rows must be performed before running this"
+        )
     # With mask, filter for entries with no POS value, then get the sat name (SVs) from the entry, then dedupe:
     offline_sats = sp3_df[mask_either].index.get_level_values(1).unique()
 
     # Using that list of offline / partially offline sats, remove all entries for those sats from the SP3 DataFrame:
     sp3_df = sp3_df.drop(offline_sats, level=1, errors="ignore")
+    # TODO should the following be removed?!:
     sp3_df.attrs["HEADER"].HEAD.ORB_TYPE = "INT"  # Allow the file to be read again by read_sp3 - File ORB_TYPE changes
     if len(offline_sats) > 0:
-        logger.info(f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame: {offline_sats.values}")
+        # Update the internal representation of the SP3 header to match the change
+        remove_svs_from_header(sp3_df, offline_sats.values)
+        logger.info(
+            f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame (including header): {offline_sats.values}"
+        )
     else:
         logger.info(f"No offline / nodata sats detected to be dropped from {df_friendly_name} SP3 DataFrame")
     return sp3_df
