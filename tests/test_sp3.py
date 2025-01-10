@@ -138,6 +138,19 @@ class TestSp3(unittest.TestCase):
             "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
             "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
         )
+    
+    @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
+    def test_read_sp3_correct_svs_read_when_ev_ep_present(self, mock_file):
+        # This should not raise an exception; SV count should match header if parsed correctly.
+        result = sp3.read_sp3(
+            "testfile.SP3",
+            pOnly=False,
+            check_header_vs_filename_vs_content_discrepancies=True,  # Actually enable the checks for this one
+            skip_filename_in_discrepancy_check=True,
+        )
+        parsed_svs_content = sp3.get_unique_svs(result).astype(str).values
+        self.assertEqual(set(parsed_svs_content), set(["G01", "G02", "G03", "G04", "G05"]))
+
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
