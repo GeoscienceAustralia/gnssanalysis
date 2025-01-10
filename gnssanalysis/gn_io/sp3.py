@@ -793,6 +793,43 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     return _pd.concat([sp3Df, vel_i], axis=1)
 
 
+def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
+    """
+    Utility function to get count of unique SVs in an SP3 dataframe (contents not header).
+    This isn't a complex operation, but it's needed in a handful of places, and there are several nuances that
+    could lead to incorrect data, such as forgetting to exclude EV / EP rows if present.
+    :param _pd.DataFrame sp3_df: DataFrame of SP3 data to calculate on
+    :return _pd.Index: pandas Index object describing the SVs in the DataFrame content
+    """
+
+    # Are we dealing with a DF which is early in processing: with Position, Velocity, and EV / EP rows in it?
+    # This will have the PV_FLAG index level. It *may* contain EV / EP rows, though until we support these they
+    # should be promptly removed at that point.
+    # Alternativley, has this DF had Position and Velocity data merged (into columns, not interlaced rows).
+    # In this case the PV_FLAG index level will have been dropped.
+    if "PV_FLAG" in sp3_df.index.names:
+        if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
+            logger.warning(
+                "EV/EP record found late in SP3 processing. Until we actually support them, "
+                "they should be removed by the EV/EP check earlier on! Filtering out while determining unique SVs."
+            )
+            # Filter on data that doesn't relate to EV / EP rows
+            return sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique()
+
+    return sp3_df.index.get_level_values(1).unique()
+
+
+def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
+    """
+    Utility function to get count of unique epochs in an SP3 dataframe (contents not header).
+
+    :param _pd.DataFrame sp3_df: DataFrame of SP3 data to calculate on
+    :return _pd.Index: pandas Index object describing the epochs in the DataFrame content
+    """
+    # First index level is time (j2000); these are our epochs
+    return sp3_df.index.get_level_values(0).unique()
+
+
 def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
