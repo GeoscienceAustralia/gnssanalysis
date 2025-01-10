@@ -342,12 +342,123 @@ def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Opt
         return "Data passed as bytes: no path available"
 
 
+def try_get_sp3_filename(path_or_bytes: Union[str, Path, bytes]) -> Union[str, None]:
+    """
+    Utility for validation during parsing. Attempts to pull the filename from the path or bytes SP3 source.
+    :param Union[str, Path, bytes] path_or_bytes: path or bytes SP3 source to try and get filename from
+    :return Union[str, None]: filename if able to extract, otherwise `None`
+    """
+    if isinstance(path_or_bytes, bytes):
+        return None
+
+    if isinstance(path_or_bytes, Path):
+        return path_or_bytes.name
+
+    if isinstance(path_or_bytes, str):
+        return path_or_bytes.rsplit("/")[-1]
+
+    logger.warning("sp3_path_or_bytes was of an unexpected type. Filename not extracted")
+    return None
+
+
+def check_epoch_counts_for_discrepancies(
+    draft_sp3_df: _pd.DataFrame,
+    parsed_sp3_header: _pd.Series,
+    sp3_path_or_bytes: Union[Path, str, bytes, None] = None,
+    continue_on_error: bool = True,
+):
+    """
+    Utility function for use during SP3 parsing. Checks for discrepancies in the number of epochs the SP3 header
+    states are there, how many *unique* epochs exist in the content, and how many epochs we would expect based on
+    the period and sample_rate specified in the SP3 filename (if available to check - not possible when reading
+    from bytes object rather than filepath)
+
+    :param _pd.DataFrame draft_sp3_df: the work-in-progress dataframe currently being parsed. Used to access
+        indexes. Header is not added till late in parsing, so it is passed in separately.
+    :param _pd.Series parsed_sp3_header: draft SP3 header, passed in separately as it gets added to the DataFrame
+        later in the SP3 reading process.
+    :param Union[Path, str, bytes, None] sp3_path_or_bytes: representation of the source SP3 file path or binary data,
+        used to determine whether a filename can be found, and extract it if so.
+
+    :raises ValueError: if discrepancies found in number of epochs indicated by SP3 filename/header/contents
+    """
+    sp3_filename: Union[str, None] = None
+    if sp3_path_or_bytes is not None:
+        sp3_filename = try_get_sp3_filename(sp3_path_or_bytes)
+
+    # Could potentially check has_duplicates first for speed?
+    content_unique_epoch_count = draft_sp3_df.index.get_level_values(0).unique().size
+    # content_total_epoch_count = draft_sp3_df.index.get_level_values(0).size
+
+    header_epoch_count = int(parsed_sp3_header.HEAD.N_EPOCHS)
+
+    if content_unique_epoch_count != header_epoch_count:
+        if not continue_on_error:
+            raise ValueError(
+                f"Header says there should be {header_epoch_count} epochs, however there are "
+                f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
+            )
+        logger.warning(
+            f"Header says there should be {header_epoch_count} epochs, however there are "
+            f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
+        )
+
+    if not sp3_filename:
+        logger.info("SP3 filename not available to check for epoch count discrepancies, continuing")
+        return
+    # Filename available to validate
+    # Derive epoch count from filename period(as timedelta) / filename sampeleRate(as timedelta).
+    # We shouldn't need sample rate to check for off by one as we're working in epochs this time.
+    filename_derived_epoch_count: Union[int, None] = None
+
+    # Try extracting properties from filename
+    try:
+        filename_props: dict = filenames.determine_properties_from_filename(sp3_filename)
+        filename_timespan_timedelta = filename_props.get("timespan")
+        if not isinstance(filename_timespan_timedelta, timedelta):
+            raise KeyError(f"Failed to get timespan from filename '{sp3_filename}'")
+
+        filename_sample_rate = filename_props.get("sampling_rate")
+        if not isinstance(filename_sample_rate, str):
+            raise KeyError(f"Failed to get sampling_rate from filename '{sp3_filename}'")
+
+        filename_sample_rate_timedelta = filenames.convert_nominal_span(filename_sample_rate)
+        filename_derived_epoch_count = int(
+            timedelta(
+                seconds=filename_timespan_timedelta.total_seconds() / filename_sample_rate_timedelta.total_seconds()
+            ).total_seconds()
+        )
+    except Exception as e:
+        logger.warning("Failed to extract filename properties to validate against header / contents: ", e)
+        return
+
+    # Now for the actual checks.
+    # Check if the header states a number of epochs equal to (or one less than) the filename period implies
+    # Note filename is allowed to indicate a period one epoch longer than the data. E.g. 01D can end at 23:55
+    # if in 5 min epochs.
+    if header_epoch_count not in (filename_derived_epoch_count, filename_derived_epoch_count - 1):
+        if not continue_on_error:
+            raise ValueError(
+                f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+                f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
+            )
+        logger.warning(
+            f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+            f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
+        )
+    # All good, validation passed.
+
+
 def read_sp3(
     sp3_path_or_bytes: Union[str, Path, bytes],
     pOnly: bool = True,
     nodata_to_nan: bool = True,
     drop_offline_sats: bool = False,
     continue_on_ep_ev_encountered: bool = True,
+    check_header_vs_filename_vs_content_discrepancies: bool = False,
+    # These only apply when the above is enabled:
+    skip_filename_in_discrepancy_check: bool = False,
+    continue_on_discrepancies: bool = False,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -360,6 +471,13 @@ def read_sp3(
     :param bool continue_on_ep_ev_encountered: If True, logs a warning and continues if EV or EP rows are found in
             the input SP3. These are currently unsupported by this function and will be ignored. Set to false to
             raise a NotImplementedError instead.
+    :param bool check_header_vs_filename_vs_content_discrepancies: enable discrepancy checks on SP3 content vs
+        header vs filename.
+    :param bool continue_on_discrepancies: (Only applicable with check_header_vs_filename_vs_content_discrepancies)
+        If True, logs a warning and continues if major discrepancies are detected between the SP3 content, SP3 header,
+        and SP3 filename (if available). Set to false to raise a ValueError instead.
+    :param bool skip_filename_in_discrepancy_check: If discrepancy checks enabled (see above), this allows skipping
+        the filename part of the checks, even if filename is available.
     :return _pd.DataFrame: The SP3 data as a DataFrame.
     :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
     :raises Exception: For other errors reading SP3 file/bytes
@@ -389,13 +507,47 @@ def read_sp3(
     header = content[:header_end]
     content = content[header_end:]
     parsed_header = parse_sp3_header(header)
-    counts = parsed_header.SV_INFO.count()
+    header_sv_count = parsed_header.SV_INFO.count()  # count() of non-NA/null, vs shape: dims of whole structure
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
     date_lines, data_blocks = _split_sp3_content(content)
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
+
+    # Are we running discrepancy checks?
+    if check_header_vs_filename_vs_content_discrepancies:
+        # SV count discrepancy check
+
+        # Check that count of SVs from header matches number of unique SVs we read in.
+        # To determine the unique SVs in the content we:
+        # 1. Index into the work-in-progress sp3 dataframe, filtering out anything where the PV flag is E (these entries
+        #   contain EP or EV data, not the name of an SV).
+        # 2. Get the index from that, filter down to level 1 (which has the SVs).
+        # 3. Make these SVs unique (as when you have P and V data, you will get two copies of every SV).
+        # 4. Get the size of this index, to determine the total number of unique SVs in the SP3 content.
+        df_sv_count = (
+            sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique().size
+        )
+        if header_sv_count != df_sv_count:
+            if not continue_on_discrepancies:
+                raise ValueError(
+                    f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!"
+                )
+            logger.warning(
+                f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!"
+            )
+
+        # Epoch count discrepancy check
+        # Are we including the filename in the check?
+        path_bytes_to_pass = None if skip_filename_in_discrepancy_check else sp3_path_or_bytes
+        check_epoch_counts_for_discrepancies(
+            draft_sp3_df=sp3_df,
+            parsed_sp3_header=parsed_header,
+            sp3_path_or_bytes=path_bytes_to_pass,
+            continue_on_error=continue_on_discrepancies,
+        )
+
     if drop_offline_sats:
         sp3_df = remove_offline_sats(sp3_df)
     if nodata_to_nan:
@@ -499,26 +651,6 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     :param bytes header: The header of the SP3 file (as a byte string).
     :return _pd.Series: A pandas Series containing the parsed information from the SP3 header.
     """
-    try:
-        sp3_heading = _pd.Series(
-            data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
-                str
-            ),
-            index=[
-                "VERSION",
-                "PV_FLAG",
-                "DATETIME",
-                "N_EPOCHS",
-                "DATA_USED",
-                "COORD_SYS",
-                "ORB_TYPE",
-                "AC",
-                "FILE_TYPE",
-                "TIME_SYS",
-            ],
-        )
-    except AttributeError as e:  # Make the exception slightly clearer.
-        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
     # Find all Satellite Vehicle (SV) entries
     # Updated to also extract the count of expected SVs from the header, and compare that to the number of SVs we get.
@@ -528,10 +660,10 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
 
     # How many SVs did the header say were there (start of first line of SV entries) E.g 30 here: +   30   G02G03...
     head_sv_expected_count = None
-    try:
+    if sv_regex_matches:  # Result found
         head_sv_expected_count = int(sv_regex_matches[0][0])  # Line 1, group 1
-    except Exception as e:
-        logger.warning("Failed to extract count of expected SVs from SP3 header.", e)
+    else:
+        logger.warning("Failed to extract count of expected SVs from SP3 header.")
 
     # Get second capture group from each match, concat into byte string. These are the actual SVs. i.e. 'G02G03G04'...
     sv_id_matches = b"".join([x[1] for x in sv_regex_matches])
@@ -539,7 +671,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     head_svs = _np.asarray(sv_id_matches)[_np.newaxis].view("S3").astype(str)
 
     # Sanity check that the number of SVs the regex found, matches what the header said should be there.
-    found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array.
+    found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array. Note this could include null/NA/NaN
     if head_sv_expected_count is not None and found_sv_count != head_sv_expected_count:
         logger.warning(
             "Number of Satellite Vehicle (SV) entries extracted from the SP3 header, did not match the "
@@ -569,6 +701,32 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
             "error expressed as 2^x mm, so negative values are unrealistic and likely an error. "
             f"Parsed SVs and ACCs: {sv_tbl}"
         )
+
+    try:
+        claimed_sv_count_str = str(head_sv_expected_count) if head_sv_expected_count is not None else ""
+        header_array = _np.asarray(
+            _RE_SP3_HEAD.search(header).groups()
+            + _RE_SP3_HEAD_FDESCR.search(header).groups()
+            + (bytes(claimed_sv_count_str, "utf-8"),)  # Number of SVs header states should be there
+        ).astype(str)
+        sp3_heading = _pd.Series(
+            data=header_array,
+            index=[
+                "VERSION",
+                "PV_FLAG",
+                "DATETIME",
+                "N_EPOCHS",
+                "DATA_USED",
+                "COORD_SYS",
+                "ORB_TYPE",
+                "AC",
+                "FILE_TYPE",
+                "TIME_SYS",
+                "SV_COUNT_STATED",  # (Here for convenience) parsed earlier with _RE_SP3_HEADER_SV, not by above regex
+            ],
+        )
+    except AttributeError as e:  # Make the exception slightly clearer.
+        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
     return _pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
 
@@ -635,6 +793,43 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     return _pd.concat([sp3Df, vel_i], axis=1)
 
 
+def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
+    """
+    Utility function to get count of unique SVs in an SP3 dataframe (contents not header).
+    This isn't a complex operation, but it's needed in a handful of places, and there are several nuances that
+    could lead to incorrect data, such as forgetting to exclude EV / EP rows if present.
+    :param _pd.DataFrame sp3_df: DataFrame of SP3 data to calculate on
+    :return _pd.Index: pandas Index object describing the SVs in the DataFrame content
+    """
+
+    # Are we dealing with a DF which is early in processing: with Position, Velocity, and EV / EP rows in it?
+    # This will have the PV_FLAG index level. It *may* contain EV / EP rows, though until we support these they
+    # should be promptly removed at that point.
+    # Alternativley, has this DF had Position and Velocity data merged (into columns, not interlaced rows).
+    # In this case the PV_FLAG index level will have been dropped.
+    if "PV_FLAG" in sp3_df.index.names:
+        if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
+            logger.warning(
+                "EV/EP record found late in SP3 processing. Until we actually support them, "
+                "they should be removed by the EV/EP check earlier on! Filtering out while determining unique SVs."
+            )
+            # Filter on data that doesn't relate to EV / EP rows
+            return sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique()
+
+    return sp3_df.index.get_level_values(1).unique()
+
+
+def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
+    """
+    Utility function to get count of unique epochs in an SP3 dataframe (contents not header).
+
+    :param _pd.DataFrame sp3_df: DataFrame of SP3 data to calculate on
+    :return _pd.Index: pandas Index object describing the epochs in the DataFrame content
+    """
+    # First index level is time (j2000); these are our epochs
+    return sp3_df.index.get_level_values(0).unique()
+
+
 def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
@@ -666,13 +861,35 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     sats = sv_tbl.index.to_list()
     n_sats = sv_tbl.shape[0]
 
+    # Check that number of SVs the header metadata says should be here, matches the number of SVs *listed* in
+    # header metadata (which we use to output the new header). Then check that this in turn matches the number of
+    # unique SVs in the SP3 DataFrame itself.
+    dataframe_sv_count = sp3_df.index.get_level_values(1).unique().size
+    header_sv_stated_count = int(head["SV_COUNT_STATED"])
+    header_sv_actual_count = int(n_sats)
+
+    # Check header internal consistency, regarding number of SVs
+    if header_sv_actual_count != header_sv_stated_count:
+        raise AttributeError(
+            f"Number of SVs listed in SP3 header ({str(header_sv_actual_count)}), did not match "
+            f"the number of SVs the header says are there ({header_sv_stated_count})"
+        )
+    # Check header vs DataFrame content regarding number of SVs
+    if header_sv_actual_count != dataframe_sv_count:
+        raise AttributeError(
+            f"Number of SVs listed in SP3 header ({header_sv_actual_count}) did not match "
+            f"SP3 DataFrame contents ({dataframe_sv_count})!"
+        )
+
+    # Alternatively: max(n_sats // 17, 5) # As many lines as needed, minimum 5
     sats_rows = (n_sats // 17) + 1 if n_sats > (17 * 5) else 5  # should be 5 but MGEX need more lines (e.g. CODE sp3)
     sats_header = (
         _np.asarray(sats + ["  0"] * (17 * sats_rows - n_sats), dtype=object).reshape(sats_rows, -1).sum(axis=1) + "\n"
     )
 
+    # Add *calculated, not stated* SV count within the lead-in / padding of the first row of SVs
     sats_header[0] = "+ {:4}   ".format(n_sats) + sats_header[0]
-    sats_header[1:] = "+        " + sats_header[1:]
+    sats_header[1:] = "+        " + sats_header[1:]  # Format remaining rows of SVs with just their lead-in string
 
     sv_orb_head = (
         _np.asarray(sv_tbl.astype(str).str.rjust(3).to_list() + ["  0"] * (17 * sats_rows - n_sats), dtype=object)
@@ -939,8 +1156,13 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     ac_str = "".join([pv[:2] for pv in sorted(set(heads[7]))])[
         :4
     ]  # Use all 4 chars assigned in spec - combine 2 char from each
+
+    # The following values (at the time of writing) align to: VERSION, PV_FLAG, DATETIME, N_EPOCHS, DATA_USED,
+    # COORD_SYS, ORB_TYPE, AC, FILE_TYPE, TIME_SYS (index 9), SV_COUNT_STATED (index 10)
     # Assign values when mixed:
-    values_if_mixed = _np.asarray([version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX"])
+    values_if_mixed = _np.asarray(
+        [version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX", None]
+    )
     head = df[0].loc["HEAD"].values
     head[mask_mixed] = values_if_mixed[mask_mixed]
     # total_num_epochs needs to be assigned manually - length can be the same but have different epochs in each file
@@ -948,8 +1170,18 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     first_set_of_epochs = set(df_list[0].index.get_level_values("J2000"))
     total_num_epochs = len(first_set_of_epochs.union(*[set(df.index.get_level_values("J2000")) for df in df_list[1:]]))
     head[3] = str(total_num_epochs)
-    sv_info = df.loc["SV_INFO"].max(axis=1).values.astype(int)
-    return _pd.Series(_np.concatenate([head, sv_info]), index=df.index)
+
+    # Combine the *SV & SV accuracy code* part of the header, from across all input DataFrames.
+    # This gives us an NDArray containing the union of all SV names.
+    # For the accuracy codes part of it (axis 1), we take the max (i.e worst) accuracy seen for each SV, across all
+    # the input DataFrames (i.e. lowest common denominator of accuracies for each SV).
+    sv_info_unioned_worst_accuracy = df.loc["SV_INFO"].max(axis=1).values.astype(int)
+
+    # Use the number of SVs in the union of all SV headers, as the new *stated* number of SVs (which we store in our
+    # internal representation of the SP3 header (in DataFrame metadata), as sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED)
+    head[10] = sv_info_unioned_worst_accuracy.shape[0]
+
+    return _pd.Series(_np.concatenate([head, sv_info_unioned_worst_accuracy]), index=df.index)
 
 
 def sp3merge(
@@ -1073,6 +1305,8 @@ def sp3_hlm_trans(
     """
     hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
     b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
+
+    b.attrs["HEADER"].head.ORB_TYPE = "HLM"  # Update b's header to reflect Helmert transformation has been applied
     return b, hlm
 
 

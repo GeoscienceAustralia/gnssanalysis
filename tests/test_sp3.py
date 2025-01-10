@@ -15,10 +15,12 @@ from test_datasets.sp3_test_data import (
     # Expected content section we want gnssanalysis to write out
     expected_sp3_output_igs_benchmark_null_clock,
     # Test exception raising when encountering EP, EV rows
-    sp3_test_data_ep_ev_rows,
+    sp3c_example2_data,
     # second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3:
     sp3_test_data_truncated_cod_final as input_data2,
     sp3_test_data_partially_offline_sat as offline_sat_test_data,
+    # For header vs content validation tests:
+    sp3_test_data_cod_broken_missing_sv_in_content,
 )
 
 
@@ -60,7 +62,7 @@ class TestSp3(unittest.TestCase):
         self.assertEqual(result.attrs["HEADER"]["HEAD"]["DATETIME"], "2007  4 12  0  0  0.00000000")
         self.assertEqual(result.index[0][0], 229608000)  # Same date, as J2000
 
-    @patch("builtins.open", new_callable=mock_open, read_data=sp3_test_data_ep_ev_rows)
+    @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
     def test_read_sp3_pv_with_ev_ep_rows(self, mock_file):
         # Expect exception relating to the EV and EP rows, as we can't currently handle them properly.
         self.assertRaises(
@@ -123,6 +125,19 @@ class TestSp3(unittest.TestCase):
         end_line2_acc = sv_info.iloc[29]
         self.assertEqual(end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18")
 
+    @patch("builtins.open", new_callable=mock_open, read_data=sp3_test_data_cod_broken_missing_sv_in_content)
+    def test_read_sp3_validation_sv_count_mismatch_header_vs_content(self, mock_file):
+        with self.assertRaises(ValueError) as context_manager:
+            result = sp3.read_sp3(
+                "COD0OPSFIN_20242010000_10M_05M_ORB.SP3",
+                pOnly=False,
+                check_header_vs_filename_vs_content_discrepancies=True,  # Actually enable the checks for this one
+            )
+        self.assertEqual(
+            str(context_manager.exception),  # What did the exception message say?
+            "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
+            "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
+        )
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
@@ -139,7 +154,6 @@ class TestSp3(unittest.TestCase):
 
         generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=True)
         self.assertTrue("VX" not in generated_sp3_content, "Velocity data should be removed before outputting SP3")
-
 
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
@@ -340,3 +354,17 @@ class TestMergeSP3(TestCase):
         self.assertEqual(result.attrs["HEADER"].HEAD.AC, "AIES")
         self.assertEqual(result.attrs["HEADER"].HEAD.COORD_SYS, None)
         self.assertEqual(result.attrs["HEADER"].HEAD.PV_FLAG, "P")
+        self.assertEqual(
+            int(result.attrs["HEADER"].HEAD.SV_COUNT_STATED),
+            34,
+            "Header stated count of SVs should be 34, matching actual number of SVs",
+        )
+        # Note: shape of first dimension (unlike count() where applicable) could include null/NA/NaN
+        self.assertEqual(result.attrs["HEADER"].SV_INFO.shape[0], 34, "Union of SV lists should have 34 SVs in it")
+        # Sample first three orbit accuracy codes and ensure that for each SV, the accuracy code value is the
+        # *worst* seen across all inputs. I.e. lowest common denominator of input files.
+        self.assertEqual(
+            all(result.attrs["HEADER"].SV_INFO.values.astype(int)[0:3]),
+            all([10, 8, 4]),
+            "Combining SV accuracy codes should give the *worst* value seen for each SV",
+        )
