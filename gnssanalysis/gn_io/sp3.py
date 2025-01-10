@@ -751,6 +751,22 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
                 "SV_COUNT_STATED",  # (Here for convenience) parsed earlier with _RE_SP3_HEADER_SV, not by above regex
             ],
         )
+        # SP3 file versions:
+        # - a: Oct 1995 - Single constellation.
+        # - b: Oct 1998 - Adds GLONASS support.
+        # - c: ~2006 to Aug 2010 - Appears to add multiple new constellations, Japan's QZSS added in 2010.
+        # - d: Feb 2016 - Max number of satellites raised from 85 to 999.
+
+        header_version = str(header_array[0])
+        if header_version in ("a", "b"):
+            logger.warning(f"SP3 file is old version: '{header_version}', you may experience parsing issues")
+        elif header_version in ("c", "d"):
+            logger.info(f"SP3 header states SP3 file version is: {header_array[0]}")
+        else:
+            logger.warning(
+                f"SP3 header is of an unknown version, or failed to parse! Version appears to be: '{header_version}'"
+            )
+
     except AttributeError as e:  # Make the exception slightly clearer.
         raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
