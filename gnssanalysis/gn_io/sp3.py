@@ -154,8 +154,12 @@ SP3_CLOCK_NODATA_STRING = "999999.999999"
 SP3_CLOCK_NODATA_NUMERIC = 999999
 SP3_POS_NODATA_STRING = "     0.000000"
 SP3_POS_NODATA_NUMERIC = 0
-SP3_CLOCK_STD_NODATA = -1000
-SP3_POS_STD_NODATA = -100
+# The numeric values below are only relevant within this codebase, and signify nodata / NaN.
+# They are created by the functions pos_log() and clk_log()
+SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL = -1000
+SP3_CLOCK_STD_NODATA_STRING = "   "
+SP3_POS_STD_NODATA_NUMERIC_INTERNAL = -100
+SP3_POS_STD_NODATA_STRING = "  "
 
 
 def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
@@ -322,6 +326,7 @@ def _process_sp3_block(
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
     temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
     # TODO set datatypes per column in advance
+    # TODO maybe change this after updating everyting else to use actual NaNs ?
     temp_sp3["Clock_Event_Flag"] = temp_sp3["Clock_Event_Flag"].fillna(" ")
     temp_sp3["Clock_Pred_Flag"] = temp_sp3["Clock_Pred_Flag"].fillna(" ")
     temp_sp3["Maneuver_Flag"] = temp_sp3["Maneuver_Flag"].fillna(" ")
@@ -1021,14 +1026,16 @@ def gen_sp3_content(
         def pos_log(x):
             return _np.minimum(  # Cap value at 99
                 _np.nan_to_num(  # If there is data, use the following formula. Else return NODATA value.
-                    _np.rint(_np.log(x) / _np.log(pos_base)), nan=SP3_POS_STD_NODATA  # Rounded to nearest int
+                    _np.rint(_np.log(x) / _np.log(pos_base)),
+                    nan=SP3_POS_STD_NODATA_NUMERIC_INTERNAL,  # Rounded to nearest int
                 ),
                 99,
             ).astype(int)
 
         def clk_log(x):
             return _np.minimum(
-                _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA), 999  # Cap at 999
+                _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL),
+                999,  # Cap at 999
             ).astype(int)
 
         std_df = sp3_df["STD"]
@@ -1073,14 +1080,15 @@ def gen_sp3_content(
     # only representation.
     def pos_std_formatter(x):
         # We use -100 as our integer NaN/"missing" marker
-        if x <= SP3_POS_STD_NODATA:
-            return "  "
+        # NOTE: this could be NaN, except for the logic in the function that calculates this value.
+        if x <= SP3_POS_STD_NODATA_NUMERIC_INTERNAL:
+            return SP3_POS_STD_NODATA_STRING
         return format(x, "2d")
 
     def clk_std_formatter(x):
         # We use -1000 as our integer NaN/"missing" marker
-        if x <= SP3_CLOCK_STD_NODATA:
-            return "   "
+        if x <= SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL:
+            return SP3_CLOCK_STD_NODATA_STRING
         return format(x, "3d")
 
     formatters: Mapping[str, Callable] = dict(
