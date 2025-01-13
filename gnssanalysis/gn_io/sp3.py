@@ -278,6 +278,7 @@ def filter_by_svs(
     Utility function to trim an SP3 DataFrame down, intended for creating small sample SP3 files for
     unit testing (but could be used for other purposes).
     Can filter to a specific number of SVs, to specific SV names, and to a specific constellation.
+    Note: updates (internal representation of) SP3 header, to reflect new SV count.
 
     These filters can be used together (though filter by name and filter by sat letter i.e. constellation, does
     not make sense).
@@ -296,21 +297,22 @@ def filter_by_svs(
     total_svs = len(all_sv_names)
     logger.info(f"Total SVs: {total_svs}")
 
-    # Drop SVs which don't match given names
-    if filter_by_name:
-        # Make set of every SV name to drop (exclude everything besides what we want to keep)
-        exclusion_list: list[str] = list(set(all_sv_names) - set(filter_by_name))
-        sp3_df = sp3_df.drop(exclusion_list, level=1)
+    # Starting with all SVs
+    keep_set: set[str] = set(all_sv_names)
 
-    # Drop SVs which don't match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
+    # Disqualify SVs unless the match the given names
+    if filter_by_name:
+        keep_set.intersection(filter_by_name)
+
+    # Disqualify SVs unless they match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
     if filter_to_sat_letter:
         if len(filter_to_sat_letter) != 1:
             raise ValueError(
-                "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GR'"
+                "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GE'"
             )
-        # Make set of every SV name to drop (exclude everything besides what we want to keep)
-        other_constellation_sats = [sv for sv in all_sv_names if not filter_to_sat_letter.upper() in sv]
-        sp3_df = sp3_df.drop(other_constellation_sats, level=1)
+        # Make set of every SV name in the constellation we're keeping
+        constellation_sats_to_keep = [sv for sv in all_sv_names if filter_to_sat_letter.upper() in sv]
+        keep_set.intersection(constellation_sats_to_keep)
 
     # Drop SVs beyond n (i.e. keep only the first n SVs)
     if filter_by_count:
@@ -320,9 +322,21 @@ def filter_by_svs(
             raise ValueError(
                 f"Cannot filter to max of {filter_by_count} sats, as there are only {total_svs} sats total!"
             )
-        # Exclusion list built by taking all sats *beyond* the amount we want to keep.
-        exclusion_list = all_sv_names[filter_by_count:]
-        sp3_df = sp3_df.drop(exclusion_list, level=1)
+
+        # Convert working set of SVs to keep, into a sorted list so we can index in sorted order and trim
+        # to e.g. G01, G02, not the first two arbitrary numbers as the set represents them.
+        keep_list = list(keep_set)
+        keep_list.sort()
+        keep_list = keep_list[:filter_by_count]  # Trim to first n sats of sorted list
+
+        keep_set = set(keep_list)
+
+    discard_set = set(all_sv_names).difference(keep_set)
+    # sp3_df = sp3_df.loc[sp3_df.index.get_level_values(1) in list(keep_set)] # Ideally something like this (but I've missed a detail)
+    sp3_df = sp3_df.drop(list(discard_set), level=1)
+
+    # Update internal header to match
+    remove_svs_from_header(sp3_df, discard_set)
 
     return sp3_df
 
@@ -439,7 +453,7 @@ def check_epoch_counts_for_discrepancies(
                 f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
             )
         logger.warning(
-            f"Header says there should be {header_epoch_count} epochs, however there are "
+            f"WARNING: Header says there should be {header_epoch_count} epochs, however there are "
             f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
         )
 
@@ -483,7 +497,7 @@ def check_epoch_counts_for_discrepancies(
                 f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
             )
         logger.warning(
-            f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+            f"WARNING: Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
             f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
         )
     # All good, validation passed.
