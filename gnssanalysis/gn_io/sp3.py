@@ -3,7 +3,7 @@ import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Literal, Optional, Union, List, Tuple
+from typing import Callable, Literal, Mapping, Optional, Union, List, Tuple, overload
 from pathlib import Path
 
 import numpy as _np
@@ -917,12 +917,32 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
 
 
+# Option 1: don't provide a buffer, the data will be returned as a string
+@overload
 def gen_sp3_content(
     sp3_df: _pd.DataFrame,
+    buf: None = None,
+    sort_outputs: bool = ...,
+    continue_on_unhandled_velocity_data: bool = ...,
+) -> str: ...
+
+
+# Option 2: (not typically used) provide a buffer and have the data written there
+@overload
+def gen_sp3_content(
+    sp3_df: _pd.DataFrame,
+    buf: _io.StringIO,
+    sort_outputs: bool = ...,
+    continue_on_unhandled_velocity_data: bool = ...,
+) -> None: ...
+
+
+def gen_sp3_content(
+    sp3_df: _pd.DataFrame,
+    buf: Union[None, _io.StringIO] = None,
     sort_outputs: bool = False,
-    buf: Union[None, _io.TextIOBase] = None,
     continue_on_unhandled_velocity_data: bool = True,
-) -> str:
+) -> Union[str, None]:
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
     it otherwise.
@@ -930,10 +950,11 @@ def gen_sp3_content(
     Args:
     :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
-    :param _io.TextIOBase buf: The buffer to write the SP3 content to. Defaults to None.
+    :param Union[_io.StringIO, None] buf: The buffer to write the SP3 content to. Defaults to None.
     :param bool continue_on_unhandled_velocity_data: If (currently unsupported) velocity data exists in the DataFrame,
         log a warning and skip velocity data, but write out position data. Set to false to raise an exception instead.
-    :return str or None: The SP3 content if `buf` is None, otherwise None.
+    :return str or None: Return SP3 content as a string if `buf` is None, otherwise write SP3 content to `buf`,
+        and return None.
     """
 
     out_buf = buf if buf is not None else _io.StringIO()
