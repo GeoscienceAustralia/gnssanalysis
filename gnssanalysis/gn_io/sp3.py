@@ -1083,17 +1083,20 @@ def gen_sp3_content(
             return "   "
         return format(x, "3d")
 
-    formatters = {
-        "PRN": prn_formatter,
-        "X": pos_formatter,  # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
-        "Y": pos_formatter,
-        "Z": pos_formatter,
-        "CLK": clk_formatter,  # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
-        "STD_X": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
-        "STD_Y": pos_std_formatter,
-        "STD_Z": pos_std_formatter,
-        "STD_CLK": clk_std_formatter,  # ditto above
-    }
+    formatters: Mapping[str, Callable] = dict(
+        {
+            "PRN": prn_formatter,
+            "X": pos_formatter,  # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
+            "Y": pos_formatter,
+            "Z": pos_formatter,
+            "CLK": clk_formatter,  # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
+            "STD_X": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
+            "STD_Y": pos_std_formatter,
+            "STD_Z": pos_std_formatter,
+            "STD_CLK": clk_std_formatter,  # ditto above
+        }
+    )
+
     for epoch, epoch_vals in out_df.reset_index("PRN").groupby(level="J2000"):
         # Format and write out the epoch in the SP3 format
         epoch_datetime = _gn_datetime.j2000_to_pydatetime(epoch)
