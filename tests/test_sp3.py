@@ -142,13 +142,13 @@ class TestSp3(unittest.TestCase):
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
 
-    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
-    def test_gen_sp3_content_velocity_exception_handling(self, mock_file):
+    def test_gen_sp3_content_velocity_exception_handling(self):
         """
         gen_sp3_content() velocity output should raise exception (currently unsupported).\
             If asked to continue with warning, it should remove velocity columns before output.
         """
-        sp3_df = sp3.read_sp3("mock_path", pOnly=False)
+        input_data_fresh = input_data + b""  # Lazy attempt at not passing a reference
+        sp3_df = sp3.read_sp3(bytes(input_data_fresh), pOnly=False)
         with self.assertRaises(NotImplementedError):
             generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=False)
 
