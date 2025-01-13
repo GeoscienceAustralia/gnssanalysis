@@ -2,6 +2,7 @@ import logging as _logging
 import os as _os
 import sys as _sys
 import pathlib as _pathlib
+from time import perf_counter
 
 import click as _click
 
@@ -871,3 +872,36 @@ def clkq(
             out_file.writelines(output_str)
     else:
         print(output_str)
+
+
+class ContextTimer:
+    """
+    Utility for measuring function execution time (e.g. for manually profiling which unit tests are taking
+    excessive time).
+    Call this as a context manager, e.g.
+    with ContextTimer(print_time=False, name="func name") as timer:
+        some_function_to_time()
+    Based on https://stackoverflow.com/a/69156219
+    """
+
+    def __init__(self, **kwargs):
+        if kwargs is not None:
+            if "print_time" in kwargs:
+                self.print_time = bool(kwargs["print_time"])
+            else:
+                self.print_time = True
+
+            if "name" in kwargs:
+                self.name = str(kwargs["name"])
+            else:
+                self.name = None
+
+    def __enter__(self):
+        self.start = perf_counter()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.time = perf_counter() - self.start
+        self.readout = f"{self.time:.3f} sec elapsed{f' for {self.name}' if self.name else ''}"
+        if self.print_time:
+            print(self.readout)

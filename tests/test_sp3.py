@@ -138,6 +138,7 @@ class TestSp3(unittest.TestCase):
             "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
             "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
         )
+
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
@@ -323,6 +324,7 @@ class TestMergeSP3(TestCase):
 
     # Not sure if this is helpful
     def tearDown(self):
+        self.fs.reset()
         self.tearDownPyfakefs()
 
     def test_sp3merge(self):
