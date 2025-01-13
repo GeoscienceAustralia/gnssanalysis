@@ -575,6 +575,14 @@ def read_sp3(
     else:
         # DF contains interlaced Position & Velocity measurements for each sat. Split the data based on this, and
         # recombine, turning Pos and Vel into separate columns.
+
+        pv_flag_values = sp3_df.index.get_level_values("PV_FLAG").unique().values
+        if "V" not in pv_flag_values:
+            raise ValueError(
+                "SP3 header PV flag was not P, but no V (velocity) index appears to exist! "
+                f"Unique PV flag values seen: {pv_flag_values}"
+            )
+
         position_df = sp3_df.xs("P", level="PV_FLAG")
         velocity_df = sp3_df.xs("V", level="PV_FLAG")
 
