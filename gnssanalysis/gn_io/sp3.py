@@ -150,9 +150,9 @@ SP3_VELOCITY_COLUMNS = [
 # not 14 (the official width of the column i.e. F14.6), again because Pandas insists on adding a further space.
 # See comment in gen_sp3_content() line ~645 for further discussion.
 # Another related 'hack' can be found at line ~602, handling the FLAGS columns.
-SP3_CLOCK_NODATA_STRING = "999999.999999"
+SP3_CLOCK_NODATA_STRING = " 999999.999999" # This is currently formatted for full width (ie 14 chars)
 SP3_CLOCK_NODATA_NUMERIC = 999999
-SP3_POS_NODATA_STRING = "     0.000000"
+SP3_POS_NODATA_STRING = "      0.000000" # This is currently formatted for full width (ie 14 chars)
 SP3_POS_NODATA_NUMERIC = 0
 # The numeric values below are only relevant within this codebase, and signify nodata / NaN.
 # They are created by the functions pos_log() and clk_log()
