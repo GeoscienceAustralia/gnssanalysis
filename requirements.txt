@@ -5,7 +5,7 @@ jinja2
 matplotlib
 numpy
 pandas
-plotext==4.2
+plotext
 plotly
 pyfakefs
 pymongo
