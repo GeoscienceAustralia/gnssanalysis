@@ -124,7 +124,7 @@ class TestPropsFromNameAndContent(TestCase):
         self.assertEqual(derived_filename_noncompliant_input, expected_filename_noncompliant_input)
         self.assertEqual(derived_filename_compliant_input, expected_filename_compliant_input)
 
-    def test_check_filename_discrepancies(self):
+    def test_check_discrepancies(self):
         """
         Test of the filename vs contents discrepancy checker
         """
