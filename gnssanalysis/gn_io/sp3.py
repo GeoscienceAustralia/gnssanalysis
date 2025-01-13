@@ -1065,14 +1065,14 @@ def gen_sp3_content(
 
     def pos_formatter(x):
         # NaN values handled in df.style.format(), using na_rep; this formatter should not be invoked for them.
-        if x in [_np.inf, _np.NINF]:  # Treat infinite values as nodata
+        if x in [_np.inf, -_np.inf]:  # Treat infinite values as nodata
             return SP3_POS_NODATA_STRING
         return format(x, "14.6f")  # Numeric value, format as usual
 
     def clk_formatter(x):
         # NaN is handled by passing a na_rep value to df.style.format() before writing out with to_string().
         # So we just handle Infinity and normal numeric formatting.
-        if x in [_np.inf, _np.NINF]:
+        if x in [_np.inf, -_np.inf]:
             return SP3_CLOCK_NODATA_STRING
         return format(x, "14.6f")  # Not infinite or NaN: proceed with normal formatting
 
