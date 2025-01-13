@@ -30,8 +30,10 @@ _RE_SP3_HEAD = _re.compile(
 )
 
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
+
 # Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
+# Note this extracts both the stated number of SVs AND the actual SV names.
 _RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
@@ -184,6 +186,7 @@ def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
 def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     """
     Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - fractional component optional) to NaNs.
+    Operates on the DataFrame in place.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
 
     :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
