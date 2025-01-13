@@ -1054,8 +1054,9 @@ def gen_sp3_content(
     def prn_formatter(x):
         return f"P{x}"
 
-    # TODO NOTE
-    # This is technically incorrect but convenient. The SP3 standard doesn't include a space between the X, Y, Z, and
+    # NOTE This has been updated to full 14.6f format. The following description has been left for background and
+    # reference while testing the change.
+    # (Previously!) technically incorrect but convenient. SP3 standard doesn't include a space between the X, Y, Z, and
     # CLK values but pandas .to_string() put a space between every field. In practice most entries have spaces between
     # the X, Y, Z, and CLK values because the values are small enough that a 14.6f format specification gets padded
     # with spaces. So for now we will use a 13.6f specification and a space between entries, which will be equivalent
@@ -1066,14 +1067,14 @@ def gen_sp3_content(
         # NaN values handled in df.style.format(), using na_rep; this formatter should not be invoked for them.
         if x in [_np.inf, _np.NINF]:  # Treat infinite values as nodata
             return SP3_POS_NODATA_STRING
-        return format(x, "13.6f")  # Numeric value, format as usual
+        return format(x, "14.6f")  # Numeric value, format as usual
 
     def clk_formatter(x):
         # NaN is handled by passing a na_rep value to df.style.format() before writing out with to_string().
         # So we just handle Infinity and normal numeric formatting.
         if x in [_np.inf, _np.NINF]:
             return SP3_CLOCK_NODATA_STRING
-        return format(x, "13.6f")  # Not infinite or NaN: proceed with normal formatting
+        return format(x, "14.6f")  # Not infinite or NaN: proceed with normal formatting
 
     # NOTE: the following formatters are fine, as the nodata value is actually a *numeric value*,
     # so DataFrame.to_string() will invoke them for those values.
@@ -1107,6 +1108,7 @@ def gen_sp3_content(
         }
     )
 
+    # TODO maybe we want to set axis=0 in this groupby() (based on a previous experiment, not sure)
     for epoch, epoch_vals in out_df.reset_index("PRN").groupby(level="J2000"):
         # Format and write out the epoch in the SP3 format
         epoch_datetime = _gn_datetime.j2000_to_pydatetime(epoch)
@@ -1151,7 +1153,7 @@ def gen_sp3_content(
         # TODO to use this though, we need to update the formatters to make the columns appropirately wide.
         # This has been switched for the 13.6f formatters (to 14.6f), but I'm not positive whether other updates
         # will be needed - e.g. to flags columns, STD columns, etc.
-        out_buf.write(epoch_vals_styler.to_string(delimiter=" "))  # styler.to_string() adds a trailing newline
+        out_buf.write(epoch_vals_styler.to_string(delimiter=""))  # styler.to_string() adds a trailing newline
 
     if in_buf is None:  # No buffer to write to, was passed in. Return a string.
         return out_buf.getvalue()
@@ -1405,7 +1407,9 @@ def diff_sp3_rac(
     nd_rac = diff_eci.values[:, _np.newaxis] @ _gn_transform.eci2rac_rot(sp3_baseline_eci_vel)
     df_rac = _pd.DataFrame(
         nd_rac.reshape(-1, 3),
-        index=sp3_baseline.index,
+        index=sp3_baseline.index,  # Note that if the test and baseline have different SVs, this index will refer to
+        # data which is missing in the 'test' dataframe (and so is likely to be missing in
+        # the diff too).
         columns=[["EST_RAC"] * 3, ["Radial", "Along-track", "Cross-track"]],
     )
 
