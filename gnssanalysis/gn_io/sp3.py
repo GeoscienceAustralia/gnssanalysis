@@ -309,6 +309,10 @@ def _process_sp3_block(
     names: List[str] = _SP3_DEF_PV_NAME,
 ) -> _pd.DataFrame:
     """Process a single block of SP3 data.
+    NOTE: this process creates a temporary DataFrame for *every epoch* of SP3 data read in, complete with indexes, etc.
+    This process is expensive! Epoch count has far more impact on SP3 loading speed, than number of sats.
+    TODO It may be possible to speed up SP3 reading by changing this logic to parse the data but not build a full
+    DataFrame from it, only converting to a DataFrame in the parent function, once all the data is concatenated.
 
 
     :param    str date: The date of the SP3 data block.
@@ -320,6 +324,7 @@ def _process_sp3_block(
     if not data or len(data) == 0:
         return _pd.DataFrame()
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
+    # NOTE: setting dtype_backend="pyarrow" currently breaks parsing.
     temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
     # TODO set datatypes per column in advance
     temp_sp3["Clock_Event_Flag"] = temp_sp3["Clock_Event_Flag"].fillna(" ")
