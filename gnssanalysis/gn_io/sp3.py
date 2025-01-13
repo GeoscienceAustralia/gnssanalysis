@@ -926,7 +926,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
 @overload
 def gen_sp3_content(
     sp3_df: _pd.DataFrame,
-    buf: None = None,
+    in_buf: None = None,
     sort_outputs: bool = ...,
     continue_on_unhandled_velocity_data: bool = ...,
 ) -> str: ...
@@ -936,7 +936,7 @@ def gen_sp3_content(
 @overload
 def gen_sp3_content(
     sp3_df: _pd.DataFrame,
-    buf: _io.StringIO,
+    in_buf: _io.StringIO,
     sort_outputs: bool = ...,
     continue_on_unhandled_velocity_data: bool = ...,
 ) -> None: ...
@@ -944,7 +944,7 @@ def gen_sp3_content(
 
 def gen_sp3_content(
     sp3_df: _pd.DataFrame,
-    buf: Union[None, _io.StringIO] = None,
+    in_buf: Union[None, _io.StringIO] = None,
     sort_outputs: bool = False,
     continue_on_unhandled_velocity_data: bool = True,
 ) -> Union[str, None]:
@@ -955,14 +955,14 @@ def gen_sp3_content(
     Args:
     :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
-    :param Union[_io.StringIO, None] buf: The buffer to write the SP3 content to. Defaults to None.
+    :param Union[_io.StringIO, None] in_buf: The buffer to write the SP3 content to. Defaults to None.
     :param bool continue_on_unhandled_velocity_data: If (currently unsupported) velocity data exists in the DataFrame,
         log a warning and skip velocity data, but write out position data. Set to false to raise an exception instead.
-    :return str or None: Return SP3 content as a string if `buf` is None, otherwise write SP3 content to `buf`,
+    :return str or None: Return SP3 content as a string if `in_buf` is None, otherwise write SP3 content to `in_buf`,
         and return None.
     """
 
-    out_buf = buf if buf is not None else _io.StringIO()
+    out_buf = in_buf if in_buf is not None else _io.StringIO()
     if sort_outputs:
         # If we need to do particular sorting/ordering of satellites and constellations we can use some of the
         # options that .sort_index() provides
@@ -1153,7 +1153,7 @@ def gen_sp3_content(
         # will be needed - e.g. to flags columns, STD columns, etc.
         out_buf.write(epoch_vals_styler.to_string(delimiter=" "))  # styler.to_string() adds a trailing newline
 
-    if buf is None:  # No buffer to write to, was passed in. Return a string.
+    if in_buf is None:  # No buffer to write to, was passed in. Return a string.
         return out_buf.getvalue()
     return None
 
