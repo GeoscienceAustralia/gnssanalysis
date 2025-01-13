@@ -1118,45 +1118,42 @@ def gen_sp3_content(
         out_buf.write("\n")
 
         # Format this epoch's values in the SP3 format and write to buffer
+        # Notes:
+        # - DataFrame.to_string() doesn't call formatters on NaN values (nor presumably does DataFrame.Styler.format())
+        # - Mixing datatypes in a column is disallowed in Pandas >=3.
+        # - We consider +/-Infinity, and NaN to be nodata values, along with some column specific nodata values.
+        # Given all this, the following approach is taken:
+        # - Custom formatters are updated to render +/-Infninty values as the SP3 nodata value for that column.
+        # - Chained calls to DataFrame.style.format() are used to set the column's formatter, and string nodata value.
 
-        # First, we fill NaN and infinity values with the standardised nodata value for each column.
-        # NOTE: DataFrame.to_string() as called below, takes formatter functions per column. It does not, however
-        # invoke them on NaN values!! As such, trying to handle NaNs in the formatter is a fool's errand.
-        # Instead, we do it here, and get the formatters to recognise and skip over the already processed nodata values
-
-        # POS nodata formatting
-        # Fill +/- infinity values with SP3 nodata value for POS columns
-        epoch_vals["X"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Y"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Z"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        # Now do the same for NaNs
-        epoch_vals["X"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Y"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Z"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        # NOTE: we could use replace() for all this, though fillna() might be faster in some
-        # cases: https://stackoverflow.com/a/76225227
-        # replace() will also handle other types of nodata constants: https://stackoverflow.com/a/54738894
-
-        # CLK nodata formatting
-        # Throw both +/- infinity, and NaN values to the SP3 clock nodata value.
-        # See https://stackoverflow.com/a/17478495
-        epoch_vals["CLK"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_CLOCK_NODATA_STRING, inplace=True)
-        epoch_vals["CLK"].fillna(value=SP3_CLOCK_NODATA_STRING, inplace=True)
-
-        # Now invoke DataFrame to_string() to write out the values, leveraging our formatting functions for the
-        # relevant columns.
-        # NOTE: NaN and infinity values do NOT invoke the formatter, though you can put a string in a primarily numeric
-        # column, so we format the nodata values ahead of time, above.
-        # NOTE: you CAN'T mix datatypes as described above, in Pandas 3 and above, so this approach will need to be
-        # updated to use chained calls to format().
-        epoch_vals.to_string(
-            buf=out_buf,
-            index=False,
-            header=False,
-            formatters=formatters,
+        epoch_vals_styler = (
+            epoch_vals.style.hide(axis="columns", names=False)  # Get rid of column labels
+            .hide(axis="index", names=False)  # Get rid of index labels (i.e. j2000 times)
+            # Format columns, specify how NaN values should be represented (NaNs are NOT passed to formatters)
+            .format(subset=["PRN"], formatter=prn_formatter)
+            .format(subset=["X"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["Y"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["Z"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["CLK"], na_rep=SP3_CLOCK_NODATA_STRING, formatter=clk_formatter)
+            # STD columns don't need NODATA handling: an internal integer nodata value is used by the formatter
+            .format(subset=["STD_X"], formatter=pos_std_formatter)
+            .format(subset=["STD_Y"], formatter=pos_std_formatter)
+            .format(subset=["STD_Z"], formatter=pos_std_formatter)
+            .format(subset=["STD_CLK"], formatter=clk_std_formatter)
+            # NOTE: Passing formatters to the formatter argument throws typing errors, but is valid, as
+            # per https://pandas.pydata.org/docs/reference/api/pandas.io.formats.style.Styler.format.html
+            # But we won't use it anyway, because the more verbose option above allows us to set na_rep as well,
+            # and lay it all out in one place.
+            # .format(formatter=formatters)
         )
-        out_buf.write("\n")
-    if buf is None:
+
+        # NOTE: styler.to_string()'s delimiter="": no space between columns!
+        # TODO to use this though, we need to update the formatters to make the columns appropirately wide.
+        # This has been switched for the 13.6f formatters (to 14.6f), but I'm not positive whether other updates
+        # will be needed - e.g. to flags columns, STD columns, etc.
+        out_buf.write(epoch_vals_styler.to_string(delimiter=" "))  # styler.to_string() adds a trailing newline
+
+    if buf is None:  # No buffer to write to, was passed in. Return a string.
         return out_buf.getvalue()
     return None
 
