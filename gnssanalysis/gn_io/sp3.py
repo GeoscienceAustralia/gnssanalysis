@@ -227,6 +227,7 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     Remove any satellites that have "0.0" or NaN for all three position coordinates - this indicates satellite offline.
     Note that this removes a satellite which has *any* missing coordinate data, meaning a satellite with partial
     observations will get removed entirely.
+    Note: the internal representation of the SP3 header will be updated to reflect the removal.
     Added in version 0.0.57
 
     :param _pd.DataFrame sp3_df: SP3 DataFrame to remove offline / nodata satellites from.
@@ -255,8 +256,7 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
 
     # Using that list of offline / partially offline sats, remove all entries for those sats from the SP3 DataFrame:
     sp3_df = sp3_df.drop(offline_sats, level=1, errors="ignore")
-    # TODO should the following be removed?!:
-    sp3_df.attrs["HEADER"].HEAD.ORB_TYPE = "INT"  # Allow the file to be read again by read_sp3 - File ORB_TYPE changes
+
     if len(offline_sats) > 0:
         # Update the internal representation of the SP3 header to match the change
         remove_svs_from_header(sp3_df, offline_sats.values)
