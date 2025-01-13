@@ -1033,6 +1033,7 @@ def gen_sp3_content(
             ).astype(int)
 
         def clk_log(x):
+            # Replace NaNs with SP3 clk_log nodata value (-1000). Round values and cap them at 999.
             return _np.minimum(
                 _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL),
                 999,  # Cap at 999
@@ -1062,15 +1063,16 @@ def gen_sp3_content(
     # Longer term we should maybe reimplement this again, maybe just processing groups line by line to format them?
 
     def pos_formatter(x):
-        if isinstance(x, str):  # Presume an inf/NaN value, already formatted as nodata string. Pass through.
-            return x  # Expected value "      0.000000"
+        # NaN values handled in df.style.format(), using na_rep; this formatter should not be invoked for them.
+        if x in [_np.inf, _np.NINF]:  # Treat infinite values as nodata
+            return SP3_POS_NODATA_STRING
         return format(x, "13.6f")  # Numeric value, format as usual
 
     def clk_formatter(x):
-        # If this value (nominally a numpy float64) is actually a string, moreover containing the mandated part of the
-        # clock nodata value (per the SP3 spec), we deduce nodata formatting has already been done, and return as is.
-        if isinstance(x, str) and x.strip(" ").startswith("999999."):  # TODO performance: could do just type check
-            return x
+        # NaN is handled by passing a na_rep value to df.style.format() before writing out with to_string().
+        # So we just handle Infinity and normal numeric formatting.
+        if x in [_np.inf, _np.NINF]:
+            return SP3_CLOCK_NODATA_STRING
         return format(x, "13.6f")  # Not infinite or NaN: proceed with normal formatting
 
     # NOTE: the following formatters are fine, as the nodata value is actually a *numeric value*,
