@@ -547,7 +547,6 @@ def read_sp3(
     header = content[:header_end]
     content = content[header_end:]
     parsed_header = parse_sp3_header(header)
-    header_sv_count = parsed_header.SV_INFO.count()  # count() of non-NA/null, vs shape: dims of whole structure
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
@@ -555,55 +554,18 @@ def read_sp3(
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
 
-    # Are we running discrepancy checks?
-    if check_header_vs_filename_vs_content_discrepancies:
-        # SV count discrepancy check
-
-        # Check that count of SVs from header matches number of unique SVs we read in.
-        # To determine the unique SVs in the content we:
-        # 1. Index into the work-in-progress sp3 dataframe, filtering out anything where the PV flag is E (these entries
-        #   contain EP or EV data, not the name of an SV).
-        # 2. Get the index from that, filter down to level 1 (which has the SVs).
-        # 3. Make these SVs unique (as when you have P and V data, you will get two copies of every SV).
-        # 4. Get the size of this index, to determine the total number of unique SVs in the SP3 content.
-        df_sv_count = (
-            sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique().size
-        )
-        if header_sv_count != df_sv_count:
-            if not continue_on_discrepancies:
-                raise ValueError(
-                    f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!"
-                )
-            logger.warning(
-                f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!"
-            )
-
-        # Epoch count discrepancy check
-        # Are we including the filename in the check?
-        path_bytes_to_pass = None if skip_filename_in_discrepancy_check else sp3_path_or_bytes
-        check_epoch_counts_for_discrepancies(
-            draft_sp3_df=sp3_df,
-            parsed_sp3_header=parsed_header,
-            sp3_path_or_bytes=path_bytes_to_pass,
-            continue_on_error=continue_on_discrepancies,
-        )
-
-    if drop_offline_sats:
-        sp3_df = remove_offline_sats(sp3_df)
-    if nodata_to_nan:
-        # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
-        sp3_pos_nodata_to_nan(sp3_df)
-        # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
-        sp3_clock_nodata_to_nan(sp3_df)
-
     # P/V/EP/EV flag handling is currently incomplete. The current implementation truncates to the first letter,
     # so can't parse nor differenitate between EP and EV!
     if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
         if not continue_on_ep_ev_encountered:
             raise NotImplementedError("EP and EV flag rows are currently not supported")
-        logger.warning("EP / EV flag rows encountered. These are not yet supported, and will be ignored!")
+        logger.warning("EP / EV flag rows encountered. These are not yet supported. Dropping them from DataFrame...")
+        # Filter out EV / EP records, before we trip ourselves up with them. Technically this is redundant as in the
+        # next section we extract P and V records, then drop the PV_FLAG level.
+        sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"]
 
-    # Check very top of the header to see if this SP3 is Position only , or also contains Velocities
+    # Extract and merge Position and Velocity data. I.e. take the interlaced P and V rows, and restructure them into columns
+    # Check very top of the header to see if this SP3 is Position only, or also contains Velocities.
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
         sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
@@ -624,7 +586,55 @@ def read_sp3(
         position_df = position_df.drop(axis=1, columns="FLAGS")
 
         velocity_df.columns = SP3_VELOCITY_COLUMNS
+        # NOTE from the docs: pandas.concat copies attrs only if all input datasets have the same attrs.
+        # For simplity, we write the header to .attrs in the next section.
         sp3_df = _pd.concat([position_df, velocity_df], axis=1)
+
+    # Position and Velocity (if present) now have thier own columns, and are indexed on SV (rather than
+    # being interlaced as in source data).
+
+    # As the main transformations are done, write header data to dataframe attributes now,
+    # so it can travel with the dataframe from here on. NOTE: Pandas docs say .attrs is an experimental feature.
+    sp3_df.attrs["HEADER"] = parsed_header
+    sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
+
+    # DataFrame has been consolidated. Run remaining consistency checks, conversions, and removal steps. Doing this
+    # earlier would risk things like trying to pull pos values from an EV / EP row before it had been filtered out.
+
+    if drop_offline_sats:
+        sp3_df = remove_offline_sats(sp3_df)
+    if nodata_to_nan:
+        # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
+        sp3_pos_nodata_to_nan(sp3_df)
+        # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+        sp3_clock_nodata_to_nan(sp3_df)
+
+    # Are we running discrepancy checks?
+    if check_header_vs_filename_vs_content_discrepancies:
+        # SV count discrepancy check
+
+        content_sv_count = get_unique_svs(sp3_df).size
+        # count() gives total of non-NA/null (vs shape, which gets dims of whole structure):
+        header_sv_count = sp3_df.attrs["HEADER"].SV_INFO.count()
+        if header_sv_count != content_sv_count:
+            if not continue_on_discrepancies:
+                raise ValueError(
+                    f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
+                )
+            logger.warning(
+                f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
+            )
+
+        # Epoch count discrepancy check
+
+        # Include filename in check?
+        path_bytes_to_pass = None if skip_filename_in_discrepancy_check else sp3_path_or_bytes
+        check_epoch_counts_for_discrepancies(
+            draft_sp3_df=sp3_df,
+            parsed_sp3_header=parsed_header,
+            sp3_path_or_bytes=path_bytes_to_pass,
+            continue_on_error=continue_on_discrepancies,
+        )
 
     # Check for duplicate epochs, dedupe and log warning
     if sp3_df.index.has_duplicates:  # a literaly free check
@@ -638,9 +648,7 @@ def read_sp3(
         )
         # Now dedupe them, keeping the first of any clashes:
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
-    # Write header data to dataframe attributes:
-    sp3_df.attrs["HEADER"] = parsed_header
-    sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
+
     return sp3_df
 
 
