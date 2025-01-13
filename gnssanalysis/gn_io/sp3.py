@@ -292,7 +292,7 @@ def filter_by_svs(
     """
 
     # Get all SV names
-    all_sv_names = sp3_df.index.get_level_values(1).unique().array
+    all_sv_names = get_unique_svs(sp3_df)
     total_svs = len(all_sv_names)
     logger.info(f"Total SVs: {total_svs}")
 
@@ -427,7 +427,7 @@ def check_epoch_counts_for_discrepancies(
         sp3_filename = try_get_sp3_filename(sp3_path_or_bytes)
 
     # Could potentially check has_duplicates first for speed?
-    content_unique_epoch_count = draft_sp3_df.index.get_level_values(0).unique().size
+    content_unique_epoch_count = get_unique_epochs(draft_sp3_df).size
     # content_total_epoch_count = draft_sp3_df.index.get_level_values(0).size
 
     header_epoch_count = int(parsed_sp3_header.HEAD.N_EPOCHS)
@@ -920,7 +920,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     # Check that number of SVs the header metadata says should be here, matches the number of SVs *listed* in
     # header metadata (which we use to output the new header). Then check that this in turn matches the number of
     # unique SVs in the SP3 DataFrame itself.
-    dataframe_sv_count = sp3_df.index.get_level_values(1).unique().size
+    dataframe_sv_count = get_unique_svs(sp3_df).size
     header_sv_stated_count = int(head["SV_COUNT_STATED"])
     header_sv_actual_count = int(n_sats)
 
