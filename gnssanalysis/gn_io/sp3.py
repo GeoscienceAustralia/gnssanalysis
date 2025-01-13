@@ -859,19 +859,21 @@ def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
     """
 
     # Are we dealing with a DF which is early in processing: with Position, Velocity, and EV / EP rows in it?
-    # This will have the PV_FLAG index level. It *may* contain EV / EP rows, though until we support these they
-    # should be promptly removed at that point.
-    # Alternativley, has this DF had Position and Velocity data merged (into columns, not interlaced rows).
-    # In this case the PV_FLAG index level will have been dropped.
+    # -> This will have the PV_FLAG index level. It *may* contain EV / EP rows, though until we support these they
+    #    should be promptly removed at that point.
+
+    # Alternativley, has this DF had Position and Velocity data merged (into columns, not interlaced rows)?
+    # -> In this case the PV_FLAG index level will have been dropped.
     if "PV_FLAG" in sp3_df.index.names:
         if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
             logger.warning(
                 "EV/EP record found late in SP3 processing. Until we actually support them, "
                 "they should be removed by the EV/EP check earlier on! Filtering out while determining unique SVs."
             )
-            # Filter on data that doesn't relate to EV / EP rows
+            # Filter to data that doesn't relate to EV / EP rows, then get SVs from index (level 1).
             return sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique()
 
+    # Get index values from level 1 (which is SVs)
     return sp3_df.index.get_level_values(1).unique()
 
 
