@@ -302,7 +302,7 @@ def filter_by_svs(
 
     # Disqualify SVs unless the match the given names
     if filter_by_name:
-        keep_set.intersection(filter_by_name)
+        keep_set = keep_set.intersection(filter_by_name)
 
     # Disqualify SVs unless they match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
     if filter_to_sat_letter:
@@ -311,8 +311,8 @@ def filter_by_svs(
                 "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GE'"
             )
         # Make set of every SV name in the constellation we're keeping
-        constellation_sats_to_keep = [sv for sv in all_sv_names if filter_to_sat_letter.upper() in sv]
-        keep_set.intersection(constellation_sats_to_keep)
+        constellation_sats_to_keep = set([sv for sv in all_sv_names if filter_to_sat_letter.upper() in sv])
+        keep_set = keep_set.intersection(constellation_sats_to_keep)
 
     # Drop SVs beyond n (i.e. keep only the first n SVs)
     if filter_by_count:
