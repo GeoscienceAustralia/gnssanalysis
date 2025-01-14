@@ -593,7 +593,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
             if blk:
                 soln_df = pd.read_csv(
                     io.BytesIO(blk[0]),
-                    delim_whitespace=True,
+                    sep="\\s+",  # delim_whitespace is deprecated
                     comment="*",
                     names=["CODE", "PT", "SOLN", "T", "START_EPOCH", "END_EPOCH", "MEAN_EPOCH"],
                     converters={

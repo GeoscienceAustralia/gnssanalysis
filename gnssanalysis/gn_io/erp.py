@@ -260,7 +260,7 @@ def read_erp(
     data_of_interest = content[start_of_data:]  # data block
     erp_df = _pd.read_csv(
         _BytesIO(data_of_interest),
-        delim_whitespace=True,
+        sep="\\s+",  # delim_whitespace is deprecated
         names=headers,
         index_col=False,
     )
