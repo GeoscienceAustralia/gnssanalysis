@@ -196,7 +196,7 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
 
 
-def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]):
+def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]) -> None:
     """
     Utility function to update the internal representation of an SP3 header, when SVs are removed from the SP3
     DataFrame. This is useful e.g. when removing offline satellites.
