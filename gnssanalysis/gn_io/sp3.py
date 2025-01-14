@@ -29,6 +29,15 @@ _RE_SP3_HEAD = _re.compile(
     _re.VERBOSE,
 )
 
+# SP3 comment line requirements, from SP3d spec:
+#   There are now an unlimited number of comment records allowed in the header, and the maximum length of each comment
+#   record has been increased from 60 characters to 80 characters.
+# And elsewhere:
+#   For backwards compatibility, there will always be at least 4 comment lines.
+
+# TODO: checks for adding a comment which is too long / reflow it.
+# TODO: option for appending comments.
+
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
 # Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
@@ -497,9 +506,11 @@ def read_sp3(
     content = _gn_io.common.path2bytes(sp3_path_or_bytes)  # Will raise EOFError if file empty
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
-    comments: list = _RE_SP3_COMMENT_STRIP.findall(content)
-    for comment in comments:
+    comment_lines_bytes: list[bytes] = _RE_SP3_COMMENT_STRIP.findall(content)
+    for comment in comment_lines_bytes:
         content = content.replace(comment, b"")  # Not in place?? Really?
+    # These will be written to DataFrame.attrs["COMMENTS"] for easy access
+    comment_lines: list[str] = [line.decode("utf-8", errors="ignore") for line in comment_lines_bytes]
     # Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
     # immediately followed by the mandatory 4+ comment lines.
     # It is unclear from the specification whether comment lines can appear anywhere else. For robustness we
@@ -613,6 +624,7 @@ def read_sp3(
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
     # Write header data to dataframe attributes:
     sp3_df.attrs["HEADER"] = parsed_header
+    sp3_df.attrs["COMMENTS"] = comment_lines
     sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
     return sp3_df
 
@@ -843,15 +855,19 @@ def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
     return sp3_df.index.get_level_values(0).unique()
 
 
-def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
+def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
     NOTE: much of the header information is drawn from the DataFrame attrs structure. If this has not been
     updated as the DataFrame has been transformed, the header will not reflect the data.
 
     :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param bool output_comment: Write the SP3 comment lines stored with the DataFrame, into the output. Off by default.
     :return str: The generated SP3 header as a string.
     """
+    if output_comments and not "COMMENTS" in sp3_df.attrs:
+        raise IndexError("SP3 comment output requested, but comment data was not found in DataFrame.attrs")
+
     sp3_j2000 = sp3_df.index.levels[0].values
     sp3_j2000_begin = sp3_j2000[0]
 
@@ -924,8 +940,14 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
         + ["%i    0    0    0    0      0      0      0      0         0\n"]
         + ["%i    0    0    0    0      0      0      0      0         0\n"]
     )
-
+    # Default comments, which meet the specification requirement for >= 4 lines.
     comment = ["/*\n"] * 4
+    if output_comments:
+        stored_comments = sp3_df.attrs["COMMENTS"]
+        if len(stored_comments) >= 4:  # Minimum number of comment lines by spec.
+            comment = stored_comments
+        else:
+            logger.warning("SP3 comment data output skipped: SP3 DataFrame passed in had <4 comment lines!")
 
     return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
 
