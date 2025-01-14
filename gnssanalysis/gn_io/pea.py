@@ -13,7 +13,7 @@ def read_pea_partials(path):
     df = _pd.read_csv(
         _BytesIO(partials[begin:]),
         header=None,
-        delim_whitespace=True,
+        sep="\\s+",  # delim_whitespace is deprecated
         usecols=[0, 1, 2, 9, 10, 11],
         names=[None, "MJD", "TOD", "X", "Y", "Z"],
     )

@@ -17,7 +17,7 @@ def _get_core_list(core_list_path):
     # need to check if solution numbers are consistent with discontinuities selection
     core_df = _pd.read_csv(
         core_list_path,
-        delim_whitespace=True,
+        sep="\\s+",  # delim_whitespace is deprecated
         skiprows=4,
         comment="-",
         usecols=[0, 1, 2, 3],

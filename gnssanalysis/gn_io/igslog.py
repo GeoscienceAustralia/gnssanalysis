@@ -463,12 +463,13 @@ def gather_metadata(
         gather_id_loc, columns=["CODE", "DOMES_N", "CITY", "COUNTRY", "X", "Y", "Z", "LAT", "LON", "HEI", "PATH"]
     )
 
-    id_loc_df.CITY[id_loc_df.CITY == ""] = "N/A"
+    id_loc_df.loc[id_loc_df.CITY == "", "CITY"] = "N/A"
     id_loc_df.CITY = id_loc_df.CITY.str.rstrip().str.upper()
     id_loc_df.COUNTRY = translate_series(
         id_loc_df.COUNTRY.str.rstrip().str.upper(), _gn_io.aux_dicts.translation_country
     ).values
-    id_loc_df.DOMES_N[id_loc_df.DOMES_N == ""] = "---------"
+
+    id_loc_df.loc[id_loc_df.DOMES_N == "", "DOMES_N"] = "---------"
 
     xyz_array = (
         id_loc_df[["X", "Y", "Z"]].stack().str.replace(",", ".").replace({"": None}).unstack().values.astype(float)
@@ -504,7 +505,7 @@ def gather_metadata(
     ant_df.RADOME2 = ant_df.RADOME2.str.rstrip().str.upper()
 
     no_rad2_mask = ~ant_df.RADOME.isin(_gn_io.aux_dicts.atx_rad_tbl)
-    ant_df.RADOME[no_rad2_mask] = ant_df.RADOME2[no_rad2_mask]
+    ant_df.loc[no_rad2_mask, "RADOME"] = ant_df.RADOME2[no_rad2_mask]
     # translation_ant.index.name= None
     antennas = translate_series(ant_df.ANTENNA, _gn_io.aux_dicts.translation_ant)
     invalid_ant_mask = ~antennas.index.isin(_gn_io.aux_dicts.atx_ant_tbl)
