@@ -3,7 +3,7 @@ import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Literal, Optional, Union, List, Tuple
+from typing import Callable, Literal, Mapping, Optional, Union, List, Tuple, overload
 from pathlib import Path
 
 import numpy as _np
@@ -152,12 +152,16 @@ SP3_VELOCITY_COLUMNS = [
 # not 14 (the official width of the column i.e. F14.6), again because Pandas insists on adding a further space.
 # See comment in gen_sp3_content() line ~645 for further discussion.
 # Another related 'hack' can be found at line ~602, handling the FLAGS columns.
-SP3_CLOCK_NODATA_STRING = "999999.999999"
+SP3_CLOCK_NODATA_STRING = " 999999.999999" # This is currently formatted for full width (ie 14 chars)
 SP3_CLOCK_NODATA_NUMERIC = 999999
-SP3_POS_NODATA_STRING = "     0.000000"
+SP3_POS_NODATA_STRING = "      0.000000" # This is currently formatted for full width (ie 14 chars)
 SP3_POS_NODATA_NUMERIC = 0
-SP3_CLOCK_STD_NODATA = -1000
-SP3_POS_STD_NODATA = -100
+# The numeric values below are only relevant within this codebase, and signify nodata / NaN.
+# They are created by the functions pos_log() and clk_log()
+SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL = -1000
+SP3_CLOCK_STD_NODATA_STRING = "   "
+SP3_POS_STD_NODATA_NUMERIC_INTERNAL = -100
+SP3_POS_STD_NODATA_STRING = "  "
 
 
 def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
@@ -376,6 +380,7 @@ def _process_sp3_block(
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
     temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
     # TODO set datatypes per column in advance
+    # TODO maybe change this after updating everyting else to use actual NaNs ?
     temp_sp3["Clock_Event_Flag"] = temp_sp3["Clock_Event_Flag"].fillna(" ")
     temp_sp3["Clock_Pred_Flag"] = temp_sp3["Clock_Pred_Flag"].fillna(" ")
     temp_sp3["Maneuver_Flag"] = temp_sp3["Maneuver_Flag"].fillna(" ")
@@ -586,6 +591,14 @@ def read_sp3(
     else:
         # DF contains interlaced Position & Velocity measurements for each sat. Split the data based on this, and
         # recombine, turning Pos and Vel into separate columns.
+
+        pv_flag_values = sp3_df.index.get_level_values("PV_FLAG").unique().values
+        if "V" not in pv_flag_values:
+            raise ValueError(
+                "SP3 header PV flag was not P, but no V (velocity) index appears to exist! "
+                f"Unique PV flag values seen: {pv_flag_values}"
+            )
+
         position_df = sp3_df.xs("P", level="PV_FLAG")
         velocity_df = sp3_df.xs("V", level="PV_FLAG")
 
@@ -997,12 +1010,32 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
 
 
+# Option 1: don't provide a buffer, the data will be returned as a string
+@overload
 def gen_sp3_content(
     sp3_df: _pd.DataFrame,
+    in_buf: None = None,
+    sort_outputs: bool = ...,
+    continue_on_unhandled_velocity_data: bool = ...,
+) -> str: ...
+
+
+# Option 2: (not typically used) provide a buffer and have the data written there
+@overload
+def gen_sp3_content(
+    sp3_df: _pd.DataFrame,
+    in_buf: _io.StringIO,
+    sort_outputs: bool = ...,
+    continue_on_unhandled_velocity_data: bool = ...,
+) -> None: ...
+
+
+def gen_sp3_content(
+    sp3_df: _pd.DataFrame,
+    in_buf: Union[None, _io.StringIO] = None,
     sort_outputs: bool = False,
-    buf: Union[None, _io.TextIOBase] = None,
     continue_on_unhandled_velocity_data: bool = True,
-) -> str:
+) -> Union[str, None]:
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
     it otherwise.
@@ -1010,13 +1043,14 @@ def gen_sp3_content(
     Args:
     :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
-    :param _io.TextIOBase buf: The buffer to write the SP3 content to. Defaults to None.
+    :param Union[_io.StringIO, None] in_buf: The buffer to write the SP3 content to. Defaults to None.
     :param bool continue_on_unhandled_velocity_data: If (currently unsupported) velocity data exists in the DataFrame,
         log a warning and skip velocity data, but write out position data. Set to false to raise an exception instead.
-    :return str or None: The SP3 content if `buf` is None, otherwise None.
+    :return str or None: Return SP3 content as a string if `in_buf` is None, otherwise write SP3 content to `in_buf`,
+        and return None.
     """
 
-    out_buf = buf if buf is not None else _io.StringIO()
+    out_buf = in_buf if in_buf is not None else _io.StringIO()
     if sort_outputs:
         # If we need to do particular sorting/ordering of satellites and constellations we can use some of the
         # options that .sort_index() provides
@@ -1080,14 +1114,17 @@ def gen_sp3_content(
         def pos_log(x):
             return _np.minimum(  # Cap value at 99
                 _np.nan_to_num(  # If there is data, use the following formula. Else return NODATA value.
-                    _np.rint(_np.log(x) / _np.log(pos_base)), nan=SP3_POS_STD_NODATA  # Rounded to nearest int
+                    _np.rint(_np.log(x) / _np.log(pos_base)),
+                    nan=SP3_POS_STD_NODATA_NUMERIC_INTERNAL,  # Rounded to nearest int
                 ),
                 99,
             ).astype(int)
 
         def clk_log(x):
+            # Replace NaNs with SP3 clk_log nodata value (-1000). Round values and cap them at 999.
             return _np.minimum(
-                _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA), 999  # Cap at 999
+                _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL),
+                999,  # Cap at 999
             ).astype(int)
 
         std_df = sp3_df["STD"]
@@ -1105,8 +1142,9 @@ def gen_sp3_content(
     def prn_formatter(x):
         return f"P{x}"
 
-    # TODO NOTE
-    # This is technically incorrect but convenient. The SP3 standard doesn't include a space between the X, Y, Z, and
+    # NOTE This has been updated to full 14.6f format. The following description has been left for background and
+    # reference while testing the change.
+    # (Previously!) technically incorrect but convenient. SP3 standard doesn't include a space between the X, Y, Z, and
     # CLK values but pandas .to_string() put a space between every field. In practice most entries have spaces between
     # the X, Y, Z, and CLK values because the values are small enough that a 14.6f format specification gets padded
     # with spaces. So for now we will use a 13.6f specification and a space between entries, which will be equivalent
@@ -1114,16 +1152,17 @@ def gen_sp3_content(
     # Longer term we should maybe reimplement this again, maybe just processing groups line by line to format them?
 
     def pos_formatter(x):
-        if isinstance(x, str):  # Presume an inf/NaN value, already formatted as nodata string. Pass through.
-            return x  # Expected value "      0.000000"
-        return format(x, "13.6f")  # Numeric value, format as usual
+        # NaN values handled in df.style.format(), using na_rep; this formatter should not be invoked for them.
+        if x in [_np.inf, -_np.inf]:  # Treat infinite values as nodata
+            return SP3_POS_NODATA_STRING
+        return format(x, "14.6f")  # Numeric value, format as usual
 
     def clk_formatter(x):
-        # If this value (nominally a numpy float64) is actually a string, moreover containing the mandated part of the
-        # clock nodata value (per the SP3 spec), we deduce nodata formatting has already been done, and return as is.
-        if isinstance(x, str) and x.strip(" ").startswith("999999."):  # TODO performance: could do just type check
-            return x
-        return format(x, "13.6f")  # Not infinite or NaN: proceed with normal formatting
+        # NaN is handled by passing a na_rep value to df.style.format() before writing out with to_string().
+        # So we just handle Infinity and normal numeric formatting.
+        if x in [_np.inf, -_np.inf]:
+            return SP3_CLOCK_NODATA_STRING
+        return format(x, "14.6f")  # Not infinite or NaN: proceed with normal formatting
 
     # NOTE: the following formatters are fine, as the nodata value is actually a *numeric value*,
     # so DataFrame.to_string() will invoke them for those values.
@@ -1132,27 +1171,32 @@ def gen_sp3_content(
     # only representation.
     def pos_std_formatter(x):
         # We use -100 as our integer NaN/"missing" marker
-        if x <= SP3_POS_STD_NODATA:
-            return "  "
+        # NOTE: this could be NaN, except for the logic in the function that calculates this value.
+        if x <= SP3_POS_STD_NODATA_NUMERIC_INTERNAL:
+            return SP3_POS_STD_NODATA_STRING
         return format(x, "2d")
 
     def clk_std_formatter(x):
         # We use -1000 as our integer NaN/"missing" marker
-        if x <= SP3_CLOCK_STD_NODATA:
-            return "   "
+        if x <= SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL:
+            return SP3_CLOCK_STD_NODATA_STRING
         return format(x, "3d")
 
-    formatters = {
-        "PRN": prn_formatter,
-        "X": pos_formatter,  # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
-        "Y": pos_formatter,
-        "Z": pos_formatter,
-        "CLK": clk_formatter,  # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
-        "STD_X": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
-        "STD_Y": pos_std_formatter,
-        "STD_Z": pos_std_formatter,
-        "STD_CLK": clk_std_formatter,  # ditto above
-    }
+    formatters: Mapping[str, Callable] = dict(
+        {
+            "PRN": prn_formatter,
+            "X": pos_formatter,  # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
+            "Y": pos_formatter,
+            "Z": pos_formatter,
+            "CLK": clk_formatter,  # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
+            "STD_X": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
+            "STD_Y": pos_std_formatter,
+            "STD_Z": pos_std_formatter,
+            "STD_CLK": clk_std_formatter,  # ditto above
+        }
+    )
+
+    # TODO maybe we want to set axis=0 in this groupby() (based on a previous experiment, not sure)
     for epoch, epoch_vals in out_df.reset_index("PRN").groupby(level="J2000"):
         # Format and write out the epoch in the SP3 format
         epoch_datetime = _gn_datetime.j2000_to_pydatetime(epoch)
@@ -1164,45 +1208,42 @@ def gen_sp3_content(
         out_buf.write("\n")
 
         # Format this epoch's values in the SP3 format and write to buffer
+        # Notes:
+        # - DataFrame.to_string() doesn't call formatters on NaN values (nor presumably does DataFrame.Styler.format())
+        # - Mixing datatypes in a column is disallowed in Pandas >=3.
+        # - We consider +/-Infinity, and NaN to be nodata values, along with some column specific nodata values.
+        # Given all this, the following approach is taken:
+        # - Custom formatters are updated to render +/-Infninty values as the SP3 nodata value for that column.
+        # - Chained calls to DataFrame.style.format() are used to set the column's formatter, and string nodata value.
 
-        # First, we fill NaN and infinity values with the standardised nodata value for each column.
-        # NOTE: DataFrame.to_string() as called below, takes formatter functions per column. It does not, however
-        # invoke them on NaN values!! As such, trying to handle NaNs in the formatter is a fool's errand.
-        # Instead, we do it here, and get the formatters to recognise and skip over the already processed nodata values
-
-        # POS nodata formatting
-        # Fill +/- infinity values with SP3 nodata value for POS columns
-        epoch_vals["X"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Y"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Z"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        # Now do the same for NaNs
-        epoch_vals["X"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Y"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Z"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        # NOTE: we could use replace() for all this, though fillna() might be faster in some
-        # cases: https://stackoverflow.com/a/76225227
-        # replace() will also handle other types of nodata constants: https://stackoverflow.com/a/54738894
-
-        # CLK nodata formatting
-        # Throw both +/- infinity, and NaN values to the SP3 clock nodata value.
-        # See https://stackoverflow.com/a/17478495
-        epoch_vals["CLK"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_CLOCK_NODATA_STRING, inplace=True)
-        epoch_vals["CLK"].fillna(value=SP3_CLOCK_NODATA_STRING, inplace=True)
-
-        # Now invoke DataFrame to_string() to write out the values, leveraging our formatting functions for the
-        # relevant columns.
-        # NOTE: NaN and infinity values do NOT invoke the formatter, though you can put a string in a primarily numeric
-        # column, so we format the nodata values ahead of time, above.
-        # NOTE: you CAN'T mix datatypes as described above, in Pandas 3 and above, so this approach will need to be
-        # updated to use chained calls to format().
-        epoch_vals.to_string(
-            buf=out_buf,
-            index=False,
-            header=False,
-            formatters=formatters,
+        epoch_vals_styler = (
+            epoch_vals.style.hide(axis="columns", names=False)  # Get rid of column labels
+            .hide(axis="index", names=False)  # Get rid of index labels (i.e. j2000 times)
+            # Format columns, specify how NaN values should be represented (NaNs are NOT passed to formatters)
+            .format(subset=["PRN"], formatter=prn_formatter)
+            .format(subset=["X"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["Y"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["Z"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["CLK"], na_rep=SP3_CLOCK_NODATA_STRING, formatter=clk_formatter)
+            # STD columns don't need NODATA handling: an internal integer nodata value is used by the formatter
+            .format(subset=["STD_X"], formatter=pos_std_formatter)
+            .format(subset=["STD_Y"], formatter=pos_std_formatter)
+            .format(subset=["STD_Z"], formatter=pos_std_formatter)
+            .format(subset=["STD_CLK"], formatter=clk_std_formatter)
+            # NOTE: Passing formatters to the formatter argument throws typing errors, but is valid, as
+            # per https://pandas.pydata.org/docs/reference/api/pandas.io.formats.style.Styler.format.html
+            # But we won't use it anyway, because the more verbose option above allows us to set na_rep as well,
+            # and lay it all out in one place.
+            # .format(formatter=formatters)
         )
-        out_buf.write("\n")
-    if buf is None:
+
+        # NOTE: styler.to_string()'s delimiter="": no space between columns!
+        # TODO to use this though, we need to update the formatters to make the columns appropirately wide.
+        # This has been switched for the 13.6f formatters (to 14.6f), but I'm not positive whether other updates
+        # will be needed - e.g. to flags columns, STD columns, etc.
+        out_buf.write(epoch_vals_styler.to_string(delimiter=""))  # styler.to_string() adds a trailing newline
+
+    if in_buf is None:  # No buffer to write to, was passed in. Return a string.
         return out_buf.getvalue()
     return None
 
@@ -1454,7 +1495,9 @@ def diff_sp3_rac(
     nd_rac = diff_eci.values[:, _np.newaxis] @ _gn_transform.eci2rac_rot(sp3_baseline_eci_vel)
     df_rac = _pd.DataFrame(
         nd_rac.reshape(-1, 3),
-        index=sp3_baseline.index,
+        index=sp3_baseline.index,  # Note that if the test and baseline have different SVs, this index will refer to
+        # data which is missing in the 'test' dataframe (and so is likely to be missing in
+        # the diff too).
         columns=[["EST_RAC"] * 3, ["Radial", "Along-track", "Cross-track"]],
     )
 

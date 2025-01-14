@@ -18,7 +18,7 @@ def _read_discontinuities(path):
     out_df = _pd.read_csv(
         filepath_or_buffer=_BytesIO(block),
         usecols=[0, 1, 2, 4, 5, 6],
-        delim_whitespace=True,
+        sep="\\s+",  # delim_whitespace is deprecated
         header=None,
         names=["CODE", "PT", "SOLN", "START", "END", "MODEL"],
         dtype={0: object, 1: object, 2: int, 4: object, 5: object, 6: MODEL_CATEGORY},
