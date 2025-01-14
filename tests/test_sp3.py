@@ -141,12 +141,22 @@ class TestSp3(unittest.TestCase):
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
+    # These tests should include:
+    # - Correct alignment of POS, CLK, STDPOS STDCLK, (not velocity yet), FLAGS
+    # - Correct alignment of the above when nodata and infinite values are present
+    # - Inclusion of HLM orbit_type in header, after applying Helmert trainsformation (if not covered elsewhere?
+    #   Probably should be covered elsewhere)
+    # - Not including column names (can just test that output matches expected format)
+    # - Not including any NaN value *anywhere*
 
     def test_gen_sp3_content_velocity_exception_handling(self):
         """
         gen_sp3_content() velocity output should raise exception (currently unsupported).\
             If asked to continue with warning, it should remove velocity columns before output.
         """
+        # Input data passed as bytes here, rather than using a mock file, because the mock file setup seems to break
+        # part of Pandas Styler, which is used by gen_sp3_content(). Specifically, some part of Styler's attempt to
+        # load style config files leads to a crash, despite some style config files appearing to read successfully)
         input_data_fresh = input_data + b""  # Lazy attempt at not passing a reference
         sp3_df = sp3.read_sp3(bytes(input_data_fresh), pOnly=False)
         with self.assertRaises(NotImplementedError):
