@@ -9,6 +9,7 @@ import pandas as pd
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
 import gnssanalysis.gn_io.sp3 as sp3
 
+from gnssanalysis.gn_utils import trim_line_ends
 from test_datasets.sp3_test_data import (
     # first dataset is part of the IGS benchmark (modified to include non null data on clock):
     sp3_test_data_igs_benchmark_null_clock as input_data,
@@ -21,6 +22,10 @@ from test_datasets.sp3_test_data import (
     sp3_test_data_partially_offline_sat as offline_sat_test_data,
     # For header vs content validation tests:
     sp3_test_data_cod_broken_missing_sv_in_content,
+    # For testing generate_sp3_header() and generate_sp3_content()
+    sp3_test_data_short_cod_final,  # For use as input data
+    sp3_test_data_short_cod_final_content,  # For validating content output
+    sp3_test_data_short_cod_final_header,  # For validating header output
 )
 
 
@@ -140,6 +145,29 @@ class TestSp3(unittest.TestCase):
         )
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
+
+    def test_gen_sp3_fundamentals(self):
+        """
+        Tests that the SP3 header and content generation functions produce output that (apart from trailing
+        whitespace), match a known good value.
+        NOTE: leverages read_sp3() to pull in sample data, so is prone to errors in that function.
+        """
+        # Note this is suboptimal from a testing standpoint, but for now is a lot easier than manually constructing
+        # the DataFrame.
+        sp3_df = sp3.read_sp3(bytes(sp3_test_data_short_cod_final))
+
+        generated_sp3_header = sp3.gen_sp3_header(sp3_df, output_comments=True)
+        generated_sp3_content = sp3.gen_sp3_content(sp3_df)
+
+        self.assertTrue(
+            trim_line_ends(generated_sp3_header) == trim_line_ends(sp3_test_data_short_cod_final_header),
+            "SP3 header should match baseline, including retention of original comments",
+        )
+        self.assertTrue(
+            trim_line_ends(generated_sp3_content) == trim_line_ends(sp3_test_data_short_cod_final_content),
+            "SP3 content should match baseline",
+        )
+
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
     # These tests should include:
     # - Correct alignment of POS, CLK, STDPOS STDCLK, (not velocity yet), FLAGS

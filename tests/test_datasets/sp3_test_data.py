@@ -248,8 +248,45 @@ PG03 -17231.990585   4028.826042  19602.838740    463.954491
 EOF
 """
 
+# For testing gen_sp3_header()
+sp3_test_data_short_cod_final_header = """#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
+## 2323 432000.00000000   300.00000000 60510 0.0000000000000
++    3   G01G02G03  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10  4  4  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* Center for Orbit Determination in Europe (CODE)                              
+/* Final GNSS orbits and clocks for year-day 2024-2010                          
+/* Middle day of a 3-day long-arc GRE solution                                  
+/* Product reference - DOI 10.48350/197025                                      
+/* PCV:IGS20      OL/AL:FES2014b NONE     YN ORB:CoN CLK:CoN                    
+"""
 
-# Deliberately broken versions of the above
+# For testing gen_sp3_content()
+sp3_test_data_short_cod_final_content = """*  2024  7 19  0  0  0.00000000
+PG01   4510.358405 -23377.282442 -11792.723580    239.322216
+PG02 -19585.529427  -8704.823858  16358.028672   -396.375750
+PG03 -17580.234088   4691.573463  19141.243267    463.949579
+*  2024  7 19  0  5  0.00000000
+PG01   4796.934856 -23696.377197 -10979.751610    239.319708
+PG02 -19881.646388  -9206.366139  15702.571850   -396.373498
+PG03 -17231.990585   4028.826042  19602.838740    463.954491
+"""
+
+
+# Deliberately broken versions of the above full file.
 
 # Issue: Inconsistent number of SVs (first epoch correct, then adds one)
 # Use filename: COD0OPSFIN_20242010000_10M_05M_ORB.SP3
