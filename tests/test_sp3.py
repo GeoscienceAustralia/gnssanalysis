@@ -152,6 +152,11 @@ class TestSp3(unittest.TestCase):
         whitespace), match a known good value.
         NOTE: leverages read_sp3() to pull in sample data, so is prone to errors in that function.
         """
+
+        # Prep the baseline data to test against, including stripping each line of trailing whitespace.
+        baseline_header_lines = trim_line_ends(sp3_test_data_short_cod_final_header).splitlines()
+        baseline_content_lines = trim_line_ends(sp3_test_data_short_cod_final_content).splitlines()
+
         # Note this is suboptimal from a testing standpoint, but for now is a lot easier than manually constructing
         # the DataFrame.
         sp3_df = sp3.read_sp3(bytes(sp3_test_data_short_cod_final))
@@ -159,15 +164,38 @@ class TestSp3(unittest.TestCase):
         generated_sp3_header = sp3.gen_sp3_header(sp3_df, output_comments=True)
         generated_sp3_content = sp3.gen_sp3_content(sp3_df)
 
-        self.assertTrue(
-            trim_line_ends(generated_sp3_header) == trim_line_ends(sp3_test_data_short_cod_final_header),
-            "SP3 header should match baseline, including retention of original comments",
+        # As with the baseline data, prep the data under test, for comparison.
+        test_header_lines = trim_line_ends(generated_sp3_header).splitlines()
+        test_content_lines = trim_line_ends(generated_sp3_content).splitlines()
+
+        # TODO maybe we don't want to split the content, just the header
+
+        self.assertEqual(
+            len(baseline_header_lines),
+            len(test_header_lines),
+            "Baseline and test header should have same number of lines",
         )
-        self.assertTrue(
-            trim_line_ends(generated_sp3_content) == trim_line_ends(sp3_test_data_short_cod_final_content),
-            "SP3 content should match baseline",
+        self.assertEqual(
+            len(baseline_content_lines),
+            len(test_content_lines),
+            "Baseline and test content should have same number of lines",
         )
 
+        # As we know the two arrays are equal length, we can iterate as one
+        # Header first
+        for i in range(0, len(baseline_header_lines) - 1):
+            self.assertEqual(
+                baseline_header_lines[i],
+                test_header_lines[i],
+                f"Header line {i} didn't match",
+            )
+        # Same for content (maybe don't do this?)
+        for i in range(0, len(baseline_content_lines) - 1):
+            self.assertEqual(
+                baseline_content_lines[i],
+                test_content_lines[i],
+                f"Content line {i} didn't match",
+            )
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
     # These tests should include:
     # - Correct alignment of POS, CLK, STDPOS STDCLK, (not velocity yet), FLAGS
