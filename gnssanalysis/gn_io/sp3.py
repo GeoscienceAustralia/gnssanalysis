@@ -468,6 +468,43 @@ def check_epoch_counts_for_discrepancies(
     # All good, validation passed.
 
 
+def check_sp3_version(sp3_bytes: bytes, strict: bool = False) -> bool:
+    """
+    Reads the the SP3 version character from the provided SP3 data as bytes, and raises / warns if this
+    implementation does not support it.
+    The version character is specified as the second character in the file/header.
+    :param bytes sp3_bytes: The raw SP3 data to check.
+    :param bool strict: raise ValueError for all versions we don't actively support. Otherwise for possibly compatible
+        versions, a warning is logged and parsing is still attempted.
+    :raises ValueError: if the SP3 data is of a version we cannot parse (e.g. a, or > d)
+    :return bool: True if this version is actively supported (currently only version 'd'), False otherwise.
+    """
+
+    # Check the SP3 data we are reading is a version we support (currenly only SP3d is actively used, and support is
+    # not complete).
+    version_char = sp3_bytes[1:2]
+
+    if version_char == b"d":  # Version d, ~2016. This is the version we actively support.
+        return True
+    elif version_char > b"d":  # Too new. Bail out, we don't know what has changed.
+        raise ValueError(
+            f"SP3 file version '{version_char}' is too new! We support version 'd', and can potentially read (untested) version 'c' and 'b'"
+        )
+    elif version_char in (b"c", b"b"):  # Tentative, may not work properly.
+        if strict:
+            raise ValueError(
+                f"Support for SP3 file version '{version_char}' is untested. Refusing to read as strict mode is on."
+            )
+        logger.warning(f"Reading an older SP3 file version '{version_char}'. This may not parse correctly!")
+        return False
+    elif version_char == b"a":  # First version doesn't have constellation letters (e.g. G01, R01) as it is GPS only.
+        raise ValueError(
+            f"SP3 file version 'a' (the original version) is unsupported. We support version 'd', with partial (possible) support for 'c' and 'b'"
+        )
+    else:
+        raise ValueError(f"Failure determining SP3 data version. Got '{version_char}")
+
+
 def read_sp3(
     sp3_path_or_bytes: Union[str, Path, bytes],
     pOnly: bool = True,
@@ -478,6 +515,7 @@ def read_sp3(
     # These only apply when the above is enabled:
     skip_filename_in_discrepancy_check: bool = False,
     continue_on_discrepancies: bool = False,
+    enforce_strict_format_compliance: bool = False,  # TODO raise exceptions if anything is not to spec, even if it wouldn't necessarily break processing. E.g. min number of SV entries, min number of comments, comments having a leading space, etc.
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -509,6 +547,9 @@ def read_sp3(
         If nodata_to_nan is True, nodata values in the SP3 POS and CLK columns are converted to NaN.
     """
     content = _gn_io.common.path2bytes(sp3_path_or_bytes)  # Will raise EOFError if file empty
+
+    # Extract and check version. Raises exception for completely unsupported versions, logs warning for version b and c.
+    check_sp3_version(content, strict=enforce_strict_format_compliance)
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
     comment_lines_bytes: list[bytes] = _RE_SP3_COMMENT_STRIP.findall(content)
