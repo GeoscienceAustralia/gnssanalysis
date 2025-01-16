@@ -556,7 +556,7 @@ def read_sp3(
     for comment in comment_lines_bytes:
         content = content.replace(comment, b"")  # Not in place?? Really?
     # These will be written to DataFrame.attrs["COMMENTS"] for easy access
-    comment_lines: list[str] = [line.decode("utf-8", errors="ignore") for line in comment_lines_bytes]
+    comment_lines: list[str] = [line.decode("utf-8", errors="ignore").rstrip("\n") for line in comment_lines_bytes]
     # Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
     # immediately followed by the mandatory 4+ comment lines.
     # It is unclear from the specification whether comment lines can appear anywhere else. For robustness we
@@ -995,7 +995,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
         + ["%i    0    0    0    0      0      0      0      0         0\n"]
     )
     # Default comments, which meet the specification requirement for >= 4 lines.
-    sp3_comment_lines = ["/* \n"] * 4
+    sp3_comment_lines = [SP3_COMMENT_START] * 4
     if output_comments:
         sp3_comment_lines = sp3_df.attrs["COMMENTS"]  # Use actual comments from the DataFrame, not placeholders
 
@@ -1014,10 +1014,12 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
         # Ensure >= 4 comment lines total
         # The spec states that there must be at least 4 comment lines. Make up the difference if we are short.
         if (short_by_lines := 4 - len(sp3_comment_lines)) > 0:
-            sp3_comment_lines.extend(["/* \n"] * short_by_lines)
+            sp3_comment_lines.extend([SP3_COMMENT_START] * short_by_lines)
 
             # TODO check the above this appends lines, not an array of lines - write test for this.
 
+    # Put the newlines back on the end of each comment line, before merging into the output header
+    sp3_comment_lines = [line + "\n" for line in sp3_comment_lines]
     return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + sp3_comment_lines)
 
 
