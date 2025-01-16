@@ -929,11 +929,20 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
         )
         head.VERSION = "d"
 
+    # NOTE: formatting of the start epoch below, uses the utility function j20002rnxdt() which appears to have been
+    # designed for printing the epoch headers within the SP3 content. As such it starts with extra chars ie '*  2024'
+    # and ends with a newline.
+
     # need to update DATETIME outside before writing
     line1 = [
-        f"#{head.VERSION}{head.PV_FLAG}{_gn_datetime.j20002rnxdt(sp3_j2000_begin)[0][3:-2]}"
-        + f"{sp3_j2000.shape[0]:>9}{head.DATA_USED:>6}"
-        + f"{head.COORD_SYS:>6}{head.ORB_TYPE:>4}{head.AC:>5}\n"
+        f"#{head.VERSION}"  # E.g. '#d'
+        + f"{head.PV_FLAG}"  # E.g. 'P' or 'V'
+        + f"{_gn_datetime.j20002rnxdt(sp3_j2000_begin)[0][3:-1]}"  # E.g. '2024  7 19  0  0  0.00000000' # TODO check. Was indexed with [3:-2] before
+        + f"{sp3_j2000.shape[0]:>8}"  # Number of epochs E.g. '2'. TODO check what appropriate padding is. Was set to >9
+        + f"{head.DATA_USED:>4}"  # E.g. 'd+D' ? # TODO confirm intended padding. Was >6
+        + f"{head.COORD_SYS:>8}"  # E.g. 'IGS20' # TODO check. Was padded as >6
+        + f"{head.ORB_TYPE:>4}"  # E.g. 'FIT'
+        + f"{head.AC:>5}\n"  # E.g. 'GAA' or 'AIUB', etc.
     ]
 
     gpsweek, gpssec = _gn_datetime.datetime2gpsweeksec(sp3_j2000_begin)
