@@ -876,6 +876,13 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
     head = header.HEAD
     sv_tbl = header.SV_INFO
 
+    if head.VERSION != "d":
+        logger.warning(
+            f"Stored SP3 header indicates version '{head.VERSION}'. Changing to version 'd' for "
+            "write-out given that's the version this implementation is designed to create"
+        )
+        head.VERSION = "d"
+
     # need to update DATETIME outside before writing
     line1 = [
         f"#{head.VERSION}{head.PV_FLAG}{_gn_datetime.j20002rnxdt(sp3_j2000_begin)[0][3:-2]}"
