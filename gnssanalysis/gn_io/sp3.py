@@ -171,6 +171,11 @@ SP3_POS_STD_NODATA_NUMERIC_INTERNAL = -100
 SP3_POS_STD_NODATA_STRING = "  "
 
 
+# Other SP3 constants
+SP3_COMMENT_START: str = "/* "
+SP3_COMMENT_MAX_LENGTH: int = 80
+
+
 def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     """
     Converts the SP3 Positional column's nodata values (0.000000) to NaNs.
