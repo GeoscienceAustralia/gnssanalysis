@@ -855,7 +855,7 @@ def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
     return sp3_df.index.get_level_values(0).unique()
 
 
-def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False) -> str:
+def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_mode: bool = False) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
     NOTE: much of the header information is drawn from the DataFrame attrs structure. If this has not been
@@ -863,6 +863,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False) -> str:
 
     :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool output_comment: Write the SP3 comment lines stored with the DataFrame, into the output. Off by default.
+    :param bool strict_mode: More strictly enforce SP3 specification rules (e.g. comments must have a leading space)
     :return str: The generated SP3 header as a string.
     """
     if output_comments and not "COMMENTS" in sp3_df.attrs:
@@ -941,15 +942,30 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False) -> str:
         + ["%i    0    0    0    0      0      0      0      0         0\n"]
     )
     # Default comments, which meet the specification requirement for >= 4 lines.
-    comment = ["/*\n"] * 4
+    sp3_comment_lines = ["/* \n"] * 4
     if output_comments:
-        stored_comments = sp3_df.attrs["COMMENTS"]
-        if len(stored_comments) >= 4:  # Minimum number of comment lines by spec.
-            comment = stored_comments
-        else:
-            logger.warning("SP3 comment data output skipped: SP3 DataFrame passed in had <4 comment lines!")
+        sp3_comment_lines = sp3_df.attrs["COMMENTS"]  # Use actual comments from the DataFrame, not placeholders
 
-    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
+        # Validate the lines aren't too long. And in strict mode, check comment data (if present) starts at >= column 4
+        for line in sp3_comment_lines:
+            if len(line) > 80:  # Limit in SP3d (in SP3c the max is 60, but we don't output anything older than SP3d)
+                raise ValueError(f"SP3 comment line found that was longer than 80 chars! '{line}'")
+            if strict_mode:
+                # All comment lines must begin with "/* ", whether there is further comment data there or not.
+                if len(line) < 3 or line[:2] != "/* ":  # Line too short, or first three chars weren't to spec
+                    raise ValueError(
+                        f"SP3 comment line didn't begin with '/* ' (including leading space) '{line}'. "
+                        "Turn off strict mode to skip this check"
+                    )
+
+        # Ensure >= 4 comment lines total
+        # The spec states that there must be at least 4 comment lines. Make up the difference if we are short.
+        if (short_by_lines := 4 - len(sp3_comment_lines)) > 0:
+            sp3_comment_lines.extend(["/* \n"] * short_by_lines)
+
+            # TODO check the above this appends lines, not an array of lines - write test for this.
+
+    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + sp3_comment_lines)
 
 
 # Option 1: don't provide a buffer, the data will be returned as a string
