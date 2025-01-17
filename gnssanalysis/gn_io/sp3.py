@@ -940,7 +940,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
         # Covers col 4-31 (start time in: year, month, day of month, hour, minute, second), various formats.
         # Widths are: 4, 2, 2, 2, 2, f11.8 (8 digits after decimal point)
         # Combined output E.g. '2024  7 19  0  0  0.00000000'
-        + f"{_gn_datetime.j20002rnxdt(sp3_j2000_begin)[0][3:-1]}"
+        + f"{_gn_datetime.j2000_to_sp3_head_dt(sp3_j2000_begin)}"
         + " "  # Col 32: Unused / space
         + f"{sp3_j2000.shape[0]:>7}"  # Col 33-39: Num epochs, I7. E.g '_____96'
         + " "  # Col 40
