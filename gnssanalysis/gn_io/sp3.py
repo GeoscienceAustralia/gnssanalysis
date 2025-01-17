@@ -935,14 +935,34 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
 
     # need to update DATETIME outside before writing
     line1 = [
-        f"#{head.VERSION}"  # E.g. '#d'
-        + f"{head.PV_FLAG}"  # E.g. 'P' or 'V'
-        + f"{_gn_datetime.j20002rnxdt(sp3_j2000_begin)[0][3:-1]}"  # E.g. '2024  7 19  0  0  0.00000000' # TODO check. Was indexed with [3:-2] before
-        + f"{sp3_j2000.shape[0]:>8}"  # Number of epochs E.g. '2'. TODO check what appropriate padding is. Was set to >9
-        + f"{head.DATA_USED:>4}"  # E.g. 'd+D' ? # TODO confirm intended padding. Was >6
-        + f"{head.COORD_SYS:>8}"  # E.g. 'IGS20' # TODO check. Was padded as >6
-        + f"{head.ORB_TYPE:>4}"  # E.g. 'FIT'
-        + f"{head.AC:>5}\n"  # E.g. 'GAA' or 'AIUB', etc.
+        f"#{head.VERSION}"  # Col 1-2: Version symbol, A2. E.g. '#d'
+        + f"{head.PV_FLAG}"  # Col 3: Pos or Vel flag, A1. E.g. 'P' or 'V'
+        # Covers col 4-31 (start time in: year, month, day of month, hour, minute, second), various formats.
+        # Widths are: 4, 2, 2, 2, 2, f11.8 (8 digits after decimal point)
+        # Combined output E.g. '2024  7 19  0  0  0.00000000'
+        + f"{_gn_datetime.j20002rnxdt(sp3_j2000_begin)[0][3:-1]}"
+        + " "  # Col 32: Unused / space
+        + f"{sp3_j2000.shape[0]:>7}"  # Col 33-39: Num epochs, I7. E.g '_____96'
+        + " "  # Col 40
+        # Col 41-45: Data used, A5. E.g. 'ORBIT' or '__u+U', etc.
+        # SP3d spec page 14 says:
+        # - 'The data used descriptor was included for ease in distinguishing between multiple orbital solutions
+        #    from a single organization.'
+        # - 'A possible convention is given below; this is not considered final and suggestions are welcome.'
+        # - 'Combinations such as "__u+U" seem reasonable.'
+        # Given this, we infer that left padding i.e. right alignment is expected, but that this might not be strict.
+        # CODE (EU) appears to use left alignment e.g. 'd+D  '.
+        + f"{head.DATA_USED:>5}"
+        + " "  # Col 46
+        + f"{head.COORD_SYS:>5}"  # Col 47-51: Coordinate Sys, A5. E.g. 'WGS84' or 'IGS20'(?)
+        + " "  # Col 52
+        + f"{head.ORB_TYPE:>3}"  # Col 53-55: Orbit Type, A3. E.g. 'BCT' 'FIT'(?), etc. TODO what is BCT? Is that a valid type?
+        + " "  # Col 56
+        + f"{head.AC:>4}"  # Col 57-60: Agency, A4. E.g. 'MGEX', 'GAA', 'AIUB', etc.
+        + "\n"
+        # We add a newline here because currently all header content has trailing newlines, rather than being stored
+        # without them, and having them added at the end when joining together and outputting as one string.
+        # TODO that might be a nicer approach.
     ]
 
     gpsweek, gpssec = _gn_datetime.datetime2gpsweeksec(sp3_j2000_begin)

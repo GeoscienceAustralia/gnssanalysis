@@ -248,8 +248,12 @@ PG03 -17231.990585   4028.826042  19602.838740    463.954491
 EOF
 """
 
-# For testing gen_sp3_header()
-sp3_test_data_short_cod_final_header = """#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
+# Separate header and content versions of the above.
+# For testing gen_sp3_header():
+# NOTE: CODE (EU) appears to output their 'data used' value with right padding 'd+D  ' rather than left padding '  d+D'.
+# Left pad seems to be suggested for 'data used' by SP3d spec, though rules for this column in general seem less strict.
+# Therefore for the purpose of testing our header generator, this example has been *modified* to left pad 'data used'.
+sp3_test_data_short_cod_final_header = """#dP2024  7 19  0  0  0.00000000       2   d+D IGS20 FIT AIUB
 ## 2323 432000.00000000   300.00000000 60510 0.0000000000000
 +    3   G01G02G03  0  0  0  0  0  0  0  0  0  0  0  0  0  0
 +          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
