@@ -289,7 +289,7 @@ def j2000_to_igs_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
     hour = datetime.astype("datetime64[h]")
     minute = datetime.astype("datetime64[m]")
 
-    date_y = _pd.Series(year.astype(str)).str.rjust(6).values
+    date_y = _pd.Series(year.astype(str)).str.rjust(4).values
     date_m = _pd.Series(((month - year).astype("int64") + 1).astype(str)).str.rjust(3).values
     date_d = _pd.Series(((day - month).astype("int64") + 1).astype(str)).str.rjust(3).values
 
