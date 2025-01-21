@@ -931,17 +931,17 @@ def download_product_from_cddis(
     return download_filepaths
 
 
-def download_iau2000_varient(
+def download_iau2000_variant(
     download_dir: _Path,
-    iau2000_file_varient: Literal["standard", "daily"],
+    iau2000_file_variant: Literal["standard", "daily"],
     if_file_present: str = "prompt_user",
 ) -> Union[_Path, None]:
     """
-    Downloads IAU2000 file based on the varient requested ("daily" or "standard" file).
+    Downloads IAU2000 file based on the variant requested ("daily" or "standard" file).
     Added in approximately version 0.0.58
 
     :param _Path download_dir: Where to download file (local directory).
-    :param Literal["standard", "daily"] iau2000_file_varient: name of file varient to download. Specifies whether to
+    :param Literal["standard", "daily"] iau2000_file_variant: name of file variant to download. Specifies whether to
         download the recent "daily" file, or the historical "standard" file.
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises Exception: On download failures. In some cases the underlying exception will be wrapped in the one raised.
@@ -951,26 +951,26 @@ def download_iau2000_varient(
     ensure_folders([download_dir])
     filetype = "EOP IAU2000"
 
-    if iau2000_file_varient == "daily":
+    if iau2000_file_variant == "daily":
         # Daily (recent) file spanning the last three months. Updated daily (as the name suggests).
         url_dir = "daily/"
         iau2000_filename = "finals2000A.daily"
         download_filename = "finals.daily.iau2000.txt"
         # logging.info("Attempting Download of finals2000A.daily file")
-    elif iau2000_file_varient == "standard":
+    elif iau2000_file_variant == "standard":
         # Standard (historic) IAU2000 file dating back to 1992:
         url_dir = "standard/"
         iau2000_filename = "finals2000A.data"
         download_filename = "finals.data.iau2000.txt"
         # logging.info("Attempting Download of finals2000A.data file")
     else:
-        raise ValueError(f"Unrecognised IAU2000 file varient requested: {iau2000_file_varient}")
+        raise ValueError(f"Unrecognised IAU2000 file variant requested: {iau2000_file_variant}")
 
     # Can we skip this download, based on existing file and value of if_file_present?
     if not check_whether_to_download(
         filename=download_filename, download_dir=download_dir, if_file_present=if_file_present
     ):
-        return None  # No output path for this varient given we didn't download it.
+        return None  # No output path for this variant given we didn't download it.
 
     # Default source IERS, then fall back to CDDIS (based on Eugene's comment)
     try:
@@ -1005,13 +1005,16 @@ def download_iau2000_varient(
             logging.error("Failed to download IAU2000 file from CDDIS.", ex)
 
 
-def get_iau2000_file_varients_for_dates(
+def get_iau2000_file_variants_for_dates(
     start_epoch: Union[_datetime.datetime, None] = None,
     end_epoch: Union[_datetime.datetime, None] = None,
+    preferred_variant: Literal["standard", "daily"] = "daily",
 ) -> set[Literal["standard", "daily"]]:
     """
-    Works out which varient(s) of IAU2000 files are needed, based on the given start and or end epoch.
-    The returned varient(s) can be iterated over and passed to the download_iau2000_varient() function to fetch the
+    Works out which variant(s) of IAU2000 files are needed, based on the given start and or end epoch. If the epoch(s)
+        entered can be accomodated by both IAU2000 variants, the preferred_variant will be returned (by default this
+        is 'daily').
+    The returned variant(s) can be iterated over and passed to the download_iau2000_variant() function to fetch the
     file(s).
     Added in approximately version 0.0.58
 
@@ -1021,38 +1024,51 @@ def get_iau2000_file_varients_for_dates(
 
     :param Union[_datetime.datetime, None] start_epoch: Start of date range. Optional if end_epoch is provided.
     :param Union[_datetime.datetime, None] end_epoch: End of date range. Optional if start_epoch is provided.
-    :return set[Literal["standard", "daily"]]: Set of IAU2000 file varient names needed for your date / date range
+    :param set[Literal["standard", "daily"] preferred_variant: For date ranges where either file variant would work,
+        which one should be selected. Defaults to the 'daily' file.
+    :return set[Literal["standard", "daily"]]: Set of IAU2000 file variant names needed for your date / date range
     """
     if not (start_epoch or end_epoch):
         raise ValueError("start_epoch, end_epoch or both, must be provided")
 
-    needed_varients: set[Literal["standard", "daily"]] = set()
+    needed_variants: set[Literal["standard", "daily"]] = set()
     now = _datetime.datetime.now()
-    # TODO double check if they do it by calendar months, or days. If it's calendar months we need to be more conservative; 80 days perhaps.
-    three_months_ago = now - _datetime.timedelta(days=80)
-    one_week_ago = now - _datetime.timedelta(weeks=1)
-    eight_days_ago = now - _datetime.timedelta(days=8)
 
-    # To be safe, until we confirm that data makes it into the 'standard' file on day 7
-    one_week_ago = eight_days_ago
+    date_89_days_ago = now - _datetime.timedelta(days=89)
+    date_8_days_ago = now - _datetime.timedelta(days=8)
 
+    # Notes on file variant choice logic:
     # If the time range overlaps with less than a week ago, you need the daily file (the historical one won't have
     # new enough data).
     # Otherwise, the historical file will be more complete.
-    # TODO but do you actually benefit from the historical file if you're not going more than 3 months back?
 
-    # Keeping it simple
-    # If your timerange includes dates as recent as last week, you need the daily file
-    # If your timerange includes dates older than three months ago, you need the standard file
-    # NOTE: you may need both!
+    # Fundamentally:
+    # If your timerange includes dates as recent as last week, you need the daily file.
+    # If your timerange includes dates older than three months ago, you need the standard (historic) file.
+    # Note that you may need both.
 
-    if (start_epoch and start_epoch >= one_week_ago) or (end_epoch and end_epoch >= one_week_ago):
-        needed_varients.add("daily")
+    # If start or end epoch within (>=) the date 8 days ago, standard file may not have the data yet, use daily
+    if (start_epoch and start_epoch >= date_8_days_ago) or (end_epoch and end_epoch >= date_8_days_ago):
+        needed_variants.add("daily")
+    # If start or end epoch older (<) the date three months ago, daily file won't have data, use standard file
+    if (start_epoch and start_epoch <= date_89_days_ago) or (end_epoch and end_epoch <= date_89_days_ago):
+        needed_variants.add("standard")
 
-    if (start_epoch and start_epoch < three_months_ago) or (end_epoch and end_epoch < three_months_ago):
-        needed_varients.add("standard")
+    # Default to preferred variant if provided dates weren't within a range that *required* use of one file or the other
+    if len(needed_variants) == 0:
+        needed_variants.add(preferred_variant)
 
-    return needed_varients
+    # Is there ambiguity in the date range (start or end not specified)?
+
+    # Start of range was unspecified, we have to assume it may be older than 3 months
+    if not start_epoch:
+        needed_variants.add("standard")
+
+    # End of range was unspecified, we have to assume it may be newer than a week
+    if not end_epoch:
+        needed_variants.add("daily")
+
+    return needed_variants
 
 
 # TODO DEPRECATED
@@ -1065,14 +1081,14 @@ def download_iau2000_file(
     Compatibility wrapper around new functions
     DEPRECATED since approximately version 0.0.58
     """
-    varients = get_iau2000_file_varients_for_dates(start_epoch=start_epoch)
-    if len(varients) != 1:
+    variants = get_iau2000_file_variants_for_dates(start_epoch=start_epoch)
+    if len(variants) != 1:
         raise NotImplementedError(
-            "Legacy wrapper for IAU2000 file download failed. Exactly one file varient should be returned based on "
+            "Legacy wrapper for IAU2000 file download failed. Exactly one file variant should be returned based on "
             f"a single date ({start_epoch})."
         )
-    varient = varients.pop()
-    download_iau2000_varient(download_dir=download_dir, iau2000_file_varient=varient, if_file_present=if_file_present)
+    variant = variants.pop()
+    download_iau2000_variant(download_dir=download_dir, iau2000_file_variant=variant, if_file_present=if_file_present)
 
 
 def download_atx(
