@@ -211,7 +211,123 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
 
 
-def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
+def reflow_string_as_lines_for_comment_block(
+    comment_string: str, line_length_limit: int = SP3_COMMENT_MAX_LENGTH, comment_line_lead_in: str = SP3_COMMENT_START
+) -> list[str]:
+    """
+    Wraps the provided, arbitrary length string into an array of strings capped at the line length limit provided.
+        Tries not to break words, by splitting only on spaces if possible.
+    By default, creates SP3d compliant comment lines, with the SP3d comment lead in of '/* ' at the start of each line.
+    NOTE: expects input string NOT to have comment lead-in already applied.
+
+    :param str comment_string: Arbitrary length string to wrap / reflow.
+    :param int line_length_limit: Line length limit for output lines. This includes the length of comment_line_lead_in
+        which is prepended to the start of each line. Defaults to 80 chars, which is the limit for SP3d.
+    :param str comment_line_lead_in: Starting string of comment lines. SP3 by default i.e. '/* '
+    :return list[str]: The input string wrapped and formatted as (by default) SP3 comment lines.
+    """
+
+    # Entire comment fits without reflowing. Just add the lead-in and return immediately.
+    if (len(comment_string) + len(comment_line_lead_in)) <= line_length_limit:
+        return [comment_line_lead_in + comment_string]
+
+    # Splitting required.
+    remaining_data = comment_string
+    output_lines: list[str] = []
+
+    # What is the highest index we can seek into a string without grabbing a line that will be too long once we add
+    # the comment lead-in?
+    max_seek_index = line_length_limit - len(comment_line_lead_in) - 1
+
+    while len(remaining_data) > 0:
+        # If all remaining data will fit on a single line, we don't need to split further. Add this line, and finish.
+        if len(remaining_data) - 1 <= max_seek_index:
+            output_lines.append(comment_line_lead_in + remaining_data)
+            return output_lines
+
+        # Max seek for this line specifically. The next line worth of data, or all remaining data.
+        max_line_seek_index = min(len(remaining_data) - 1, max_seek_index)
+
+        # Find the last space within the next line worth of data.
+        unclean_split = False
+        split_index = remaining_data[:max_line_seek_index].rfind(" ")
+        if split_index == -1:  # Error: No space within that line worth of data: clean split not possible
+            unclean_split = True
+            split_index = max_line_seek_index  # Split at the end of the line, breaking words/data
+
+        # Split at determined point and add to output, then truncate remaining data to remove what we just split off.
+        output_lines.append(comment_line_lead_in + remaining_data[:split_index])
+        # We want to index new data starting *after* the space that we split on (*if* there was one). So the index
+        # below is +1 if we split on a space, +0 if not (to avoid deleting a char from the start of the next line):
+        remaining_data = remaining_data[split_index + (0 if unclean_split else 1) :]
+
+    return output_lines
+
+
+def get_sp3_comments(sp3_df: _pd.DataFrame) -> list[str]:
+    """
+    Utility function to retrieve stored SP3 comment lines from the attributes of an SP3 DataFrame.
+    :return list[str]: List of comment lines, verbatim. Note that comment line lead-in of '/* ' is not removed.
+    """
+    return sp3_df.attrs["COMMENTS"]
+
+
+def update_sp3_comments(
+    sp3_df: _pd.DataFrame, comment_lines: Union[list[str], None], comment_string: Union[str, None], ammend: bool = True
+) -> None:
+    """
+    Update SP3 comment lines in-place for the SP3 DataFrame provided. By default ammends new lines to
+    what was already there (e.g. as read in from a source SP3 file). Can optionally remove existing lines and replace
+    with the lines provided.
+
+    New comment lines Can be passed as either a list of lines and or a string to wrap and reformat as comment lines, or
+    both. All comment lines, including those already present, will be checked for compliance with the SP3 comment spec
+    (except for minimum *number* of comment lines, which is checked on write-out in gen_sp3_header()).
+
+    Order of updated comments will be:
+    - existing comments (unless ammend=False)
+    - comment_lines (if provided)
+    - comment_string (if provided)
+
+    Note: neither comment_lines or comment_string is mandatory. Both or neither can be provided.
+    If neither, existing comments will be format checked and rewritten (unless ammend is set to False; then there
+    will be no comments).
+
+    :param _pd.DataFrame sp3_df: SP3 DataFrame on which to update / replace comments (in place).
+    :param Union[list[str], None] comment_lines: List of comment lines to ammend / overwrite with. SP3 comment line
+        lead-in ('/* ') is optional and will be added if missing.
+    :param Union[str, None] comment_string: Arbitrary length string to be broken into lines and formatted as SP3
+        comments. This should NOT have SP3 comment line lead-in ('/* ') on it; that will be added.
+    :param bool ammend: Whether to ammend (specifically add additional) comment lines, or delete existing lines and
+        replace with the provided input.
+    :raises ValueError: if any lines are too long (>80 chars including lead-in sequence '/* ', added if missing)
+    """
+    # Start with the existing comment lines if we're in ammend mode, else start afresh
+    new_lines: list[str] = sp3_df.attrs["COMMENTS"] if ammend else []
+
+    if comment_lines:
+        new_lines.extend(comment_lines)
+        # Validation / adding comment lead-in if missing, will be done shortly.
+
+    # Reflow free text comments, then process all lines together
+    if comment_string:
+        new_lines.extend(reflow_string_as_lines_for_comment_block(comment_string))
+
+    # Ensure lead-in correct on all lines, and lines not too long
+    for i in range(len(new_lines) - 1):
+        if not new_lines[i].startswith(SP3_COMMENT_START):
+            # If comment start '/*' is there, we must've only failed the above check due to no space at char 3.
+            # In that case, strip the existing comment start to avoid duplicating it.
+            new_lines[i] = SP3_COMMENT_START + new_lines[i][2:] if new_lines[i][0:2] == "/*" else new_lines[i]
+        if len(new_lines[i]) > SP3_COMMENT_MAX_LENGTH:
+            raise ValueError(f"Comment line too long! Exceeded 80 chars (including lead-in): '{new_lines[i]}'")
+
+    # Write updated lines back to the DataFrame attributes
+    sp3_df.attrs["COMMENTS"] = new_lines
+    logger.info(f"Updated SP3 comment lines in DataFrame attrs. Currently {len(new_lines)} comment lines")
+
+
+def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = "") -> _pd.DataFrame:
     """
     Remove any satellites that have "0.0" or NaN for all three position coordinates - this indicates satellite offline.
     Note that this removes a satellite which has *any* missing coordinate data, meaning a satellite with partial
