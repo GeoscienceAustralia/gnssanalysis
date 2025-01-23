@@ -1011,9 +1011,9 @@ def get_iau2000_file_variants_for_dates(
     preferred_variant: Literal["standard", "daily"] = "daily",
 ) -> set[Literal["standard", "daily"]]:
     """
-    Works out which variant(s) of IAU2000 files are needed, based on the given start and or end epoch. If the epoch(s)
-        entered can be accomodated by both IAU2000 variants, the preferred_variant will be returned (by default this
-        is 'daily').
+    Works out which variant(s) of IAU2000 files are needed, based on the given start and or end epoch. If no part of
+        the date range entered *necessitates* using a specific IAU2000 variant, the preferred_variant will be returned
+        as a tie-breaker (by default this is 'daily').
     The returned variant(s) can be iterated over and passed to the download_iau2000_variant() function to fetch the
     file(s).
     Added in approximately version 0.0.58
@@ -1024,15 +1024,21 @@ def get_iau2000_file_variants_for_dates(
 
     :param Union[_datetime.datetime, None] start_epoch: Start of date range. Optional if end_epoch is provided.
     :param Union[_datetime.datetime, None] end_epoch: End of date range. Optional if start_epoch is provided.
-    :param set[Literal["standard", "daily"] preferred_variant: For date ranges where either file variant would work,
-        which one should be selected. Defaults to the 'daily' file.
+    :param set[Literal["standard", "daily"] preferred_variant: For date ranges that don't require us to use a specific
+        variant, which variant should we fall back on as a tie-breaker. Defaults to the 'daily' file.
     :return set[Literal["standard", "daily"]]: Set of IAU2000 file variant names needed for your date / date range
     """
     if not (start_epoch or end_epoch):
         raise ValueError("start_epoch, end_epoch or both, must be provided")
 
     needed_variants: set[Literal["standard", "daily"]] = set()
-    now = _datetime.datetime.now()
+    date_24_hours_ago = now - timedelta(days=1)
+
+    # Dates can't be within the last 24 hours, or in the future
+    if (start_epoch and start_epoch > date_24_hours_ago) or (end_epoch and end_epoch > date_24_hours_ago):
+        raise ValueError(
+            "All dates provided must be 24h old or older. We can't assume data newer than a day old will be present"
+        )
 
     date_89_days_ago = now - _datetime.timedelta(days=89)
     date_8_days_ago = now - _datetime.timedelta(days=8)
