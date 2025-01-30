@@ -35,9 +35,6 @@ _RE_SP3_HEAD = _re.compile(
 # And elsewhere:
 #   For backwards compatibility, there will always be at least 4 comment lines.
 
-# TODO: checks for adding a comment which is too long / reflow it.
-# TODO: option for appending comments.
-
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
 
 # Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
@@ -1125,11 +1122,6 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
         )
         head.VERSION = "d"
 
-    # NOTE: formatting of the start epoch below, uses the utility function j20002rnxdt() which appears to have been
-    # designed for printing the epoch headers within the SP3 content. As such it starts with extra chars ie '*  2024'
-    # and ends with a newline.
-
-    # need to update DATETIME outside before writing
     line1 = [
         f"#{head.VERSION}"  # Col 1-2: Version symbol, A2. E.g. '#d'
         + f"{head.PV_FLAG}"  # Col 3: Pos or Vel flag, A1. E.g. 'P' or 'V'
