@@ -423,6 +423,10 @@ class TestSp3(unittest.TestCase):
             "Should be two epochs after trimming with keep_first_delta_amount parameter",
         )
 
+    # TODO add new test: test_merge_attrs, for attribute merge:
+    # Ensure merging attributes results in the expected intersections / max / min, depending on the attribute. E.g.
+    # total sats across all files, worst accuracy code for each sat across all files, etc.
+
 
 class TestSP3Utils(TestCase):
 
