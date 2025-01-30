@@ -1032,7 +1032,9 @@ def get_iau2000_file_variants_for_dates(
         raise ValueError("start_epoch, end_epoch or both, must be provided")
 
     needed_variants: set[Literal["standard", "daily"]] = set()
-    date_24_hours_ago = now - timedelta(days=1)
+    now = _datetime.datetime.now()
+
+    date_24_hours_ago = now - _datetime.timedelta(days=1)
 
     # Dates can't be within the last 24 hours, or in the future
     if (start_epoch and start_epoch > date_24_hours_ago) or (end_epoch and end_epoch > date_24_hours_ago):

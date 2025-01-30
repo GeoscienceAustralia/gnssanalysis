@@ -139,7 +139,6 @@ class TestIAU2000Selection(TestCase):
             "Open ended range should conservatively assume the range may extend past a boundary",
         )
 
-        
         # --- Tests for invalid values ---
         # Invalid argument
         with self.assertRaises(Exception):
