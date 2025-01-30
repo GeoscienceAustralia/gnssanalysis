@@ -299,7 +299,10 @@ def get_sp3_comments(sp3_df: _pd.DataFrame) -> list[str]:
 
 
 def update_sp3_comments(
-    sp3_df: _pd.DataFrame, comment_lines: Union[list[str], None], comment_string: Union[str, None], ammend: bool = True
+    sp3_df: _pd.DataFrame,
+    comment_lines: Union[list[str], None] = None,
+    comment_string: Union[str, None] = None,
+    ammend: bool = True,
 ) -> None:
     """
     Update SP3 comment lines in-place for the SP3 DataFrame provided. By default ammends new lines to
@@ -1646,13 +1649,14 @@ def trim_to_first_n_epochs(
 def sp3_hlm_trans(
     a: _pd.DataFrame,
     b: _pd.DataFrame,
-) -> tuple[_pd.DataFrame, list]:
+) -> tuple[_pd.DataFrame, Tuple[_np.ndarray, _np.ndarray]]:
     """
     Rotates sp3_b into sp3_a.
 
     :param _pd.DataFrame a: The sp3_a DataFrame.
     :param _pd.DataFrame b: The sp3_b DataFrame.
-    :return tuple[_pd.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    :return tuple[_pd.DataFrame, Tuple[_np.ndarray, _np.ndarray]]: A tuple containing the updated sp3_b DataFrame and
+        a nested tuple containing the HLM array with applied computed parameters and residuals. TODO: is it residules first?
     """
     hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
     b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
