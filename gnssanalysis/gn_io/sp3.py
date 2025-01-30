@@ -30,8 +30,10 @@ _RE_SP3_HEAD = _re.compile(
 )
 
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
+
 # Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
+# Note this extracts both the stated number of SVs AND the actual SV names.
 _RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
@@ -188,6 +190,7 @@ def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
 def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     """
     Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - fractional component optional) to NaNs.
+    Operates on the DataFrame in place.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
 
     :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
@@ -197,14 +200,41 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
 
 
+def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]) -> None:
+    """
+    Utility function to update the internal representation of an SP3 header, when SVs are removed from the SP3
+    DataFrame. This is useful e.g. when removing offline satellites.
+    :param _pd.DataFrame sp3_df: SP3 DataFrame on which to update the header (in place).
+    :param list[str] sats_to_remove: list of SV names to remove from the header.
+    """
+    num_to_remove: int = len(sats_to_remove)
+
+    # Update header SV count (bunch of type conversion because header is stored as strings)
+    sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED = str(int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove)
+
+    # Remove sats from the multi-index which contains SV_INFO and HEAD. This does both SV list and accuracy code list.
+    sp3_df.attrs["HEADER"].drop(level=1, labels=sats_to_remove, inplace=True)
+
+    # Notes on the multi-index update:
+
+    # The hierarchy here is:
+    # dict (HEADER) > series (unnamed) > HEAD (part of multi-index) > str (SV_COUNT_STATED)
+    # So we operate on the overall Series in the dict.
+
+    # In the above statement, Level 1 gets us to the 'column' names (like G02), not the 'section' names (like SV_INFO).
+    # Labels will apply to anything at that level (including things in HEAD - but those columns should never share a
+    # name with an SV).
+
+
 def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     """
     Remove any satellites that have "0.0" or NaN for all three position coordinates - this indicates satellite offline.
     Note that this removes a satellite which has *any* missing coordinate data, meaning a satellite with partial
     observations will get removed entirely.
+    Note: the internal representation of the SP3 header will be updated to reflect the removal.
     Added in version 0.0.57
 
-    :param _pd.DataFrame sp3_df: SP3 DataFrame to remove offline / nodata satellites from
+    :param _pd.DataFrame sp3_df: SP3 DataFrame to remove offline / nodata satellites from.
     :param str df_friendly_name: Name to use when referring to the DataFrame in log output (purely for clarity). Empty
            string by default.
     :return _pd.DataFrame: the SP3 DataFrame, with the offline / nodata satellites removed
@@ -219,14 +249,24 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     mask_nan = (sp3_df.EST.X.isna()) & (sp3_df.EST.Y.isna()) & (sp3_df.EST.Z.isna())
     mask_either = _np.logical_or(mask_zero, mask_nan)
 
+    # We expect EV, EP rows to have already been filtered out
+    if "PV_FLAG" in sp3_df.index.names:
+        raise Exception(
+            "PV_FLAG index level found in dataframe while trying to remove offline sats. "
+            "De-interlacing of Pos, Vel and EV / EP rows must be performed before running this"
+        )
     # With mask, filter for entries with no POS value, then get the sat name (SVs) from the entry, then dedupe:
     offline_sats = sp3_df[mask_either].index.get_level_values(1).unique()
 
     # Using that list of offline / partially offline sats, remove all entries for those sats from the SP3 DataFrame:
     sp3_df = sp3_df.drop(offline_sats, level=1, errors="ignore")
-    sp3_df.attrs["HEADER"].HEAD.ORB_TYPE = "INT"  # Allow the file to be read again by read_sp3 - File ORB_TYPE changes
+
     if len(offline_sats) > 0:
-        logger.info(f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame: {offline_sats.values}")
+        # Update the internal representation of the SP3 header to match the change
+        remove_svs_from_header(sp3_df, offline_sats.values)
+        logger.info(
+            f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame (including header): {offline_sats.values}"
+        )
     else:
         logger.info(f"No offline / nodata sats detected to be dropped from {df_friendly_name} SP3 DataFrame")
     return sp3_df
@@ -242,6 +282,7 @@ def filter_by_svs(
     Utility function to trim an SP3 DataFrame down, intended for creating small sample SP3 files for
     unit testing (but could be used for other purposes).
     Can filter to a specific number of SVs, to specific SV names, and to a specific constellation.
+    Note: updates (internal representation of) SP3 header, to reflect new SV count.
 
     These filters can be used together (though filter by name and filter by sat letter i.e. constellation, does
     not make sense).
@@ -256,25 +297,26 @@ def filter_by_svs(
     """
 
     # Get all SV names
-    all_sv_names = sp3_df.index.get_level_values(1).unique().array
+    all_sv_names = get_unique_svs(sp3_df)
     total_svs = len(all_sv_names)
     logger.info(f"Total SVs: {total_svs}")
 
-    # Drop SVs which don't match given names
-    if filter_by_name:
-        # Make set of every SV name to drop (exclude everything besides what we want to keep)
-        exclusion_list: list[str] = list(set(all_sv_names) - set(filter_by_name))
-        sp3_df = sp3_df.drop(exclusion_list, level=1)
+    # Starting with all SVs
+    keep_set: set[str] = set(all_sv_names)
 
-    # Drop SVs which don't match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
+    # Disqualify SVs unless the match the given names
+    if filter_by_name:
+        keep_set = keep_set.intersection(filter_by_name)
+
+    # Disqualify SVs unless they match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
     if filter_to_sat_letter:
         if len(filter_to_sat_letter) != 1:
             raise ValueError(
-                "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GR'"
+                "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GE'"
             )
-        # Make set of every SV name to drop (exclude everything besides what we want to keep)
-        other_constellation_sats = [sv for sv in all_sv_names if not filter_to_sat_letter.upper() in sv]
-        sp3_df = sp3_df.drop(other_constellation_sats, level=1)
+        # Make set of every SV name in the constellation we're keeping
+        constellation_sats_to_keep = set([sv for sv in all_sv_names if filter_to_sat_letter.upper() in sv])
+        keep_set = keep_set.intersection(constellation_sats_to_keep)
 
     # Drop SVs beyond n (i.e. keep only the first n SVs)
     if filter_by_count:
@@ -284,9 +326,21 @@ def filter_by_svs(
             raise ValueError(
                 f"Cannot filter to max of {filter_by_count} sats, as there are only {total_svs} sats total!"
             )
-        # Exclusion list built by taking all sats *beyond* the amount we want to keep.
-        exclusion_list = all_sv_names[filter_by_count:]
-        sp3_df = sp3_df.drop(exclusion_list, level=1)
+
+        # Convert working set of SVs to keep, into a sorted list so we can index in sorted order and trim
+        # to e.g. G01, G02, not the first two arbitrary numbers as the set represents them.
+        keep_list = list(keep_set)
+        keep_list.sort()
+        keep_list = keep_list[:filter_by_count]  # Trim to first n sats of sorted list
+
+        keep_set = set(keep_list)
+
+    discard_set = set(all_sv_names).difference(keep_set)
+    # sp3_df = sp3_df.loc[sp3_df.index.get_level_values(1) in list(keep_set)] # Ideally something like this (but I've missed a detail)
+    sp3_df = sp3_df.drop(list(discard_set), level=1)
+
+    # Update internal header to match
+    remove_svs_from_header(sp3_df, discard_set)
 
     return sp3_df
 
@@ -397,7 +451,7 @@ def check_epoch_counts_for_discrepancies(
         sp3_filename = try_get_sp3_filename(sp3_path_or_bytes)
 
     # Could potentially check has_duplicates first for speed?
-    content_unique_epoch_count = draft_sp3_df.index.get_level_values(0).unique().size
+    content_unique_epoch_count = get_unique_epochs(draft_sp3_df).size
     # content_total_epoch_count = draft_sp3_df.index.get_level_values(0).size
 
     header_epoch_count = int(parsed_sp3_header.HEAD.N_EPOCHS)
@@ -409,7 +463,7 @@ def check_epoch_counts_for_discrepancies(
                 f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
             )
         logger.warning(
-            f"Header says there should be {header_epoch_count} epochs, however there are "
+            f"WARNING: Header says there should be {header_epoch_count} epochs, however there are "
             f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
         )
 
@@ -453,7 +507,7 @@ def check_epoch_counts_for_discrepancies(
                 f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
             )
         logger.warning(
-            f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+            f"WARNING: Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
             f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
         )
     # All good, validation passed.
@@ -517,7 +571,6 @@ def read_sp3(
     header = content[:header_end]
     content = content[header_end:]
     parsed_header = parse_sp3_header(header)
-    header_sv_count = parsed_header.SV_INFO.count()  # count() of non-NA/null, vs shape: dims of whole structure
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
@@ -525,55 +578,18 @@ def read_sp3(
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
 
-    # Are we running discrepancy checks?
-    if check_header_vs_filename_vs_content_discrepancies:
-        # SV count discrepancy check
-
-        # Check that count of SVs from header matches number of unique SVs we read in.
-        # To determine the unique SVs in the content we:
-        # 1. Index into the work-in-progress sp3 dataframe, filtering out anything where the PV flag is E (these entries
-        #   contain EP or EV data, not the name of an SV).
-        # 2. Get the index from that, filter down to level 1 (which has the SVs).
-        # 3. Make these SVs unique (as when you have P and V data, you will get two copies of every SV).
-        # 4. Get the size of this index, to determine the total number of unique SVs in the SP3 content.
-        df_sv_count = (
-            sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique().size
-        )
-        if header_sv_count != df_sv_count:
-            if not continue_on_discrepancies:
-                raise ValueError(
-                    f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!"
-                )
-            logger.warning(
-                f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({df_sv_count})!"
-            )
-
-        # Epoch count discrepancy check
-        # Are we including the filename in the check?
-        path_bytes_to_pass = None if skip_filename_in_discrepancy_check else sp3_path_or_bytes
-        check_epoch_counts_for_discrepancies(
-            draft_sp3_df=sp3_df,
-            parsed_sp3_header=parsed_header,
-            sp3_path_or_bytes=path_bytes_to_pass,
-            continue_on_error=continue_on_discrepancies,
-        )
-
-    if drop_offline_sats:
-        sp3_df = remove_offline_sats(sp3_df)
-    if nodata_to_nan:
-        # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
-        sp3_pos_nodata_to_nan(sp3_df)
-        # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
-        sp3_clock_nodata_to_nan(sp3_df)
-
     # P/V/EP/EV flag handling is currently incomplete. The current implementation truncates to the first letter,
     # so can't parse nor differenitate between EP and EV!
     if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
         if not continue_on_ep_ev_encountered:
             raise NotImplementedError("EP and EV flag rows are currently not supported")
-        logger.warning("EP / EV flag rows encountered. These are not yet supported, and will be ignored!")
+        logger.warning("EP / EV flag rows encountered. These are not yet supported. Dropping them from DataFrame...")
+        # Filter out EV / EP records, before we trip ourselves up with them. Technically this is redundant as in the
+        # next section we extract P and V records, then drop the PV_FLAG level.
+        sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"]
 
-    # Check very top of the header to see if this SP3 is Position only , or also contains Velocities
+    # Extract and merge Position and Velocity data. I.e. take the interlaced P and V rows, and restructure them into columns
+    # Check very top of the header to see if this SP3 is Position only, or also contains Velocities.
     if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
         sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
@@ -602,7 +618,55 @@ def read_sp3(
         position_df = position_df.drop(axis=1, columns="FLAGS")
 
         velocity_df.columns = SP3_VELOCITY_COLUMNS
+        # NOTE from the docs: pandas.concat copies attrs only if all input datasets have the same attrs.
+        # For simplity, we write the header to .attrs in the next section.
         sp3_df = _pd.concat([position_df, velocity_df], axis=1)
+
+    # Position and Velocity (if present) now have thier own columns, and are indexed on SV (rather than
+    # being interlaced as in source data).
+
+    # As the main transformations are done, write header data to dataframe attributes now,
+    # so it can travel with the dataframe from here on. NOTE: Pandas docs say .attrs is an experimental feature.
+    sp3_df.attrs["HEADER"] = parsed_header
+    sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
+
+    # DataFrame has been consolidated. Run remaining consistency checks, conversions, and removal steps. Doing this
+    # earlier would risk things like trying to pull pos values from an EV / EP row before it had been filtered out.
+
+    if drop_offline_sats:
+        sp3_df = remove_offline_sats(sp3_df)
+    if nodata_to_nan:
+        # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
+        sp3_pos_nodata_to_nan(sp3_df)
+        # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
+        sp3_clock_nodata_to_nan(sp3_df)
+
+    # Are we running discrepancy checks?
+    if check_header_vs_filename_vs_content_discrepancies:
+        # SV count discrepancy check
+
+        content_sv_count = get_unique_svs(sp3_df).size
+        # count() gives total of non-NA/null (vs shape, which gets dims of whole structure):
+        header_sv_count = sp3_df.attrs["HEADER"].SV_INFO.count()
+        if header_sv_count != content_sv_count:
+            if not continue_on_discrepancies:
+                raise ValueError(
+                    f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
+                )
+            logger.warning(
+                f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
+            )
+
+        # Epoch count discrepancy check
+
+        # Include filename in check?
+        path_bytes_to_pass = None if skip_filename_in_discrepancy_check else sp3_path_or_bytes
+        check_epoch_counts_for_discrepancies(
+            draft_sp3_df=sp3_df,
+            parsed_sp3_header=parsed_header,
+            sp3_path_or_bytes=path_bytes_to_pass,
+            continue_on_error=continue_on_discrepancies,
+        )
 
     # Check for duplicate epochs, dedupe and log warning
     if sp3_df.index.has_duplicates:  # a literaly free check
@@ -616,9 +680,7 @@ def read_sp3(
         )
         # Now dedupe them, keeping the first of any clashes:
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
-    # Write header data to dataframe attributes:
-    sp3_df.attrs["HEADER"] = parsed_header
-    sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
+
     return sp3_df
 
 
@@ -743,6 +805,22 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
                 "SV_COUNT_STATED",  # (Here for convenience) parsed earlier with _RE_SP3_HEADER_SV, not by above regex
             ],
         )
+        # SP3 file versions:
+        # - a: Oct 1995 - Single constellation.
+        # - b: Oct 1998 - Adds GLONASS support.
+        # - c: ~2006 to Aug 2010 - Appears to add multiple new constellations, Japan's QZSS added in 2010.
+        # - d: Feb 2016 - Max number of satellites raised from 85 to 999.
+
+        header_version = str(header_array[0])
+        if header_version in ("a", "b"):
+            logger.warning(f"SP3 file is old version: '{header_version}', you may experience parsing issues")
+        elif header_version in ("c", "d"):
+            logger.info(f"SP3 header states SP3 file version is: {header_array[0]}")
+        else:
+            logger.warning(
+                f"SP3 header is of an unknown version, or failed to parse! Version appears to be: '{header_version}'"
+            )
+
     except AttributeError as e:  # Make the exception slightly clearer.
         raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
 
@@ -821,19 +899,21 @@ def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
     """
 
     # Are we dealing with a DF which is early in processing: with Position, Velocity, and EV / EP rows in it?
-    # This will have the PV_FLAG index level. It *may* contain EV / EP rows, though until we support these they
-    # should be promptly removed at that point.
-    # Alternativley, has this DF had Position and Velocity data merged (into columns, not interlaced rows).
-    # In this case the PV_FLAG index level will have been dropped.
+    # -> This will have the PV_FLAG index level. It *may* contain EV / EP rows, though until we support these they
+    #    should be promptly removed at that point.
+
+    # Alternativley, has this DF had Position and Velocity data merged (into columns, not interlaced rows)?
+    # -> In this case the PV_FLAG index level will have been dropped.
     if "PV_FLAG" in sp3_df.index.names:
         if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
             logger.warning(
                 "EV/EP record found late in SP3 processing. Until we actually support them, "
                 "they should be removed by the EV/EP check earlier on! Filtering out while determining unique SVs."
             )
-            # Filter on data that doesn't relate to EV / EP rows
+            # Filter to data that doesn't relate to EV / EP rows, then get SVs from index (level 1).
             return sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique()
 
+    # Get index values from level 1 (which is SVs)
     return sp3_df.index.get_level_values(1).unique()
 
 
@@ -882,7 +962,7 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     # Check that number of SVs the header metadata says should be here, matches the number of SVs *listed* in
     # header metadata (which we use to output the new header). Then check that this in turn matches the number of
     # unique SVs in the SP3 DataFrame itself.
-    dataframe_sv_count = sp3_df.index.get_level_values(1).unique().size
+    dataframe_sv_count = get_unique_svs(sp3_df).size
     header_sv_stated_count = int(head["SV_COUNT_STATED"])
     header_sv_actual_count = int(n_sats)
 
