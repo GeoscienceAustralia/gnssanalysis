@@ -62,7 +62,9 @@ class GPSDate:
     print(f"tomorrow year: {tomorrow.year}, doy: {tomorrow.dy}, GPS week and weekday: {tomorrow.gpswkD}")
     """
 
-    def __init__(self, ts: _np.datetime64):
+    def __init__(self, ts: Union[_np.datetime64, _datetime, str]) -> None:
+        if isinstance(ts, _datetime):
+            ts = _np.datetime64(ts)
         if isinstance(ts, str):
             ts = _np.datetime64(ts)
 
@@ -74,22 +76,22 @@ class GPSDate:
         return self.ts.astype(_datetime)
 
     @property
-    def yr(self):
+    def yr(self) -> str:
         """Year"""
         return self.as_datetime.strftime("%Y")
 
     @property
-    def dy(self):
+    def dy(self) -> str:
         """Day of year"""
         return self.as_datetime.strftime("%j")
 
     @property
-    def gpswk(self):
+    def gpswk(self) -> str:
         """GPS week"""
         return gpsweekD(self.yr, self.dy, wkday_suff=False)
 
     @property
-    def gpswkD(self):
+    def gpswkD(self) -> str:
         """GPS week with weekday suffix"""
         return gpsweekD(self.yr, self.dy, wkday_suff=True)
 
@@ -103,12 +105,12 @@ class GPSDate:
         """The previous day"""
         return GPSDate(self.ts - 1)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Same string representation as the underlying numpy datetime64 object"""
         return str(self.ts)
 
 
-def dt2gpswk(dt, wkday_suff=False, both=False):
+def dt2gpswk(dt, wkday_suff=False, both=False) -> Union[str, tuple[str, str]]:
     """
     Convert the given datetime object to a GPS week (option to include day suffix)
     """
@@ -120,13 +122,40 @@ def dt2gpswk(dt, wkday_suff=False, both=False):
         return gpsweekD(yr, doy, wkday_suff=False), gpsweekD(yr, doy, wkday_suff=True)
 
 
-def gpswkD2dt(gpswkD):
+# TODO DEPRECATED
+def gpswkD2dt(gpswkD: str) -> _datetime:
     """
-    Convert from GPS-Week-Day (WWWWDD) format to datetime object
+    DEPRECATED. This is a compatibility wrapper. Use gps_week_day_to_datetime() instead.
     """
-    if type(gpswkD) != str:
-        gpswkD = str(gpswkD)
-    dt_64 = _gn_const.GPS_ORIGIN + _np.timedelta64(int(gpswkD[:-1]), "W") + _np.timedelta64(int(gpswkD[-1]), "D")
+    return gps_week_day_to_datetime(gpswkD)
+
+
+def gps_week_day_to_datetime(gps_week_and_weekday: str) -> _datetime:
+    """
+    Convert from GPS-Week-Day (including day: WWWWD or just week: WWWW) format to datetime object.
+
+    param: str gps_week_and_weekday: A date expressed in GPS weeks with (optionally) day-of-week.
+    returns _datetime: The date expressed as a datetime.datetime object
+    """
+    if not isinstance(gps_week_and_weekday, str):
+        raise TypeError("GPS Week-Day must be a string")
+
+    if not len(gps_week_and_weekday) in (4, 5):
+        raise ValueError(
+            "GPS Week-Day must be either a 4 digit week (WWWW), or a 4 digit week plus 1 digit day-of-week (WWWWD)"
+        )
+
+    if len(gps_week_and_weekday) == 5:  # GPS week with day-of-week (WWWWD)
+        # Split into 4 digit week number, and 1 digit day number.
+        # Parse each as a time delta and add them to the GPS origin date.
+        dt_64 = (
+            _gn_const.GPS_ORIGIN
+            + _np.timedelta64(int(gps_week_and_weekday[:-1]), "W")
+            + _np.timedelta64(int(gps_week_and_weekday[-1]), "D")
+        )
+    else:  # 4 digit week, no trimming needed
+        dt_64 = _gn_const.GPS_ORIGIN + _np.timedelta64(int(gps_week_and_weekday), "W")
+
     return dt_64.astype(_datetime)
 
 
