@@ -682,10 +682,10 @@ def read_sp3(
     drop_offline_sats: bool = False,
     continue_on_ep_ev_encountered: bool = True,
     check_header_vs_filename_vs_content_discrepancies: bool = False,
-    # These only apply when the above is enabled:
+    # The following two apply when the above is enabled:
     skip_filename_in_discrepancy_check: bool = False,
     continue_on_discrepancies: bool = False,
-    enforce_strict_format_compliance: bool = False,  # TODO raise exceptions if anything is not to spec, even if it wouldn't necessarily break processing. E.g. min number of SV entries, min number of comments, comments having a leading space, etc.
+    stricter_format_checks: bool = False,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -700,11 +700,17 @@ def read_sp3(
             raise a NotImplementedError instead.
     :param bool check_header_vs_filename_vs_content_discrepancies: enable discrepancy checks on SP3 content vs
         header vs filename.
+    :param bool skip_filename_in_discrepancy_check: If discrepancy checks enabled (see above), this allows skipping
+        the filename part of the checks, even if filename is available.
     :param bool continue_on_discrepancies: (Only applicable with check_header_vs_filename_vs_content_discrepancies)
         If True, logs a warning and continues if major discrepancies are detected between the SP3 content, SP3 header,
         and SP3 filename (if available). Set to false to raise a ValueError instead.
-    :param bool skip_filename_in_discrepancy_check: If discrepancy checks enabled (see above), this allows skipping
-        the filename part of the checks, even if filename is available.
+    :param bool stricter_format_checks: (work in progress) raise more exceptions if things are not to SP3 spec.
+        Currenly this only influences whether trying to read an SP3 version b or c file (not officially supported)
+        throws an exception or just logs a warning. In future this option may also flag things that are technically
+        incorrect but wouldn't necessarily break processing. E.g. less than min number of SV entries, min number of
+        comments, comments having a leading space, etc.
+        This parameter could be renamed to enforce_strict_format_compliance once more extensive checks are added.
     :return _pd.DataFrame: The SP3 data as a DataFrame.
     :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
     :raises Exception: For other errors reading SP3 file/bytes
@@ -719,7 +725,7 @@ def read_sp3(
     content = _gn_io.common.path2bytes(sp3_path_or_bytes)  # Will raise EOFError if file empty
 
     # Extract and check version. Raises exception for completely unsupported versions, logs warning for version b and c.
-    check_sp3_version(content, strict=enforce_strict_format_compliance)
+    check_sp3_version(sp3_bytes=content, strict=stricter_format_checks)
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
     comment_lines_bytes: list[bytes] = _RE_SP3_COMMENT_STRIP.findall(content)
