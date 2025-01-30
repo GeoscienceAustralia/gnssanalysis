@@ -18,7 +18,7 @@ trim_to_sv_count: Optional[int] = None  # 1
 trim_to_sat_letter: Optional[str] = None  # "E"
 
 # How many epochs to include in the trimmed file (offset from start)
-trim_to_num_epochs: int = 3
+trim_to_num_epochs: Optional[int] = None  # 3
 
 drop_offline_sats: bool = False
 
@@ -28,21 +28,29 @@ drop_offline_sats: bool = False
 filename = src_path.rsplit("/")[-1]
 print(f"Filename is: {filename}")
 
+# Determine sample rate (needed for trimming)
 # Raw data would be: determine_sp3_name_props() - that retrieves in seconds. But we want to be more generally applicable, so not just SP3 here ideally.
 sample_rate: timedelta = convert_nominal_span(determine_properties_from_filename(filename)["sampling_rate"])
 print(f"sample_rate is: {sample_rate}")
 
 # Load
-print("Loading SP3 into DataFrame...")
-sp3_df = read_sp3(src_path)
+print("Loading SP3 into DataFrame (Pos data only, strict mode, warn only)...")
+sp3_df = read_sp3(
+    src_path,
+    check_header_vs_filename_vs_content_discrepancies=True,
+    continue_on_discrepancies=True,
+)
+print("Read done.")
 
 # Trim to first x epochs
-print(f"Trimming to first {trim_to_num_epochs} epochs")
-sp3_df = trim_to_first_n_epochs(sp3_df=sp3_df, epoch_count=trim_to_num_epochs, sp3_filename=filename)
+if trim_to_num_epochs:
+    print(f"Trimming to first {trim_to_num_epochs} epochs")
+    sp3_df = trim_to_first_n_epochs(sp3_df=sp3_df, epoch_count=trim_to_num_epochs, sp3_filename=filename)
 
 # Filter to chosen SVs or number of SVs...
 print(
-    f"Applying SV filters (max count: {trim_to_sv_count}, limit to names: {trim_to_sv_names}, limit to constellation: {trim_to_sat_letter})..."
+    "Applying SV filters (max count: "
+    f"{trim_to_sv_count}, limit to names: {trim_to_sv_names}, limit to constellation: {trim_to_sat_letter})..."
 )
 sp3_df = filter_by_svs(
     sp3_df, filter_by_count=trim_to_sv_count, filter_by_name=trim_to_sv_names, filter_to_sat_letter=trim_to_sat_letter
@@ -50,17 +58,19 @@ sp3_df = filter_by_svs(
 
 # Drop offline sats if requested
 if drop_offline_sats:
-    print(f"Dropping offline sats...")
+    print(f"Dropping offline sats (and updating header accordingly)...")
     sp3_df = remove_offline_sats(sp3_df)
 
 # Write out
 print(
     "Writing out new SP3 file... "
-    'CAUTION: at the time of writing the header is based on stale metadata in .attrs["HEADER"], not the contents '
-    "of the dataframe. It will need to be manually updated."
+    'CAUTION: please check output header for consistency. It is based on metadata in .attrs["HEADER"], not the '
+    "contents of the dataframe, and may not have been updated for all changes."
 )
 write_sp3(sp3_df, dest_path)
 
 # Test if we can successfully read that file...
-print("Testing re-read of the output file...")
-re_read = read_sp3(dest_path)
+print("Testing re-read of the output file (strict mode, warn only)...")
+re_read = read_sp3(
+    dest_path, pOnly=False, check_header_vs_filename_vs_content_discrepancies=True, continue_on_discrepancies=True
+)
