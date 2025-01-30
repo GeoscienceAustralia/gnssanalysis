@@ -1236,8 +1236,6 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
         if (short_by_lines := 4 - len(sp3_comment_lines)) > 0:
             sp3_comment_lines.extend([SP3_COMMENT_START] * short_by_lines)
 
-            # TODO check the above this appends lines, not an array of lines - write test for this.
-
     # Put the newlines back on the end of each comment line, before merging into the output header
     sp3_comment_lines = [line + "\n" for line in sp3_comment_lines]
     return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + sp3_comment_lines)
