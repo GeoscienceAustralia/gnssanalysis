@@ -138,7 +138,7 @@ class TestSp3(unittest.TestCase):
             "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
             "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
         )
-    
+
     @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
     def test_read_sp3_correct_svs_read_when_ev_ep_present(self, mock_file):
         # This should not raise an exception; SV count should match header if parsed correctly.
@@ -408,6 +408,7 @@ class TestMergeSP3(TestCase):
 
     # Not sure if this is helpful
     def tearDown(self):
+        self.fs.reset()
         self.tearDownPyfakefs()
 
     def test_sp3merge(self):
