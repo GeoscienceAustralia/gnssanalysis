@@ -66,7 +66,7 @@ class TestIAU2000Selection(TestCase):
                 start_epoch=date_100_days_ago, end_epoch=date_7_days_ago, preferred_variant="standard"
             ),
             set(["standard", "daily"]),
-            "Range touching 7 days ago should conservatively include daily file, regardless of preference (standard) and other date in range",
+            "Range touching 7 days ago should conservatively include daily file, regardless of preference (case: standard) and other date in range",
         )
 
         # Option 3: prefer daily (default at time of writing)
@@ -75,29 +75,59 @@ class TestIAU2000Selection(TestCase):
                 start_epoch=date_100_days_ago, end_epoch=date_7_days_ago, preferred_variant="daily"
             ),
             set(["standard", "daily"]),
-            "Range touching 7 days ago should conservatively include daily file, regardless of preference (daily) and other date in range",
-        )
-
-        self.assertEqual(
-            get_iau2000_file_variants_for_dates(start_epoch=date_8_days_ago, end_epoch=date_3_days_ago),
-            set(["daily"]),
-            "Recent range should always pick daily file when on boundary, regardless of preference (not specified)",
+            "Range touching 7 days ago should conservatively include daily file, regardless of preference (case: daily) and other date in range",
         )
 
         self.assertEqual(
             get_iau2000_file_variants_for_dates(
-                start_epoch=date_8_days_ago, end_epoch=date_3_days_ago, preferred_variant="standard"
+                start_epoch=date_8_days_ago - timedelta(seconds=1), end_epoch=date_3_days_ago
             ),
             set(["daily"]),
-            "Recent range should always pick daily file when on boundary, regardless of preference (standard)",
+            "Recent range should always pick daily file when around (case: just over) boundary, regardless of preference (not specified)",
         )
 
         self.assertEqual(
             get_iau2000_file_variants_for_dates(
-                start_epoch=date_8_days_ago, end_epoch=date_3_days_ago, preferred_variant="daily"
+                start_epoch=date_8_days_ago + timedelta(seconds=1), end_epoch=date_3_days_ago
             ),
             set(["daily"]),
-            "Recent range should always pick daily file when on boundary, regardless of preference (daily)",
+            "Recent range should always pick daily file when around (case: just under) boundary, regardless of preference (not specified)",
+        )
+
+        self.assertEqual(
+            get_iau2000_file_variants_for_dates(
+                start_epoch=date_8_days_ago - timedelta(seconds=1),
+                end_epoch=date_3_days_ago,
+                preferred_variant="standard",
+            ),
+            set(["daily"]),
+            "Recent range should always pick daily file when around (case: just over) boundary, regardless of preference (case: standard)",
+        )
+
+        self.assertEqual(
+            get_iau2000_file_variants_for_dates(
+                start_epoch=date_8_days_ago + timedelta(seconds=1),
+                end_epoch=date_3_days_ago,
+                preferred_variant="standard",
+            ),
+            set(["daily"]),
+            "Recent range should always pick daily file when around (case: just under) boundary, regardless of preference (case: standard)",
+        )
+
+        self.assertEqual(
+            get_iau2000_file_variants_for_dates(
+                start_epoch=date_8_days_ago - timedelta(seconds=1), end_epoch=date_3_days_ago, preferred_variant="daily"
+            ),
+            set(["daily"]),
+            "Recent range should always pick daily file when around (case: just over) boundary, regardless of preference (case: daily)",
+        )
+
+        self.assertEqual(
+            get_iau2000_file_variants_for_dates(
+                start_epoch=date_8_days_ago + timedelta(seconds=1), end_epoch=date_3_days_ago, preferred_variant="daily"
+            ),
+            set(["daily"]),
+            "Recent range should always pick daily file when around (case: just under) boundary, regardless of preference (case: daily)",
         )
 
         # --- Tests leveraging variant preference overrride ---
@@ -159,3 +189,36 @@ class TestIAU2000Selection(TestCase):
         with self.assertRaises(ValueError):
             get_iau2000_file_variants_for_dates(end_epoch=date_1_day_in_future)
 
+        # Test legacy mode
+        self.assertEqual(
+            get_iau2000_file_variants_for_dates(
+                start_epoch=date_89_days_ago,
+                legacy_mode=True,
+                preferred_variant="standard",
+            ),
+            set(["standard"]),
+            "In legacy mode expect *only* 'standard' file for an 89 day old start_epoch",
+        )
+        self.assertEqual(
+            get_iau2000_file_variants_for_dates(
+                start_epoch=date_2_weeks_ago,
+                legacy_mode=True,
+                preferred_variant="standard",
+            ),
+            set(["standard"]),
+            "In legacy mode expect *only* 'standard' file for a two week old start_epoch",
+        )
+
+        self.assertEqual(
+            # As this epoch is right on the border line, adjust so that the sub-ms time elapsed between defining this
+            # variable at the top of this test case, and using it below, doesn't lead to a fresh calculation
+            # of (now - 8 days) within the function, being greater than this more 'stale' value.
+            get_iau2000_file_variants_for_dates(
+                start_epoch=date_8_days_ago + timedelta(seconds=1),
+                legacy_mode=True,
+                preferred_variant="standard",
+            ),
+            set(["daily"]),
+            "In legacy mode expect 'daily' file for an ~8 day old start_epoch (note: original implementation "
+            "would return 'standard' for anything over 7 days)",
+        )

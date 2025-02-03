@@ -1009,6 +1009,7 @@ def get_iau2000_file_variants_for_dates(
     start_epoch: Union[_datetime.datetime, None] = None,
     end_epoch: Union[_datetime.datetime, None] = None,
     preferred_variant: Literal["standard", "daily"] = "daily",
+    legacy_mode: bool = False,  # TODO remove once wrapper function (download_iau2000_file()) is removed.
 ) -> set[Literal["standard", "daily"]]:
     """
     Works out which variant(s) of IAU2000 files are needed, based on the given start and or end epoch. If no part of
@@ -1026,10 +1027,23 @@ def get_iau2000_file_variants_for_dates(
     :param Union[_datetime.datetime, None] end_epoch: End of date range. Optional if start_epoch is provided.
     :param set[Literal["standard", "daily"] preferred_variant: For date ranges that don't require us to use a specific
         variant, which variant should we fall back on as a tie-breaker. Defaults to the 'daily' file.
+    :param bool legacy_mode: (Deprecated) for backwards compatibility only: limit to only the variant we definately
+        need, when we have an unbounded range (missing start or end epoch). By default this is not enabled. Can only be
+        used with a start_epoch OR end_epoch, not both.
     :return set[Literal["standard", "daily"]]: Set of IAU2000 file variant names needed for your date / date range
+    :raises ValueError: If invalid combination of parameters is given. Note that a start and or end epoch *must* be
+        given. In legacy mode, only a start OR end epoch can be specified, and preferred_variant *must* be set
+        to 'standard'.
     """
     if not (start_epoch or end_epoch):
         raise ValueError("start_epoch, end_epoch or both, must be provided")
+
+    # Validate legacy_mode related restrictions
+    if legacy_mode:
+        if preferred_variant != "standard":  # This is what has historically been used
+            raise ValueError("In legacy mode, preferred_variant must be set to 'standard'")
+        if start_epoch and end_epoch:
+            raise ValueError("In legacy_mode, only a start_epoch OR end_epoch can be specified (not both)")
 
     needed_variants: set[Literal["standard", "daily"]] = set()
     now = _datetime.datetime.now()
@@ -1068,6 +1082,11 @@ def get_iau2000_file_variants_for_dates(
 
     # Is there ambiguity in the date range (start or end not specified)?
 
+    # In legacy mode, don't proceed to consider this ambiguity. This should result in a single variant only, as we
+    # have already enforced that only a start OR end epoch is used in legacy mode.
+    if legacy_mode:
+        return needed_variants
+
     # Start of range was unspecified, we have to assume it may be older than 3 months
     if not start_epoch:
         needed_variants.add("standard")
@@ -1089,7 +1108,10 @@ def download_iau2000_file(
     Compatibility wrapper around new functions
     DEPRECATED since approximately version 0.0.58
     """
-    variants = get_iau2000_file_variants_for_dates(start_epoch=start_epoch)
+    # Run variant picker with legacy configuration options
+    variants = get_iau2000_file_variants_for_dates(
+        start_epoch=start_epoch, legacy_mode=True, preferred_variant="standard"
+    )
     if len(variants) != 1:
         raise NotImplementedError(
             "Legacy wrapper for IAU2000 file download failed. Exactly one file variant should be returned based on "
