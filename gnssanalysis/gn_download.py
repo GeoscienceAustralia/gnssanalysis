@@ -842,10 +842,10 @@ def download_product_from_cddis(
         start_epoch = GPSDate(str(start_epoch))
         start_epoch = gpswkD2dt(f"{start_epoch.gpswk}0")
         timespan = _datetime.timedelta(days=7)
-    # Details for debugging purposes:
-    logging.debug("Attempting CDDIS Product download/s")
-    logging.debug(f"Start Epoch - {start_epoch}")
-    logging.debug(f"End Epoch - {end_epoch}")
+
+    logging.info("Attempting CDDIS Product download/s")
+    logging.info(f"Start Epoch - {start_epoch}")
+    logging.info(f"End Epoch - {end_epoch}")
     if long_filename == None:
         long_filename = long_filename_cddis_cutoff(start_epoch)
 
@@ -916,6 +916,7 @@ def download_product_from_cddis(
                     filename=product_filename, download_dir=download_dir, if_file_present=if_file_present
                 )
                 if download_filepath:
+                    logging.info(f"Downloading {product_filename} from CDDIS")
                     download_filepaths.append(
                         download_file_from_cddis(
                             filename=product_filename,
