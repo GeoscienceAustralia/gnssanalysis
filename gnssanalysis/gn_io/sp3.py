@@ -204,8 +204,10 @@ def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]) -> N
     """
     Utility function to update the internal representation of an SP3 header, when SVs are removed from the SP3
     DataFrame. This is useful e.g. when removing offline satellites.
+
     :param _pd.DataFrame sp3_df: SP3 DataFrame on which to update the header (in place).
     :param list[str] sats_to_remove: list of SV names to remove from the header.
+    :return None
     """
     num_to_remove: int = len(sats_to_remove)
 
@@ -238,7 +240,6 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     :param str df_friendly_name: Name to use when referring to the DataFrame in log output (purely for clarity). Empty
            string by default.
     :return _pd.DataFrame: the SP3 DataFrame, with the offline / nodata satellites removed
-
     """
     # Get all entries with missing positions (i.e. nodata value, represented as either 0 or NaN), then get the
     # satellite names (SVs) of these and dedupe them, giving a list of all SVs with one or more missing positions.
@@ -295,7 +296,6 @@ def filter_by_svs(
     :param Optional[str] filter_to_sat_letter: name of constellation (single letter) to constrain to
     :return _pd.DataFrame: new SP3 DataFrame after filtering
     """
-
     # Get all SV names
     all_sv_names = get_unique_svs(sp3_df)
     total_svs = len(all_sv_names)
@@ -408,6 +408,7 @@ def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Opt
 def try_get_sp3_filename(path_or_bytes: Union[str, Path, bytes]) -> Union[str, None]:
     """
     Utility for validation during parsing. Attempts to pull the filename from the path or bytes SP3 source.
+
     :param Union[str, Path, bytes] path_or_bytes: path or bytes SP3 source to try and get filename from
     :return Union[str, None]: filename if able to extract, otherwise `None`
     """
@@ -442,7 +443,6 @@ def check_epoch_counts_for_discrepancies(
         later in the SP3 reading process.
     :param Union[Path, str, bytes, None] sp3_path_or_bytes: representation of the source SP3 file path or binary data,
         used to determine whether a filename can be found, and extract it if so.
-
     :raises ValueError: if discrepancies found in number of epochs indicated by SP3 filename/header/contents
     """
     sp3_filename: Union[str, None] = None
@@ -730,7 +730,6 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     :param bytes header: The header of the SP3 file (as a byte string).
     :return _pd.Series: A pandas Series containing the parsed information from the SP3 header.
     """
-
     # Find all Satellite Vehicle (SV) entries
     # Updated to also extract the count of expected SVs from the header, and compare that to the number of SVs we get.
     # Tuple per match/line, containing the capture groups. I.e. [(group 1, group 2), (group 1, group 2)]
@@ -868,7 +867,6 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     :param _pd.DataFrame sp3Df: A pandas DataFrame containing the sp3 data.
     :param int deg: Degree of the polynomial fit. Default is 35.
     :return _pd.DataFrame: A pandas DataFrame with the interpolated velocities added as a new column.
-
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
     times = est.index.get_level_values("J2000").values
@@ -907,10 +905,10 @@ def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
     Utility function to get count of unique SVs in an SP3 dataframe (contents not header).
     This isn't a complex operation, but it's needed in a handful of places, and there are several nuances that
     could lead to incorrect data, such as forgetting to exclude EV / EP rows if present.
+
     :param _pd.DataFrame sp3_df: DataFrame of SP3 data to calculate on
     :return _pd.Index: pandas Index object describing the SVs in the DataFrame content
     """
-
     # Are we dealing with a DF which is early in processing: with Position, Velocity, and EV / EP rows in it?
     # -> This will have the PV_FLAG index level. It *may* contain EV / EP rows, though until we support these they
     #    should be promptly removed at that point.
@@ -1066,7 +1064,6 @@ def gen_sp3_content(
     :return str or None: Return SP3 content as a string if `in_buf` is None, otherwise write SP3 content to `in_buf`,
         and return None.
     """
-
     out_buf = in_buf if in_buf is not None else _io.StringIO()
     if sort_outputs:
         # If we need to do particular sorting/ordering of satellites and constellations we can use some of the
@@ -1332,7 +1329,6 @@ def sp3merge(
     :param List[str] sp3paths: The list of paths to the sp3 files.
     :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
-
     :return _pd.DataFrame: The merged SP3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
@@ -1413,7 +1409,6 @@ def trim_df(
     :param Optional[timedelta] keep_first_delta_amount: If supplied, trim the dataframe to this length. Not
         compatible with trim_start and trim_end.
     :return _pd.DataFrame: Dataframe trimmed to the requested time range, or requested initial amount
-
     """
     time_axis = sp3_df.index.get_level_values(0)
     # Work out the new time range that we care about
