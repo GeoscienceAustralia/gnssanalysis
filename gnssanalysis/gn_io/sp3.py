@@ -253,7 +253,7 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
     # We expect EV, EP rows to have already been filtered out
     if "PV_FLAG" in sp3_df.index.names:
         raise Exception(
-            "PV_FLAG index level found in dataframe while trying to remove offline sats. "
+            "PV_FLAG index level found in DataFrame while trying to remove offline sats. "
             "De-interlacing of Pos, Vel and EV / EP rows must be performed before running this"
         )
     # With mask, filter for entries with no POS value, then get the sat name (SVs) from the entry, then dedupe:
@@ -437,7 +437,7 @@ def check_epoch_counts_for_discrepancies(
     the period and sample_rate specified in the SP3 filename (if available to check - not possible when reading
     from bytes object rather than filepath)
 
-    :param _pd.DataFrame draft_sp3_df: the work-in-progress dataframe currently being parsed. Used to access
+    :param _pd.DataFrame draft_sp3_df: the work-in-progress DataFrame currently being parsed. Used to access
         indexes. Header is not added till late in parsing, so it is passed in separately.
     :param _pd.Series parsed_sp3_header: draft SP3 header, passed in separately as it gets added to the DataFrame
         later in the SP3 reading process.
@@ -624,8 +624,8 @@ def read_sp3(
     # Position and Velocity (if present) now have thier own columns, and are indexed on SV (rather than
     # being interlaced as in source data).
 
-    # As the main transformations are done, write header data to dataframe attributes now,
-    # so it can travel with the dataframe from here on. NOTE: Pandas docs say .attrs is an experimental feature.
+    # As the main transformations are done, write header data to DataFrame attributes now,
+    # so it can travel with the DataFrame from here on. NOTE: Pandas docs say .attrs is an experimental feature.
     sp3_df.attrs["HEADER"] = parsed_header
     sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
 
@@ -859,14 +859,14 @@ def clean_sp3_orb(sp3_df: _pd.DataFrame, use_offline_sat_removal: bool) -> _pd.D
 
 
 def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
-    """Returns the velocity spline of the input dataframe.
+    """Returns the velocity spline of the input DataFrame.
 
     :param _pd.DataFrame sp3Df: The input pandas DataFrame containing SP3 position data.
-    :return _pd.DataFrame: The dataframe containing the velocity spline.
+    :return _pd.DataFrame: The DataFrame containing the velocity spline.
 
     :caution :This function cannot handle *any* NaN / nodata / non-finite position values. By contrast, getVelPoly()
               is more forgiving, but accuracy of results, particulary in the presence of NaNs, has not been assessed.
-    :note :The velocity is returned in the same units as the input dataframe, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard).
+    :note :The velocity is returned in the same units as the input DataFrame, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard).
     """
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
     datetime = sp3dfECI.index.get_level_values("J2000").values
@@ -921,7 +921,7 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
 
 def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
     """
-    Utility function to get count of unique SVs in an SP3 dataframe (contents not header).
+    Utility function to get count of unique SVs in an SP3 DataFrame (contents not header).
     This isn't a complex operation, but it's needed in a handful of places, and there are several nuances that
     could lead to incorrect data, such as forgetting to exclude EV / EP rows if present.
 
@@ -949,7 +949,7 @@ def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
 
 def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
     """
-    Utility function to get count of unique epochs in an SP3 dataframe (contents not header).
+    Utility function to get count of unique epochs in an SP3 DataFrame (contents not header).
 
     :param _pd.DataFrame sp3_df: DataFrame of SP3 data to calculate on
     :return _pd.Index: pandas Index object describing the epochs in the DataFrame content
@@ -1137,9 +1137,9 @@ def gen_sp3_content(
         # dtype=_np.dtype("str"),
     )
 
-    # If we have STD information transform it to the output format (integer exponents) and add to dataframe
+    # If we have STD information transform it to the output format (integer exponents) and add to DataFrame
     if "STD" in sp3_df:
-        # In future we should pull this information from the header on read and store it in the dataframe attributes
+        # In future we should pull this information from the header on read and store it in the DataFrame attributes
         # For now we just hardcode the most common values that are used (and the ones hardcoded in the header output)
         pos_base = 1.25
         clk_base = 1.025
@@ -1161,7 +1161,7 @@ def gen_sp3_content(
             ).astype(int)
 
         std_df = sp3_df["STD"]
-        #  Remove attribute data from this shallow copy of the Dataframe.
+        #  Remove attribute data from this shallow copy of the DataFrame.
         #  This works around an apparent bug in Pandas, due to the fact calling == on two Series produces a list
         #  of element-wise comparisons, rather than a single boolean value. This list seems to break Pandas
         #  concat() when it is invoked within transform() and tries to check if attributes match between columns
@@ -1320,7 +1320,7 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     head = df[0].loc["HEAD"].values
     head[mask_mixed] = values_if_mixed[mask_mixed]
     # total_num_epochs needs to be assigned manually - length can be the same but have different epochs in each file
-    # Determine number of epochs combined dataframe will contain) - N_EPOCHS in heads[3]:
+    # Determine number of epochs combined DataFrame will contain) - N_EPOCHS in heads[3]:
     first_set_of_epochs = set(df_list[0].index.get_level_values("J2000"))
     total_num_epochs = len(first_set_of_epochs.union(*[set(df.index.get_level_values("J2000")) for df in df_list[1:]]))
     head[3] = str(total_num_epochs)
@@ -1420,14 +1420,14 @@ def trim_df(
     keep_first_delta_amount: Optional[timedelta] = None,
 ):
     """
-    Trim data from the start and end of an sp3 dataframe
+    Trim data from the start and end of an sp3 DataFrame
 
     :param _pd.DataFrame sp3_df: The input SP3 DataFrame.
-    :param timedelta trim_start: Amount of time to trim off the start of the dataframe.
-    :param timedelta trim_end: Amount of time to trim off the end of the dataframe.
-    :param Optional[timedelta] keep_first_delta_amount: If supplied, trim the dataframe to this length. Not
+    :param timedelta trim_start: Amount of time to trim off the start of the DataFrame.
+    :param timedelta trim_end: Amount of time to trim off the end of the DataFrame.
+    :param Optional[timedelta] keep_first_delta_amount: If supplied, trim the DataFrame to this length. Not
         compatible with trim_start and trim_end.
-    :return _pd.DataFrame: Dataframe trimmed to the requested time range, or requested initial amount
+    :return _pd.DataFrame: DataFrame trimmed to the requested time range, or requested initial amount
     """
     time_axis = sp3_df.index.get_level_values(0)
     # Work out the new time range that we care about
@@ -1456,14 +1456,14 @@ def trim_to_first_n_epochs(
     sp3_sample_rate: Optional[timedelta] = None,
 ) -> _pd.DataFrame:
     """
-    Utility function to trim an SP3 dataframe to the first n epochs, given either the filename, or sample rate
+    Utility function to trim an SP3 DataFrame to the first n epochs, given either the filename, or sample rate
 
     :param _pd.DataFrame sp3_df: The input SP3 DataFrame.
     :param int epoch_count: Trim to this many epochs from start of SP3 data (i.e. first n epochs).
     :param Optional[str] sp3_filename: Name of SP3 file, just used to derive sample_rate.
     :param Optional[timedelta] sp3_sample_rate: Sample rate of the SP3 data. Alternatively this can be
         derived from a filename.
-    :return _pd.DataFrame: Dataframe trimmed to the requested number of epochs.
+    :return _pd.DataFrame: DataFrame trimmed to the requested number of epochs.
     """
     sample_rate = sp3_sample_rate
     if not sample_rate:
@@ -1548,7 +1548,7 @@ def diff_sp3_rac(
     df_rac = _pd.DataFrame(
         nd_rac.reshape(-1, 3),
         index=sp3_baseline.index,  # Note that if the test and baseline have different SVs, this index will refer to
-        # data which is missing in the 'test' dataframe (and so is likely to be missing in
+        # data which is missing in the 'test' DataFrame (and so is likely to be missing in
         # the diff too).
         columns=[["EST_RAC"] * 3, ["Radial", "Along-track", "Cross-track"]],
     )
