@@ -1,8 +1,6 @@
-import unittest
 import logging
-from unittest.mock import patch, mock_open
 from pyfakefs.fake_filesystem_unittest import TestCase
-from pathlib import Path, PosixPath
+from pathlib import Path
 
 from gnssanalysis.gn_utils import delete_entire_directory
 import gnssanalysis.gn_utils as ga_utils
@@ -11,6 +9,7 @@ import gnssanalysis.gn_utils as ga_utils
 class TestUtils(TestCase):
     def setUp(self):
         self.setUpPyfakefs()
+        self.fs.reset()
         # Create directory
         self.test_dir_1 = "/test_dir_1"
         self.test_dir_2 = "/test_dir_2/a/b/"
@@ -23,6 +22,7 @@ class TestUtils(TestCase):
             delete_entire_directory(Path(self.test_dir_1))
         if Path(self.test_dir_2).is_dir():
             delete_entire_directory(Path(self.test_dir_2))
+        self.fs.reset()
 
     def test_ensure_folders(self):
 

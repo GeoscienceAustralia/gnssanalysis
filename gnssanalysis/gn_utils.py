@@ -2,6 +2,7 @@ import logging as _logging
 import os as _os
 import sys as _sys
 import pathlib as _pathlib
+from time import perf_counter
 
 import click as _click
 
@@ -883,3 +884,51 @@ def trim_line_ends(content: str) -> str:
     :return str: string with trailing (only, not leading) whitespace removed from each line
     """
     return "\n".join([line.rstrip() for line in content.split("\n")])
+
+
+class ContextTimer:
+    """
+    Utility for measuring function execution time (e.g. for manually profiling which unit tests are taking
+    excessive time).
+    Call this as a context manager, e.g. (following are default values, apart from name)
+    with ContextTimer(print_time=True, name="func name", flag_if_over_sec=1.0, skip_if_under_sec=0.01) as timer:
+        some_function_to_time()
+    Based on https://stackoverflow.com/a/69156219
+    """
+
+    def __init__(self, **kwargs):
+        if kwargs is not None:
+            if "print_time" in kwargs:
+                self.print_time = bool(kwargs["print_time"])
+            else:
+                self.print_time = True
+
+            if "name" in kwargs:
+                self.name = str(kwargs["name"])
+            else:
+                self.name = None
+
+            if "flag_if_over_sec" in kwargs:
+                self.flag_if_over_sec = float(kwargs["flag_if_over_sec"])
+            else:
+                self.flag_if_over_sec = 1.0
+
+            if "skip_if_under_sec" in kwargs:
+                self.skip_if_under_sec = float(kwargs["skip_if_under_sec"])
+            else:
+                self.skip_if_under_sec = 0.01
+
+    def __enter__(self):
+        self.start = perf_counter()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.time = perf_counter() - self.start
+        if self.skip_if_under_sec and self.time < self.skip_if_under_sec:  # Do skip?
+            return
+        do_flag = self.flag_if_over_sec and self.time > self.flag_if_over_sec
+        self.readout = (
+            f"{'SLOW!! ' if do_flag else ''}{self.time:.3f} sec elapsed{f' for {self.name}' if self.name else ''}"
+        )
+        if self.print_time:
+            print(self.readout)

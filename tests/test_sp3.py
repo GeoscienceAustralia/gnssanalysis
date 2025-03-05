@@ -471,6 +471,7 @@ class TestMergeSP3(TestCase):
 
     # Not sure if this is helpful
     def tearDown(self):
+        self.fs.reset()
         self.tearDownPyfakefs()
 
     def test_sp3merge(self):
