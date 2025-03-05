@@ -874,6 +874,18 @@ def clkq(
         print(output_str)
 
 
+def trim_line_ends(content: str) -> str:
+    """
+    Utility to strip trailing whitespace from all lines given.
+    This is useful as for example, the SP3 spec doesn't stipulate whether lines should have trailing whitespace or not,
+    and implementations vary.
+
+    :param str content: input string to strip
+    :return str: string with trailing (only, not leading) whitespace removed from each line
+    """
+    return "\n".join([line.rstrip() for line in content.split("\n")])
+
+
 class ContextTimer:
     """
     Utility for measuring function execution time (e.g. for manually profiling which unit tests are taking

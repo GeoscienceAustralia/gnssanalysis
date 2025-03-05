@@ -9,6 +9,7 @@ import pandas as pd
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
 import gnssanalysis.gn_io.sp3 as sp3
 
+from gnssanalysis.gn_utils import trim_line_ends
 from test_datasets.sp3_test_data import (
     # first dataset is part of the IGS benchmark (modified to include non null data on clock):
     sp3_test_data_igs_benchmark_null_clock as input_data,
@@ -21,6 +22,10 @@ from test_datasets.sp3_test_data import (
     sp3_test_data_partially_offline_sat as offline_sat_test_data,
     # For header vs content validation tests:
     sp3_test_data_cod_broken_missing_sv_in_content,
+    # For testing generate_sp3_header() and generate_sp3_content()
+    sp3_test_data_short_cod_final,  # For use as input data
+    sp3_test_data_short_cod_final_content,  # For validating content output
+    sp3_test_data_short_cod_final_header,  # For validating header output
 )
 
 
@@ -153,6 +158,57 @@ class TestSp3(unittest.TestCase):
 
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
+
+    def test_gen_sp3_fundamentals(self):
+        """
+        Tests that the SP3 header and content generation functions produce output that (apart from trailing
+        whitespace), match a known good value.
+        NOTE: leverages read_sp3() to pull in sample data, so is prone to errors in that function.
+        """
+
+        # Prep the baseline data to test against, including stripping each line of trailing whitespace.
+        baseline_header_lines = trim_line_ends(sp3_test_data_short_cod_final_header).splitlines()
+        baseline_content_lines = trim_line_ends(sp3_test_data_short_cod_final_content).splitlines()
+
+        # Note this is suboptimal from a testing standpoint, but for now is a lot easier than manually constructing
+        # the DataFrame.
+        sp3_df = sp3.read_sp3(bytes(sp3_test_data_short_cod_final))
+
+        generated_sp3_header = sp3.gen_sp3_header(sp3_df, output_comments=True)
+        generated_sp3_content = sp3.gen_sp3_content(sp3_df)
+
+        # As with the baseline data, prep the data under test, for comparison.
+        test_header_lines = trim_line_ends(generated_sp3_header).splitlines()
+        test_content_lines = trim_line_ends(generated_sp3_content).splitlines()
+
+        # TODO maybe we don't want to split the content, just the header
+
+        self.assertEqual(
+            len(baseline_header_lines),
+            len(test_header_lines),
+            "Baseline and test header should have same number of lines",
+        )
+        self.assertEqual(
+            len(baseline_content_lines),
+            len(test_content_lines),
+            "Baseline and test content should have same number of lines",
+        )
+
+        # As we know the two arrays are equal length, we can iterate as one
+        # Header first
+        for i in range(0, len(baseline_header_lines) - 1):
+            self.assertEqual(
+                baseline_header_lines[i],
+                test_header_lines[i],
+                f"Header line {i} didn't match",
+            )
+        # Same for content (maybe don't do this?)
+        for i in range(0, len(baseline_content_lines) - 1):
+            self.assertEqual(
+                baseline_content_lines[i],
+                test_content_lines[i],
+                f"Content line {i} didn't match",
+            )
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
     # These tests should include:
     # - Correct alignment of POS, CLK, STDPOS STDCLK, (not velocity yet), FLAGS
@@ -161,6 +217,9 @@ class TestSp3(unittest.TestCase):
     #   Probably should be covered elsewhere)
     # - Not including column names (can just test that output matches expected format)
     # - Not including any NaN value *anywhere*
+
+    # TODO add tests for SP3 comment handling, such as comment line reflow, append vs overwrite comments, comment
+    # format exception handling.
 
     def test_gen_sp3_content_velocity_exception_handling(self):
         """
@@ -363,6 +422,10 @@ class TestSp3(unittest.TestCase):
             [784792800, 784793100],
             "Should be two epochs after trimming with keep_first_delta_amount parameter",
         )
+
+    # TODO add new test: test_merge_attrs, for attribute merge:
+    # Ensure merging attributes results in the expected intersections / max / min, depending on the attribute. E.g.
+    # total sats across all files, worst accuracy code for each sat across all files, etc.
 
 
 class TestSP3Utils(TestCase):
