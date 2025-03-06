@@ -472,7 +472,7 @@ def sisre(
         _logging.info(msg="plotting RAC difference")
         _gn_plot.racplot(rac_unstack=rac_unstack, output=plot if isinstance(plot, str) else None)
 
-    if (clk_a is not None) & (clk_b is not None):  # check if clk data is present
+    if (clk_test is not None) and (clk_baseline is not None):  # check if clk data is present
         clk_diff = (
             compare_clk(
                 clk_a, clk_b, norm_types=norm_types, ext_dt=rac_unstack.index, ext_svs=rac_unstack.columns.levels[1]
