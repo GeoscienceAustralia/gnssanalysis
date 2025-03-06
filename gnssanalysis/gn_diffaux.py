@@ -305,6 +305,7 @@ def diffionex(ionex1_path, ionex2_path, tol, std_coeff, log_lvl):
     return status
 
 
+# TODO DEPRECATED
 def compare_clk(
     clk_a: _pd.DataFrame,
     clk_b: _pd.DataFrame,
@@ -312,10 +313,35 @@ def compare_clk(
     ext_dt: Union[_np.ndarray, _pd.Index, None] = None,
     ext_svs: Union[_np.ndarray, _pd.Index, None] = None,
 ) -> _pd.DataFrame:
+    """
+    DEPRECATED Please use diff_clk() instead.
+    Compares clock dataframes, removed common mode.
+
+    This is a legacy wrapper function which takes clock inputs in the reverse order to what is conventional.
+    I.e.:
+    clk_a: test (normally a is baseline)
+    clk_b: baseline (normally b is test)
+    """
+
+    _logging.warning(
+        "compare_clk() is deprecated. Please use diff_clk() and note that the clk inputs are in opposite order"
+    )
+    return diff_clk(clk_baseline=clk_b, clk_test=clk_a, norm_types=norm_types, ext_dt=ext_dt, ext_svs=ext_svs)
+
+
+def diff_clk(
+    clk_baseline: _pd.DataFrame,
+    clk_test: _pd.DataFrame,
+    norm_types: list = ["daily", "epoch"],
+    ext_dt: Union[_np.ndarray, _pd.Index, None] = None,
+    ext_svs: Union[_np.ndarray, _pd.Index, None] = None,
+) -> _pd.DataFrame:
     """Compares clock dataframes, removed common mode.
 
-    :param _pd.DataFrame clk_a: clk dataframe 1
-    :param _pd.DataFrame clk_b: clk dataframe 2
+    Difference order is: test - baseline
+
+    :param _pd.DataFrame clk_baseline: clk dataframe 2 / b
+    :param _pd.DataFrame clk_test: clk dataframe 1 / a
     :param str norm_types: normalization to apply, defaults to ["daily", "epoch"]
     :param _Union[_np.ndarray, _pd.Index, None] ext_dt: external datetime values to filter the clk dfs, defaults to None
     :param _Union[_np.ndarray, _pd.Index, None] ext_svs: external satellites to filter the clk dfs, defaults to None
@@ -324,67 +350,107 @@ def compare_clk(
     :return _pd.DataFrame: clk differences in the same units as input clk dfs (usually seconds)
     """
 
-    clk_a = _gn_io.clk.get_sv_clocks(clk_a)
-    clk_b = _gn_io.clk.get_sv_clocks(clk_b)
+    clk_test = _gn_io.clk.get_sv_clocks(clk_test)
+    clk_baseline = _gn_io.clk.get_sv_clocks(clk_baseline)
 
     if not isinstance(norm_types, list):  # need list for 'sv' to be correctly converted to array of SVs to use for norm
         norm_types = list(norm_types)
 
     if ext_dt is None:
-        common_dt = clk_a.index.levels[0]
+        common_dt = clk_test.index.levels[0]
     else:
-        common_dt = clk_a.index.levels[0].intersection(ext_dt)
+        common_dt = clk_test.index.levels[0].intersection(ext_dt)
         if len(common_dt) == 0:
-            raise ValueError("no common epochs between clk_a and external dt")
+            raise ValueError("no common epochs between clk_test and external dt")
 
-    common_dt = common_dt.intersection(clk_b.index.levels[0])
+    common_dt = common_dt.intersection(clk_baseline.index.levels[0])
     if len(common_dt) == 0:
-        raise ValueError("no common epochs between clk_a and clk_b")
+        raise ValueError("no common epochs between clk_test and clk_baseline")
 
-    clk_a_unst = _gn_aux.rm_duplicates_df(clk_a.loc[common_dt]).unstack(1)
-    clk_b_unst = _gn_aux.rm_duplicates_df(clk_b.loc[common_dt]).unstack(1)
+    clk_test_unst = _gn_aux.rm_duplicates_df(clk_test.loc[common_dt]).unstack(1)
+    clk_baseline_unst = _gn_aux.rm_duplicates_df(clk_baseline.loc[common_dt]).unstack(1)
 
     if ext_svs is None:
-        common_svs = clk_a_unst.columns  # assuming ext_svs is lots smaller than count of svs in
+        common_svs = clk_test_unst.columns  # assuming ext_svs is lots smaller than count of svs in
     else:
-        common_svs = clk_a_unst.columns.intersection(ext_svs)
-    if not _gn_aux.array_equal_unordered(common_svs, clk_b_unst.columns.values):
-        common_svs = common_svs.intersection(clk_b_unst.columns)
-        clk_a_unst = clk_a_unst[common_svs]
-        clk_b_unst = clk_b_unst[common_svs]
+        common_svs = clk_test_unst.columns.intersection(ext_svs)
+    if not _gn_aux.array_equal_unordered(common_svs, clk_baseline_unst.columns.values):
+        common_svs = common_svs.intersection(clk_baseline_unst.columns)
+        clk_test_unst = clk_test_unst[common_svs]
+        clk_baseline_unst = clk_baseline_unst[common_svs]
     else:
-        _logging.debug("compare_clk: skipping svs sync for clk_b_unst as the same as common_svs")
-        if not _gn_aux.array_equal_unordered(common_svs, clk_a_unst.columns.values):
-            _logging.debug("compare_clk: syncing clk_a_unst with common_svs as not equal")
-            clk_a_unst = clk_a_unst[common_svs]
+        _logging.debug("compare_clk: skipping svs sync for clk_baseline_unst as the same as common_svs")
+        if not _gn_aux.array_equal_unordered(common_svs, clk_test_unst.columns.values):
+            _logging.debug("compare_clk: syncing clk_test_unst with common_svs as not equal")
+            clk_test_unst = clk_test_unst[common_svs]
 
-    norm_types_copy = norm_types.copy() # DO NOT overwrite norm_types otherwise it will cause errors when the function is called in a loop
+    norm_types_copy = (
+        norm_types.copy()
+    )  # DO NOT overwrite norm_types otherwise it will cause errors when the function is called in a loop
     if len(norm_types_copy) != 0:
         _logging.info(f":compare_clk: using {norm_types_copy} clk normalization")
         if "sv" in norm_types_copy:
             norm_types_copy[norm_types_copy.index("sv")] = _gn_io.clk.select_norm_svs_per_gnss(
-                clk_a_unst=clk_a_unst, clk_b_unst=clk_b_unst
+                clk_a_unst=clk_test_unst, clk_b_unst=clk_baseline_unst
             )  # get the svs to use for norm and overwrite "sv" with sv prns
 
-        clk_a_unst[clk_b_unst.isna()] = (
+        clk_test_unst[clk_baseline_unst.isna()] = (
             _np.nan
-        )  # replace corresponding values in clk_a_unst with NaN where clk_b_unst is NaN
-        clk_b_unst[clk_a_unst.isna()] = (
+        )  # replace corresponding values in clk_test_unst with NaN where clk_baseline_unst is NaN
+        clk_baseline_unst[clk_test_unst.isna()] = (
             _np.nan
-        )  # replace corresponding values in clk_b_unst with NaN where clk_a_unst is NaN
+        )  # replace corresponding values in clk_baseline_unst with NaN where clk_test_unst is NaN
 
-        _logging.info("---removing common mode from clk 1---")
-        _gn_io.clk.rm_clk_bias(clk_a_unst, norm_types=norm_types_copy)
-        _logging.info("---removing common mode from clk 2---")
-        _gn_io.clk.rm_clk_bias(clk_b_unst, norm_types=norm_types_copy)
-    return clk_a_unst - clk_b_unst
+        _logging.info("---removing common mode from test clk (i.e. clk 1 / a)---")
+        _gn_io.clk.rm_clk_bias(clk_test_unst, norm_types=norm_types_copy)
+        _logging.info("---removing common mode from baseline clk (i.e. clk 2 / b)---")
+        _gn_io.clk.rm_clk_bias(clk_baseline_unst, norm_types=norm_types_copy)
+    return clk_test_unst - clk_baseline_unst
 
 
+# TODO DEPRECATED
 def sisre(
     sp3_a: _pd.DataFrame,
     sp3_b: _pd.DataFrame,
     clk_a: Union[_pd.DataFrame, None] = None,
     clk_b: Union[_pd.DataFrame, None] = None,
+    norm_types: list = ["daily", "epoch"],
+    output_mode: str = "rms",
+    clean: bool = True,
+    cutoff: Union[int, float, None] = None,
+    use_rms: bool = False,
+    hlm_mode=None,
+    plot=False,
+    write_rac_file=False,
+):
+    """
+    LEGACY WRAPPER.
+    DEPRECATED
+    """
+
+    _logging.warning(
+        "sisre() is deprecated, please use calculate_sisre() instead. Note that input arg test/baseline orders are flipped"
+    )
+    return calculate_sisre(
+        sp3_test=sp3_a,
+        sp3_baseline=sp3_b,
+        clk_test=clk_a,
+        clk_baseline=clk_b,
+        norm_types=norm_types,
+        output_mode=output_mode,
+        clean=clean,
+        cutoff=cutoff,
+        hlm_mode=hlm_mode,
+        plot=plot,
+        write_rac_file=write_rac_file,
+    )
+
+
+def calculate_sisre(
+    sp3_baseline: _pd.DataFrame,
+    sp3_test: _pd.DataFrame,
+    clk_baseline: Union[_pd.DataFrame, None] = None,
+    clk_test: Union[_pd.DataFrame, None] = None,
     norm_types: list = ["daily", "epoch"],
     output_mode: str = "rms",
     clean: bool = True,
@@ -414,13 +480,13 @@ def sisre(
 
     Parameters
     ----------
-    sp3_a : sp3 DataFrame a
+    sp3_test : sp3 DataFrame a / test
         Output of read_sp3 function or a similar sp3 DataFrame.
-    sp3_b : sp3 DataFrame b
+    sp3_baseline : sp3 DataFrame b / baseline
         Output of read_sp3 function or a similar sp3 DataFrame.
-    clk_a : clk DataFrame a (optinal)
+    clk_test : clk DataFrame a / test (optional)
         Output of read_clk function or a similar clk DataFrame.
-    clk_b : clk DataFrame b (optional)
+    clk_baseline : clk DataFrame b / baseline (optional)
         Output of read_clk function or a similar clk DataFrame.
     norm_types : list
         normalization parameter used for removing the clk common modes before
@@ -443,15 +509,16 @@ def sisre(
         output_mode = 'rms'  : Series of RMS SISRE values, value per GNSS.
         output_mode = 'gnss' : DataFrame of epoch-wise RMS SISRE values per GNSS.
         output_mode = 'sv'   : DataFrame of epoch-wise SISRE values per SV. NOTE: SV here refers to Satellite
-                               Vehicle ID (1-1 mappable to Pseudo-Random Noise identifier i.e. PRN). It does NOT
+                               Vehicle ID (1-1 mappable to Pseudo-Random Noise identifier i.e. PRN). It does NOT # TODO check: pseudo-random-NOISE, or NUMBER?
                                refer to Satellite Vehicle Number (which is permanent).
     """
     if output_mode not in ["rms", "sv", "gnss"]:
         raise ValueError("incorrect output_mode given: %s" % output_mode)
 
+    # TODO check: is this meant to be in the opposite order to what diff_sp3_rac() normally takes? Was baseline=test, test=baseline
     rac = _gn_io.sp3.diff_sp3_rac(
-        _gn_aux.rm_duplicates_df(sp3_a, rm_nan_level=1),
-        _gn_aux.rm_duplicates_df(sp3_b, rm_nan_level=1),
+        sp3_baseline=_gn_aux.rm_duplicates_df(sp3_baseline, rm_nan_level=1),
+        sp3_test=_gn_aux.rm_duplicates_df(sp3_test, rm_nan_level=1),
         hlm_mode=hlm_mode,
     )
 
@@ -474,8 +541,12 @@ def sisre(
 
     if (clk_test is not None) and (clk_baseline is not None):  # check if clk data is present
         clk_diff = (
-            compare_clk(
-                clk_a, clk_b, norm_types=norm_types, ext_dt=rac_unstack.index, ext_svs=rac_unstack.columns.levels[1]
+            diff_clk(
+                clk_baseline=clk_baseline,
+                clk_test=clk_test,
+                norm_types=norm_types,
+                ext_dt=rac_unstack.index,
+                ext_svs=rac_unstack.columns.levels[1],
             )
             * _gn_const.C_LIGHT
         )  # units are meters
@@ -553,7 +624,7 @@ def diffsp3(
         as_sisre = True
 
     status = 0
-    sv_sisre = sisre(
+    sv_sisre = sisre(  # TODO update to newer calculate_sisre() function, if keeping this.
         sp3_a=sp3_a.iloc[:, :3],
         sp3_b=sp3_b.iloc[:, :3],
         clk_a=clk_a,
@@ -728,22 +799,26 @@ def sp3_difference(
     :return _pd.DataFrame: The Pandas DataFrame containing orbit and clock differences
     """
     base_sp3_df = _gn_io.sp3.read_sp3(str(base_sp3_file))
-    mask = base_sp3_df.index.get_level_values('PRN').isin(svs)
+    mask = base_sp3_df.index.get_level_values("PRN").isin(svs)
     base_sp3_df = base_sp3_df[mask]
 
     test_sp3_df = _gn_io.sp3.read_sp3(str(test_sp3_file))
-    mask = test_sp3_df.index.get_level_values('PRN').isin(svs)
+    mask = test_sp3_df.index.get_level_values("PRN").isin(svs)
     test_sp3_df = test_sp3_df[mask]
 
     common_indices = base_sp3_df.index.intersection(test_sp3_df.index)
     diff_est_df = test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
     diff_xyz_df = diff_est_df.drop(columns=["CLK"]) * 1e3
 
-    diff_rac_df = _gn_io.sp3.diff_sp3_rac(base_sp3_df, test_sp3_df, ref_frame=orb_ref_frame, hlm_mode=orb_hlm_mode, epochwise_hlm=epochwise_hlm)  # TODO Eugene: compare orbits by constellation
+    # TODO Eugene: compare orbits by constellation:
+    diff_rac_df = _gn_io.sp3.diff_sp3_rac(
+        base_sp3_df, test_sp3_df, ref_frame=orb_ref_frame, hlm_mode=orb_hlm_mode, epochwise_hlm=epochwise_hlm
+    )
     diff_rac_df.columns = diff_rac_df.columns.droplevel(0)
     diff_rac_df = diff_rac_df * 1e3
 
-    diff_clk_df = compare_clk(test_sp3_df, base_sp3_df, norm_types=clk_norm_types)  # TODO Eugene: compare clocks by constellation
+    # TODO Eugene: compare clocks by constellation:
+    diff_clk_df = compare_clk(test_sp3_df, base_sp3_df, norm_types=clk_norm_types)
     diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e3
 
     diff_sp3_df = diff_xyz_df.join(diff_rac_df)
@@ -774,14 +849,15 @@ def clk_difference(
     :return _pd.DataFrame: The Pandas DataFrame containing clock differences
     """
     base_clk_df = _gn_io.clk.read_clk(base_clk_file)
-    mask = base_clk_df.index.get_level_values('CODE').isin(svs)
+    mask = base_clk_df.index.get_level_values("CODE").isin(svs)
     base_clk_df = base_clk_df[mask]
 
     test_clk_df = _gn_io.clk.read_clk(test_clk_file)
-    mask = test_clk_df.index.get_level_values('CODE').isin(svs)
+    mask = test_clk_df.index.get_level_values("CODE").isin(svs)
     test_clk_df = test_clk_df[mask]
 
-    diff_clk_df = compare_clk(test_clk_df, base_clk_df, norm_types=clk_norm_types)  # TODO Eugene: compare clocks by constellation
+    # TODO Eugene: compare clocks by constellation:
+    diff_clk_df = compare_clk(test_clk_df, base_clk_df, norm_types=clk_norm_types)
     diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e9
     diff_clk_df["|Clock|"] = diff_clk_df.abs()
 
