@@ -1394,7 +1394,7 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -
     else:
         b.iloc[:, :3], hlm = hlm_trans(a.EST[["X", "Y", "Z"]].values, b.EST[["X", "Y", "Z"]].values)
 
-    b.attrs["HEADER"].head.ORB_TYPE = "HLM"  # Update b's header to reflect Helmert transformation has been applied
+    b.attrs["HEADER"].HEAD.ORB_TYPE = "HLM"  # Update b's header to reflect Helmert transformation has been applied
     return b, hlm
 
 
