@@ -256,10 +256,10 @@ def mjd2datetime(mjd: _np.ndarray, seconds_frac: _np.ndarray, pea_partials=False
 
 
 def mjd_to_pydatetime(mjd: float) -> _datetime:
-    """Convert python datetime object to corresponding Modified Julian Date
+    """Convert Modified Julian Date to corresponding python datetime object
 
-    :param datetime.datetime dt: Python datetime of interest
-    :return float: Corresponding Modified Julian Date
+    :param float mjd: Modified Julian Date of interest
+    :return datetime.datetime: Corresponding Python datetime
     """
     mjd_epoch_dt = _datetime(2000, 1, 1)
     return mjd_epoch_dt + _timedelta(days=mjd - 51544.00)
