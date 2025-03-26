@@ -8,8 +8,23 @@ from . import gn_aux as _gn_aux
 from . import gn_const as _gn_const
 
 
-def gen_helm_aux(pt1, pt2):
-    """aux function for helmert values inversion."""
+def gen_helm_aux(
+    pt1: _np.ndarray,
+    pt2: _np.ndarray,
+    dropna: bool = True,
+) -> Tuple[_np.ndarray, _np.ndarray]:
+    """Aux function for helmert values inversion.
+
+    :param _np.ndarray pt1: The first set of points.
+    :param _np.ndarray pt2: The second set of points.
+    :param bool dropna: Whether to drop NaN values in input data, defaults to True.
+    :return Tuple[_np.ndarray, _np.ndarray]: A tuple containing the design matrix and right hand side of the equation for least square estimation.
+    """
+    if dropna:
+        mask = ~_np.isnan(pt1).any(axis=1) & ~_np.isnan(pt2).any(axis=1)
+        pt1 = pt1[mask]
+        pt2 = pt2[mask]
+
     pt1 = pt1.astype(float)
     pt2 = pt2.astype(float)
     n_points = pt1.shape[0]
@@ -32,23 +47,27 @@ def gen_helm_aux(pt1, pt2):
     return A, rhs
 
 
-def get_helmert7(pt1: _np.ndarray, pt2: _np.ndarray, scale_in_ppm: bool = True) -> Tuple[_np.ndarray, _np.ndarray]:
+def get_helmert7(
+    pt1: _np.ndarray,
+    pt2: _np.ndarray,
+    scale_in_ppm: bool = True,
+    dropna: bool = True,
+) -> list:
     """Inversion of 7 Helmert parameters between 2 sets of points.
 
     :param numpy.ndarray pt1: The first set of points.
     :param numpy.ndarray pt2: The second set of points.
     :param bool scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
-
-    :returns uple[np.ndarray, np.ndarray]: A tuple containing the Helmert parameters and the residuals.
-
+    :param bool dropna: Whether to drop NaN values in input data, defaults to True.
+    :returns list: A list containing the Helmert parameters and the residuals.
     """
-    A, rhs = gen_helm_aux(pt1, pt2)
+    A, rhs = gen_helm_aux(pt1, pt2, dropna)
     sol = list(_np.linalg.lstsq(A, rhs, rcond=-1))  # parameters
+    res = rhs - A @ sol[0]  # computing residuals for pt2
+    sol.append(res.reshape(-1, 3))  # appending residuals
     sol[0] = sol[0].flatten() * -1.0  # flattening the HLM params arr to [Tx, Ty, Tz, Rx, Ry, Rz, Scale/mu]
     if scale_in_ppm:
         sol[0][-1] *= 1e6  # scale in ppm
-    res = rhs - A @ sol[0]  # computing residuals for pt2
-    sol.append(res.reshape(-1, 3))  # appending residuals
     return sol
 
 
@@ -63,14 +82,18 @@ def gen_rot_matrix(v):
     return mat + _np.eye(3)
 
 
-def transform7(xyz_in: _np.ndarray, hlm_params: _np.ndarray, scale_in_ppm: bool = True) -> _np.ndarray:
+def transform7(
+    xyz_in: _np.ndarray,
+    hlm_params: _np.ndarray,
+    scale_in_ppm: bool = True,
+) -> _np.ndarray:
     """
     Transformation of xyz vector with 7 helmert parameters.
 
-    :param xyz_in: The input xyz vector.
-    :param hlm_params: The 7 helmert parameters: [Tx, Ty, Tz, Rx, Ry, Rz, Scale].
-    :param scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
-    :return: The transformed xyz vector.
+    :param _np.ndarray xyz_in: The input xyz vector.
+    :param _np.ndarray hlm_params: The 7 helmert parameters: [Tx, Ty, Tz, Rx, Ry, Rz, Scale].
+    :param bool scale_in_ppm: Whether the scale parameter is in parts per million (ppm).
+    :return _np.ndarray: The transformed xyz vector.
     """
     assert hlm_params.size == 7, "There must be exactly seven parameters"
 
@@ -382,6 +405,28 @@ def ecef2eci(sp3_in):
     y_eci = x * sin_theta + y * cos_theta
     return _pd.DataFrame(
         _np.concatenate([x_eci, y_eci, z]).reshape(3, -1).T,
+        index=sp3_in.index,
+        columns=[["EST", "EST", "EST"], ["X", "Y", "Z"]],
+    )
+
+
+def eci2ecef(sp3_in):
+    """Simplified conversion of sp3 posiitons from ECI to ECEF"""
+    xyz_idx = _np.argwhere(sp3_in.columns.isin([("EST", "X"), ("EST", "Y"), ("EST", "Z")])).ravel()
+    theta = -_gn_const.OMEGA_E * (sp3_in.index.get_level_values(0).values)
+
+    cos_theta = _np.cos(theta)
+    sin_theta = _np.sin(theta)
+
+    sp3_nd = sp3_in.iloc[:, xyz_idx].values
+    x = sp3_nd[:, 0]
+    y = sp3_nd[:, 1]
+    z = sp3_nd[:, 2]
+
+    x_ecef = x * cos_theta - y * sin_theta
+    y_ecef = x * sin_theta + y * cos_theta
+    return _pd.DataFrame(
+        _np.concatenate([x_ecef, y_ecef, z]).reshape(3, -1).T,
         index=sp3_in.index,
         columns=[["EST", "EST", "EST"], ["X", "Y", "Z"]],
     )
