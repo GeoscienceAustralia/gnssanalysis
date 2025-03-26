@@ -4,6 +4,27 @@ from datetime import datetime as _datetime
 import numpy as np
 
 
+class TestDateTime(unittest.TestCase):
+
+    def test_gps_week_day_to_datetime(self):
+        dt_week_only = gn_datetime.gps_week_day_to_datetime("2173")  # What is DoW implicitly? 0, 1, start of week?
+        self.assertEqual(dt_week_only.strftime("%Y"), "2021")
+        # TODO should this be 242 (1 based) or 241 (0 based, most likely), or something else?
+        self.assertEqual(dt_week_only.strftime("%j"), "241")
+
+        dt_week_and_day_of_week = gn_datetime.gps_week_day_to_datetime("21732")  # Add DoW 2
+        self.assertEqual(dt_week_and_day_of_week.strftime("%Y"), "2021")
+        self.assertEqual(dt_week_and_day_of_week.strftime("%j"), "243")
+
+        with self.assertRaises(ValueError) as ex_wrapper:
+            gn_datetime.gps_week_day_to_datetime("")  # Too short
+            gn_datetime.gps_week_day_to_datetime("217")  # Too short
+            gn_datetime.gps_week_day_to_datetime("217345")  # Too long
+
+        with self.assertRaises(TypeError) as ex_wrapper:
+            gn_datetime.gps_week_day_to_datetime(2173)  # Not a string!
+
+
 class TestGPSDate(unittest.TestCase):
     def test_gpsdate(self):
         date = gn_datetime.GPSDate(np.datetime64("2021-08-31"))
@@ -45,4 +66,3 @@ class TestSNXTimeConversion(unittest.TestCase):
         for snx_time, expected in test_cases:
             with self.subTest(snx_time=snx_time):
                 self.assertEqual(gn_datetime.snx_time_to_pydatetime(snx_time), expected)
-
