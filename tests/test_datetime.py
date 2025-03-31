@@ -4,6 +4,22 @@ from datetime import datetime as _datetime
 import numpy as np
 
 
+class TestDateTime(unittest.TestCase):
+    def test_j2000_to_sp3_head_dt(self):
+        # Ensure formatting comes out as expected
+        # E.g. 674913600 -> '2021-05-22T00:00:00' -> '2021  5 22  0  0 0.00000000'
+        input_time = np.array([674913600])
+        header_formatted_time = gn_datetime.j2000_to_sp3_head_dt(input_time)
+        self.assertEqual(header_formatted_time[0], "2021  5 22  0  0 0.00000000")
+
+    def test_j2000_to_igs_epoch_row_header_dt(self):
+        # Ensure formatting comes out as expected
+        # E.g. 674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0 0.00000000\n'
+        input_time = np.array([674913600])
+        formatted_time = gn_datetime.j2000_to_igs_epoch_row_header_dt(input_time)
+        self.assertEqual(formatted_time[0], "*  2021  5 22  0  0 0.00000000\n")
+
+
 class TestGPSDate(unittest.TestCase):
     def test_gpsdate(self):
         date = gn_datetime.GPSDate(np.datetime64("2021-08-31"))
@@ -45,4 +61,3 @@ class TestSNXTimeConversion(unittest.TestCase):
         for snx_time, expected in test_cases:
             with self.subTest(snx_time=snx_time):
                 self.assertEqual(gn_datetime.snx_time_to_pydatetime(snx_time), expected)
-
