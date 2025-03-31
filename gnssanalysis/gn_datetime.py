@@ -312,12 +312,12 @@ def j2000_to_igs_epoch_row_header_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
     return "*  " + j2000_to_igs_dt(j2000_secs) + "\n"
 
 
-def j2000_to_sp3_head_dt(j2000secs: _np.ndarray) -> _np.ndarray:
+def j2000_to_sp3_head_dt(j2000secs: _np.ndarray) -> str:
     """
     Utility wrapper function to format a J2000 time value for the SP3 header. Takes NDArray, but only expects one value
     in it.
-    :param _np.ndarray j2000_secs: Numpy NDArray of (typically epoch) time(s) in J2000 seconds.
-    :return _np.ndarray: Numpy NDArray with those same times as strings.
+    :param _np.ndarray j2000_secs: Numpy NDArray containing a *single* time value in J2000 seconds.
+    :return str: The provided time value as a string.
     """
     formatted_times = j2000_to_igs_dt(j2000secs)
 
@@ -325,7 +325,7 @@ def j2000_to_sp3_head_dt(j2000secs: _np.ndarray) -> _np.ndarray:
     if len(formatted_times) != 1:
         logger.warning(
             "More than one time value passed through. This function is meant to be used to format a single value "
-            "in the SP3 header. Check for mistakes."
+            "in the SP3 header."
         )
     return formatted_times[0]
 
