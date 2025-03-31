@@ -133,6 +133,7 @@ def gpswkD2dt(gpswkD: str) -> _datetime:
 def gps_week_day_to_datetime(gps_week_and_weekday: str) -> _datetime:
     """
     Convert from GPS-Week-Day (including day: WWWWD or just week: WWWW) format to datetime object.
+    If a day-of-week is not provided, 0 (Sunday) is assumed.
 
     param: str gps_week_and_weekday: A date expressed in GPS weeks with (optionally) day-of-week.
     returns _datetime: The date expressed as a datetime.datetime object

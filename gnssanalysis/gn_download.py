@@ -37,7 +37,7 @@ import numpy as _np
 import pandas as _pd
 from boto3.s3.transfer import TransferConfig
 
-from .gn_datetime import GPSDate, gpswkD2dt
+from .gn_datetime import GPSDate, gps_week_day_to_datetime
 from .gn_utils import ensure_folders
 
 MB = 1024 * 1024
@@ -807,8 +807,8 @@ def download_multiple_files_from_cddis(files: List[str], ftp_folder: str, output
 
 def download_product_from_cddis(
     download_dir: _Path,
-    start_epoch: _datetime,
-    end_epoch: _datetime,
+    start_epoch: _datetime.datetime,
+    end_epoch: _datetime.datetime,
     file_ext: str,
     limit: int = None,
     long_filename: Optional[bool] = None,
@@ -839,8 +839,11 @@ def download_product_from_cddis(
     """
     # Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
-        start_epoch = GPSDate(str(start_epoch))
-        start_epoch = gpswkD2dt(f"{start_epoch.gpswk}0")
+        # From start_epoch provided, calculate GPS week, rewind to *beginning of that week*, and use that date.
+        # We do this because the weekly files are released/dated as Sunday of each GPS week.
+        start_epoch_as_gps_date = GPSDate(start_epoch)
+        # Get GPS week number *without* DayOfWeek suffix (therefore start of the GPS Week), then convert back to datetime
+        start_epoch = gps_week_day_to_datetime(f"{start_epoch_as_gps_date.gpswk}")
         timespan = _datetime.timedelta(days=7)
 
     logging.info("Attempting CDDIS Product download/s")
