@@ -348,8 +348,12 @@ def update_sp3_comments(
     for i in range(len(new_lines) - 1):
         if not new_lines[i].startswith(SP3_COMMENT_START):
             # If comment start '/*' is there, we must've only failed the above check due to no space at char 3.
-            # In that case, strip the existing comment start to avoid duplicating it.
-            new_lines[i] = SP3_COMMENT_START + new_lines[i][2:] if new_lines[i][0:2] == "/*" else new_lines[i]
+            # In that case, strip the existing comment start '/*' to avoid ending up with '/* /*'.
+
+            # Write comment lead-in, followed by either:
+            #  - the line minus first 2 chars (if they are a comment), or
+            #  - the full line (if the first two chars don't look like a comment)
+            new_lines[i] = SP3_COMMENT_START + (new_lines[i][2:] if new_lines[i][0:2] == "/*" else new_lines[i])
         if len(new_lines[i]) > SP3_COMMENT_MAX_LENGTH:
             raise ValueError(f"Comment line too long! Exceeded 80 chars (including lead-in): '{new_lines[i]}'")
 
