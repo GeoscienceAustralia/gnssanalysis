@@ -278,7 +278,7 @@ def mjd2j2000(mjd: _np.ndarray, seconds_frac: _np.ndarray, pea_partials=False) -
 def j2000_to_igs_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
     """
     Converts array of j2000 times to format string representation used by many IGS formats including Rinex and SP3.
-    E.g. 674913600 -> '2021-05-22T00:00:00' -> '2021  5 22  0  0 0.00000000'
+    E.g. 674913600 -> '2021-05-22T00:00:00' -> '2021  5 22  0  0  0.00000000'
     :param _np.ndarray j2000_secs: Numpy NDArray of (typically epoch) times in J2000 seconds.
     :return _np.ndarray: Numpy NDArray with those same times as strings.
     """
@@ -304,7 +304,7 @@ def j2000_to_igs_epoch_row_header_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
     """
     Utility wrapper function to format J2000 time values (typically epoch values) to be written as epoch header lines
     within the body of SP3, Rinex, etc. files.
-    E.g. 674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0 0.00000000\n'
+    E.g. 674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0  0.00000000\n'
     :param _np.ndarray j2000_secs: Numpy NDArray of (typically epoch) times in J2000 seconds.
     :return _np.ndarray: Numpy NDArray with those same times as strings, including epoch line lead-in and newline.
     """
@@ -336,6 +336,7 @@ def j20002rnxdt(j2000secs: _np.ndarray) -> _np.ndarray:
     DEPRECATED since about version 0.0.58
     TODO remove in version 0.0.59
     Converts array of j2000 times to rinex format string representation
+    NOTE: the following is incorrect by SP3d standard; there should be another space before the seconds.
     674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0 0.00000000\n'
     """
     logger.warning("j20002rnxdt() is deprecated. Please use j2000_to_igs_epoch_row_header_dt() instead.")
@@ -353,6 +354,7 @@ def j20002rnxdt(j2000secs: _np.ndarray) -> _np.ndarray:
 
     time_h = _pd.Series((hour - day).astype("int64").astype(str)).str.rjust(3).values
     time_m = _pd.Series((minute - hour).astype("int64").astype(str)).str.rjust(3).values
+    # NOTE: The following may be wrong by the SP3d spec. Again, please use j2000_to_igs_epoch_row_header_dt() instead.
     time_s = (_pd.Series((datetime - minute)).view("int64") / 1e9).apply("{:.8f}\n".format).str.rjust(13).values
     return date_y + date_m + date_d + time_h + time_m + time_s
 
