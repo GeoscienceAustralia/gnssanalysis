@@ -661,26 +661,27 @@ def check_sp3_version(sp3_bytes: bytes, strict: bool = False) -> bool:
     # Check the SP3 data we are reading is a version we support (currenly only SP3d is actively used, and support is
     # not complete).
     version_char = sp3_bytes[1:2]
+    version_char_as_string = version_char.decode(errors="ignore")
 
     if version_char == b"d":  # Version d, ~2016. This is the version we actively support.
         return True
     elif version_char > b"d":  # Too new. Bail out, we don't know what has changed.
         raise ValueError(
-            f"SP3 file version '{version_char}' is too new! We support version 'd', and can potentially read (untested) version 'c' and 'b'"
+            f"SP3 file version '{version_char_as_string}' is too new! We support version 'd', and can potentially read (untested) version 'c' and 'b'"
         )
     elif version_char in (b"c", b"b"):  # Tentative, may not work properly.
         if strict:
             raise ValueError(
-                f"Support for SP3 file version '{version_char}' is untested. Refusing to read as strict mode is on."
+                f"Support for SP3 file version '{version_char_as_string}' is untested. Refusing to read as strict mode is on."
             )
-        logger.warning(f"Reading an older SP3 file version '{version_char}'. This may not parse correctly!")
+        logger.warning(f"Reading an older SP3 file version '{version_char_as_string}'. This may not parse correctly!")
         return False
     elif version_char == b"a":  # First version doesn't have constellation letters (e.g. G01, R01) as it is GPS only.
         raise ValueError(
             f"SP3 file version 'a' (the original version) is unsupported. We support version 'd', with partial (possible) support for 'c' and 'b'"
         )
     else:
-        raise ValueError(f"Failure determining SP3 data version. Got '{version_char}")
+        raise ValueError(f"Failure determining SP3 data version. Got '{version_char_as_string}'")
 
 
 def read_sp3(
