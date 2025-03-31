@@ -244,62 +244,48 @@ SP3 comment reflow test. This should not break words if possible."""
         ]
 
         new_lines = ["SP3 test append line 1", "/* SP3 test append line 2", "/*SP3 test append line 3"]
-
         new_freeform_string = """SP3 comment reflow test. This should not break words if possible. \
 SP3 comment reflow test. This should not break words if possible."""
-        # What we expect the above string to look like after reformatting
+        # What we expect the above string to look like after reformatting:
         expected_freeform_reformatted = [
             "/* SP3 comment reflow test. This should not break words if possible. SP3",
             "/* comment reflow test. This should not break words if possible.",
         ]
 
-        # Load
+        # Load, check initial state
         sp3_df = sp3.read_sp3(input_data)
-
-        # Check initial state
         initial_commments = sp3.get_sp3_comments(sp3_df)
         self.assertEqual(expected_initial_comments, initial_commments, "Initial SP3 comments were not as expected")
 
-        # Append new lines (expect comment lead-in to be automatically applied if not present).
-        # Also add free-form line which should be reflowed using the function tested above.
+        ### Ammend test ###
+        # Add new lines and reflowed string, in append/ammend mode (ammend mode is on by default).
+        # Comment lead-in should be automatically applied if not present.
         sp3.update_sp3_comments(sp3_df, new_lines, comment_string=new_freeform_string)
-
-        # Load back what we just updated in place, to check it
-        appended_comments = sp3.get_sp3_comments(sp3_df)
 
         # Construct expected comment list
         expected_append_comments = []
-        print("#################")
-        print(f"Expected comments - Empty: {expected_append_comments}")
         expected_append_comments.extend(expected_initial_comments)  # Initial comments (as we were in append mode)
-        print(f"Expected comments - With Initial comments: {expected_append_comments}")
         expected_append_comments.extend(  # Line-by-line additions, lead-in corrected
             ["/* SP3 test append line 1", "/* SP3 test append line 2", "/* SP3 test append line 3"]
         )
-        print(f"Expected comments - With line-by-line: {expected_append_comments}")
         expected_append_comments.extend(expected_freeform_reformatted)  # Freeform addition, reformatted
-        print(f"Expected comments - With reflow: {expected_append_comments}")
-        print("#################")
-        print("#################")
-        print(f"Expected comments: {expected_append_comments}")
-        print(f"Actual comments  : {appended_comments}")
-        print("#################")
 
+        # Load back what we updated in place, to check it
+        appended_comments = sp3.get_sp3_comments(sp3_df)
         self.assertEqual(expected_append_comments, appended_comments, "Comments were not as expected after appending")
 
-        # Load clean copy
+        ### Overwrite/replace test ###
         sp3_df = sp3.read_sp3(input_data)
-
-        # Test overwrite
         sp3.update_sp3_comments(sp3_df, comment_lines=new_lines, comment_string=new_freeform_string, ammend=False)
 
-        # Check
-        replaced_comments = sp3.get_sp3_comments(sp3_df)
         expected_replaced_comments = []
         expected_replaced_comments.extend(
             ["/* SP3 test append line 1", "/* SP3 test append line 2", "/* SP3 test append line 3"]
         )
         expected_replaced_comments.extend(expected_freeform_reformatted)
+
+        # Fetch and check actual result
+        replaced_comments = sp3.get_sp3_comments(sp3_df)
         self.assertEqual(expected_replaced_comments, replaced_comments, "Comments were not as expected after replacing")
 
     def test_sp3_comment_validation(self):
