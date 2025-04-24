@@ -513,7 +513,7 @@ def attempt_ftps_download(
     download_filepath = check_whether_to_download(
         filename=filename, download_dir=download_dir, if_file_present=if_file_present
     )
-    if download_filepath:
+    if download_filepath is not None:
         logging.debug(f"Downloading {filename}")
         with open(download_filepath, "wb") as local_file:
             ftps.retrbinary(f"RETR {filename}", local_file.write)
@@ -524,30 +524,30 @@ def attempt_ftps_download(
 def attempt_url_download(
     download_dir: _Path,
     url: str,
-    filename: str = None,
-    type_of_file: str = None,
+    filename: Optional[str] = None,
+    type_of_file: Optional[str] = None,
     if_file_present: str = "prompt_user",
     raise_on_failure: bool = False,
-) -> Union[_Path, None]:
+) -> Optional[_Path]:
     """Attempt download of file given URL (url) to chosen location (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
     :param str url: URL to download
-    :param str filename: Filename to assign for the downloaded file, defaults to None
-    :param str type_of_file: How to label the file for STDOUT messages, defaults to None
+    :param Optional[str] filename: Filename to assign for the downloaded file, defaults to None
+    :param Optional[str] type_of_file: How to label the file for STDOUT messages, defaults to None
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     TODO docstring for this param
     :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
     """
     # If the download_filename is not provided, use the filename from the URL
-    if not filename:
+    if filename is None or len(filename) == 0:
         filename = url[url.rfind("/") + 1 :]
     logging.info(f"Attempting URL Download of {type_of_file} file - {filename} to {download_dir}")
     # Use the check_whether_to_download function to determine whether to download the file
     download_filepath = check_whether_to_download(
         filename=filename, download_dir=download_dir, if_file_present=if_file_present
     )
-    if download_filepath:
+    if download_filepath is not None:
         download_filepath = download_url(url, download_filepath, raise_on_failure=raise_on_failure)
     return download_filepath
 
@@ -603,7 +603,7 @@ def check_file_present(comp_filename: str, dwndir: str) -> bool:
     return present
 
 
-def decompress_file(input_filepath: _Path, delete_after_decompression: bool = False) -> _Path:
+def decompress_file(input_filepath: _Path, delete_after_decompression: bool = False) -> Optional[_Path]:
     """
     Given the file path to a compressed file, decompress it in-place
     Assumption is that filename of final file is the stem of the compressed filename for .gz files
@@ -658,7 +658,7 @@ def decompress_file(input_filepath: _Path, delete_after_decompression: bool = Fa
         return output_file
 
 
-def check_n_download_url(url, dwndir, filename=False):
+def check_n_download_url(url: str, dwndir, filename: Union[str, None] = None):
     """
     Download single file given URL to download from.
     Optionally provide filename if different from url name
@@ -666,7 +666,7 @@ def check_n_download_url(url, dwndir, filename=False):
     if dwndir[-1] != "/":
         dwndir += "/"
 
-    if not filename:
+    if filename is None:
         filename = url[url.rfind("/") + 1 :]
 
     if not check_file_present(filename, dwndir):
@@ -766,7 +766,7 @@ def download_file_from_cddis(
                     type_of_file=note_filetype,
                     if_file_present=if_file_present,
                 )
-                if not download_filepath:  # File already existed and was skipped
+                if download_filepath is None:  # File already existed and was skipped
                     return None
                 # File was downloaded
                 logging.info(f"Downloaded {download_filepath.name}")
@@ -915,7 +915,7 @@ def download_product_from_cddis(
                 download_filepath = check_whether_to_download(
                     filename=product_filename, download_dir=download_dir, if_file_present=if_file_present
                 )
-                if download_filepath:
+                if download_filepath is not None:
                     logging.info(f"Downloading {product_filename} from CDDIS")
                     download_filepaths.append(
                         download_file_from_cddis(
@@ -1043,7 +1043,7 @@ def get_iau2000_file_variants_for_dates(
     if legacy_mode:
         if preferred_variant != "standard":  # This is what has historically been used
             raise ValueError("In legacy mode, preferred_variant must be set to 'standard'")
-        if start_epoch and end_epoch:
+        if (start_epoch is not None) and (end_epoch is not None):
             raise ValueError("In legacy_mode, only a start_epoch OR end_epoch can be specified (not both)")
 
     needed_variants: set[Literal["standard", "daily"]] = set()
@@ -1052,7 +1052,9 @@ def get_iau2000_file_variants_for_dates(
     date_24_hours_ago = now - _datetime.timedelta(days=1)
 
     # Dates can't be within the last 24 hours, or in the future
-    if (start_epoch and start_epoch > date_24_hours_ago) or (end_epoch and end_epoch > date_24_hours_ago):
+    if (start_epoch is not None and start_epoch > date_24_hours_ago) or (
+        end_epoch is not None and end_epoch > date_24_hours_ago
+    ):
         raise ValueError(
             "All dates provided must be 24h old or older. We can't assume data newer than a day old will be present"
         )
@@ -1071,10 +1073,14 @@ def get_iau2000_file_variants_for_dates(
     # Note that you may need both.
 
     # If start or end epoch within (>=) the date 8 days ago, standard file may not have the data yet, use daily
-    if (start_epoch and start_epoch >= date_8_days_ago) or (end_epoch and end_epoch >= date_8_days_ago):
+    if (start_epoch is not None and start_epoch >= date_8_days_ago) or (
+        end_epoch is not None and end_epoch >= date_8_days_ago
+    ):
         needed_variants.add("daily")
     # If start or end epoch older (<) the date three months ago, daily file won't have data, use standard file
-    if (start_epoch and start_epoch <= date_89_days_ago) or (end_epoch and end_epoch <= date_89_days_ago):
+    if (start_epoch is not None and start_epoch <= date_89_days_ago) or (
+        end_epoch is not None and end_epoch <= date_89_days_ago
+    ):
         needed_variants.add("standard")
 
     # Default to preferred variant if provided dates weren't within a range that *required* use of one file or the other
@@ -1089,11 +1095,11 @@ def get_iau2000_file_variants_for_dates(
         return needed_variants
 
     # Start of range was unspecified, we have to assume it may be older than 3 months
-    if not start_epoch:
+    if start_epoch is None:
         needed_variants.add("standard")
 
     # End of range was unspecified, we have to assume it may be newer than a week
-    if not end_epoch:
+    if end_epoch is None:
         needed_variants.add("daily")
 
     return needed_variants
@@ -1199,7 +1205,7 @@ def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user"
             type_of_file="Yaw Model SNX",
             if_file_present=if_file_present,
         )
-        if download_filepath:
+        if download_filepath is not None:
             download_filepaths.append(decompress_file(download_filepath, delete_after_decompression=True))
 
     return download_filepaths

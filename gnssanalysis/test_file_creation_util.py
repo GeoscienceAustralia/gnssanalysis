@@ -43,7 +43,7 @@ sp3_df = read_sp3(
 print("Read done.")
 
 # Trim to first x epochs
-if trim_to_num_epochs:
+if trim_to_num_epochs is not None:
     print(f"Trimming to first {trim_to_num_epochs} epochs")
     sp3_df = trim_to_first_n_epochs(sp3_df=sp3_df, epoch_count=trim_to_num_epochs, sp3_filename=filename)
 
