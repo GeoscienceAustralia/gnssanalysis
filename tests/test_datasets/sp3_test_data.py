@@ -1,5 +1,22 @@
 # Central record of SP3 test data sets to be shared across unit tests
 
+# Header version checks
+fake_header_version_a = b"""#aV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+fake_header_version_b = b"""#bV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+fake_header_version_c = b"""#cV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+fake_header_version_d = b"""#dV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+fake_header_version_e = b"""#eV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+
 # first dataset is part of the IGS benchmark (modified to include non null data on clock)
 sp3_test_data_igs_benchmark_null_clock = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
 ## 1422 345600.00000000   900.00000000 54202 0.0000000000000

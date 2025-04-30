@@ -9,8 +9,13 @@ import pandas as pd
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
 import gnssanalysis.gn_io.sp3 as sp3
 
-from gnssanalysis.gn_utils import trim_line_ends
+from gnssanalysis.gn_utils import StrictModes, trim_line_ends
 from test_datasets.sp3_test_data import (
+    fake_header_version_a,
+    fake_header_version_b,
+    fake_header_version_c,
+    fake_header_version_d,
+    fake_header_version_e,
     # first dataset is part of the IGS benchmark (modified to include non null data on clock):
     sp3_test_data_igs_benchmark_null_clock as input_data,
     # Expected content section we want gnssanalysis to write out
@@ -26,7 +31,7 @@ from test_datasets.sp3_test_data import (
     sp3_test_data_short_cod_final,  # For use as input data
     sp3_test_data_short_cod_final_content,  # For validating content output
     sp3_test_data_short_cod_final_header,  # For validating header output
-    # For testing comment validation
+    # For testing comment validation (overlong comment with nothing but extra SPACES in it)
     sp3_test_data_short_cod_final_overlong_comment_line as sp3_with_overlong_comment,
 )
 
@@ -55,6 +60,37 @@ sample_header_svs = b"""#dP2024  1 27  0  0  0.0000000      289 ORBIT IGS14 FIT 
 
 
 class TestSP3(unittest.TestCase):
+
+    def test_check_sp3_version(self):
+        # Check that SP3 version check works, and that the highest level of strict mode raises more exceptions
+
+        # Extremes
+        with self.assertRaises(ValueError):  # Version too old
+            sp3.check_sp3_version(fake_header_version_a)
+
+        with self.assertRaises(ValueError):  # Version too new
+            sp3.check_sp3_version(fake_header_version_e)
+
+        # Ambiguous cases
+        self.assertEqual(
+            sp3.check_sp3_version(fake_header_version_b),
+            False,
+            "SP3 version b should not be considered fully supported",
+        )
+        self.assertEqual(
+            sp3.check_sp3_version(fake_header_version_c),
+            False,
+            "SP3 version c should not be considered fully supported",
+        )
+        # Our best supported version should return True
+        self.assertEqual(
+            sp3.check_sp3_version(fake_header_version_d), True, "SP3 version d should be considered best supported"
+        )
+
+        # StrictModes.STRICT_RAISE should cause a *possibly* supported version to raise an exception.
+        with self.assertRaises(ValueError):
+            sp3.check_sp3_version(fake_header_version_c, strict_mode=StrictModes.STRICT_RAISE)
+
     @patch("builtins.open", new_callable=mock_open, read_data=input_data)
     def test_read_sp3_pOnly(self, mock_file):
         result = sp3.read_sp3("mock_path", pOnly=True)
@@ -316,6 +352,14 @@ class TestSP3(unittest.TestCase):
             ],
         )
 
+    def test_sp3_comment_validation_many_spaces(self):
+        # This comment line is overlong due to many trailing spaces
+        sp3_df = sp3.read_sp3(sp3_with_overlong_comment)
+
+        # Rewrite and validate comments in place. Should throw an exception for overlong lines
+        with self.assertRaises(ValueError, msg="Validating overlong SP3 comment should raise ValueError"):
+            sp3.update_sp3_comments(sp3_df)
+
     def test_sp3_comment_reflow(self):
         # Test that string reflow utility correctly splits a string and converts it into SP3 comment lines.
         comment_string_to_reflow = """SP3 comment reflow test. This should not break words if possible. \
@@ -383,15 +427,6 @@ SP3 comment reflow test. This should not break words if possible."""
         # Fetch and check actual result
         replaced_comments = sp3.get_sp3_comments(sp3_df)
         self.assertEqual(expected_replaced_comments, replaced_comments, "Comments were not as expected after replacing")
-
-    def test_sp3_comment_validation(self):
-        sp3_df = sp3.read_sp3(sp3_with_overlong_comment)
-
-        with self.assertRaises(
-            ValueError, msg="Validating SP3 containing overlong comment line, should raise ValueError"
-        ):
-            # Rewrite and validate comments in place. Should throw an exception for overlong lines
-            sp3.update_sp3_comments(sp3_df)
 
     def test_gen_sp3_content_velocity_exception_handling(self):
         """
