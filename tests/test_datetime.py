@@ -4,6 +4,32 @@ from datetime import datetime as _datetime
 import numpy as np
 
 
+class TestDateTime(unittest.TestCase):
+
+    def test_gps_week_day_to_datetime(self):
+        # GPS week 2173: Sunday 2021-08-29, day of year 241
+        dt_week_only = gn_datetime.gps_week_day_to_datetime("2173")
+        self.assertEqual(dt_week_only.strftime("%Y"), "2021")  # Check year
+        self.assertEqual(dt_week_only.strftime("%j"), "241")  # Check day of year
+
+        # GPS week 2173, day 2: Tuesday 2021-08-31, day of year 243
+        dt_week_and_day_of_week = gn_datetime.gps_week_day_to_datetime("21732")
+        self.assertEqual(dt_week_and_day_of_week.strftime("%Y"), "2021")
+        self.assertEqual(dt_week_and_day_of_week.strftime("%j"), "243")
+
+        with self.assertRaises(ValueError):
+            gn_datetime.gps_week_day_to_datetime("")  # Too short
+
+        with self.assertRaises(ValueError):
+            gn_datetime.gps_week_day_to_datetime("217")  # Too short
+
+        with self.assertRaises(ValueError):
+            gn_datetime.gps_week_day_to_datetime("217345")  # Too long
+
+        with self.assertRaises(TypeError):
+            gn_datetime.gps_week_day_to_datetime(2173)  # Not a string!
+
+
 class TestGPSDate(unittest.TestCase):
     def test_gpsdate(self):
         date = gn_datetime.GPSDate(np.datetime64("2021-08-31"))
@@ -45,4 +71,3 @@ class TestSNXTimeConversion(unittest.TestCase):
         for snx_time, expected in test_cases:
             with self.subTest(snx_time=snx_time):
                 self.assertEqual(gn_datetime.snx_time_to_pydatetime(snx_time), expected)
-
