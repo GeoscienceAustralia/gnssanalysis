@@ -399,7 +399,7 @@ def _process_sp3_block(
 
 
 def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Optional[str]:
-    if isinstance(path_or_bytes, str) or isinstance(path_or_bytes, Path):
+    if isinstance(path_or_bytes, (str, Path)):
         return str(path_or_bytes)
     else:
         return "Data passed as bytes: no path available"

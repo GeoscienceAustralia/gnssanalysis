@@ -84,7 +84,7 @@ def get_frame_of_day(
         elif isinstance(list_path_or_df, str):
             core_df = _get_core_list(list_path_or_df)
             core_list = core_df.CODE.values
-        elif isinstance(list_path_or_df, _np.ndarray) or isinstance(list_path_or_df, list):
+        elif isinstance(list_path_or_df, (_np.ndarray, list)):
             core_list = list_path_or_df
         else:
             raise ValueError(
