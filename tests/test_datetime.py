@@ -7,21 +7,26 @@ import numpy as np
 class TestDateTime(unittest.TestCase):
 
     def test_gps_week_day_to_datetime(self):
-        dt_week_only = gn_datetime.gps_week_day_to_datetime("2173")  # What is DoW implicitly? 0, 1, start of week?
-        self.assertEqual(dt_week_only.strftime("%Y"), "2021")
-        # TODO should this be 242 (1 based) or 241 (0 based, most likely), or something else?
-        self.assertEqual(dt_week_only.strftime("%j"), "241")
+        # GPS week 2173: Sunday 2021-08-29, day of year 241
+        dt_week_only = gn_datetime.gps_week_day_to_datetime("2173")
+        self.assertEqual(dt_week_only.strftime("%Y"), "2021")  # Check year
+        self.assertEqual(dt_week_only.strftime("%j"), "241")  # Check day of year
 
-        dt_week_and_day_of_week = gn_datetime.gps_week_day_to_datetime("21732")  # Add DoW 2
+        # GPS week 2173, day 2: Tuesday 2021-08-31, day of year 243
+        dt_week_and_day_of_week = gn_datetime.gps_week_day_to_datetime("21732")
         self.assertEqual(dt_week_and_day_of_week.strftime("%Y"), "2021")
         self.assertEqual(dt_week_and_day_of_week.strftime("%j"), "243")
 
-        with self.assertRaises(ValueError) as ex_wrapper:
+        with self.assertRaises(ValueError):
             gn_datetime.gps_week_day_to_datetime("")  # Too short
+
+        with self.assertRaises(ValueError):
             gn_datetime.gps_week_day_to_datetime("217")  # Too short
+
+        with self.assertRaises(ValueError):
             gn_datetime.gps_week_day_to_datetime("217345")  # Too long
 
-        with self.assertRaises(TypeError) as ex_wrapper:
+        with self.assertRaises(TypeError):
             gn_datetime.gps_week_day_to_datetime(2173)  # Not a string!
 
 
