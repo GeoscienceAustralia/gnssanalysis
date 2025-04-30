@@ -1739,25 +1739,6 @@ def trim_to_first_n_epochs(
     return trim_df(sp3_df, keep_first_delta_amount=time_offset_from_start)
 
 
-def sp3_hlm_trans(
-    a: _pd.DataFrame,
-    b: _pd.DataFrame,
-) -> tuple[_pd.DataFrame, Tuple[_np.ndarray, _np.ndarray]]:
-    """
-    Rotates sp3_b into sp3_a.
-
-    :param _pd.DataFrame a: The sp3_a DataFrame.
-    :param _pd.DataFrame b: The sp3_b DataFrame.
-    :return tuple[_pd.DataFrame, Tuple[_np.ndarray, _np.ndarray]]: A tuple containing the updated sp3_b DataFrame and
-        a nested tuple containing the HLM array with applied computed parameters and residuals. TODO: is it residules first?
-    """
-    hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
-    b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
-
-    b.attrs["HEADER"].HEAD.ORB_TYPE = "HLM"  # Update b's header to reflect Helmert transformation has been applied
-    return b, hlm
-
-
 # TODO: move to gn_diffaux.py (and other associated functions as well)?
 def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
