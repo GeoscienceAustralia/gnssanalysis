@@ -590,7 +590,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         if "SOLUTION/EPOCHS" in snx_blocks:
             with open(file_path, mode="rb") as f:
                 blk = gn_io.sinex._snx_extract_blk(f.read(), "SOLUTION/EPOCHS")
-            if blk:
+            if blk is not None:
                 soln_df = pd.read_csv(
                     io.BytesIO(blk[0]),
                     sep="\\s+",  # delim_whitespace is deprecated
@@ -725,7 +725,7 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
         basename,
         re.VERBOSE,
     )
-    if long_match:
+    if long_match is not None:
         return {
             "analysis_center": long_match["analysis_center"].upper(),
             "content_type": long_match["content_type"].upper(),
