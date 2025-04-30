@@ -330,7 +330,7 @@ def update_sp3_comments(
     :param Union[str, None] comment_string: Arbitrary length string to be broken into lines and formatted as SP3
         comments. This should NOT have SP3 comment line lead-in ('/* ') on it; that will be added.
     :param bool ammend: Whether to ammend (specifically add additional) comment lines, or delete existing lines and
-        replace with the provided input.
+        replace with the provided input. Defaults to True.
     :raises ValueError: if any lines are too long (>80 chars including lead-in sequence '/* ', added if missing)
     """
     # Start with the existing comment lines if we're in ammend mode, else start afresh
@@ -345,7 +345,7 @@ def update_sp3_comments(
         new_lines.extend(reflow_string_as_lines_for_comment_block(comment_string))
 
     # Ensure lead-in correct on all lines, and lines not too long
-    for i in range(len(new_lines) - 1):
+    for i in range(len(new_lines)):
         if not new_lines[i].startswith(SP3_COMMENT_START):
             # If comment start '/*' is there, we must've only failed the above check due to no space at char 3.
             # In that case, strip the existing comment start '/*' to avoid ending up with '/* /*'.
