@@ -1,6 +1,7 @@
 """Base time conversion functions"""
 
 from datetime import datetime as _datetime
+from datetime import date as _date
 from datetime import timedelta as _timedelta
 from io import StringIO as _StringIO
 from typing import Optional, overload, Union
@@ -62,18 +63,21 @@ class GPSDate:
     print(f"tomorrow year: {tomorrow.year}, doy: {tomorrow.dy}, GPS week and weekday: {tomorrow.gpswkD}")
     """
 
-    def __init__(self, ts: Union[_np.datetime64, _datetime, str]) -> None:
-        if isinstance(ts, _datetime):
-            ts = _np.datetime64(ts)
-        if isinstance(ts, str):
-            ts = _np.datetime64(ts)
+    _timestamp: _np.datetime64
 
-        self.ts = ts
+    def __init__(self, timestamp: Union[_np.datetime64, _datetime, _date, str]):
+        if isinstance(timestamp, _np.datetime64):
+            self._timestamp = timestamp
+        elif isinstance(timestamp, (_datetime, _date, str)):
+            # Something we may be able to convert to a datetime64
+            self._timestamp = _np.datetime64(timestamp)
+        else:
+            raise TypeError("GPSDate() takes only Numpy datetime64, datetime, date, or str representation of a date")
 
     @property
-    def as_datetime(self):
-        """Convert to Python `datetime` object."""
-        return self.ts.astype(_datetime)
+    def as_datetime(self) -> _datetime:
+        """Convert to Python `datetime` object. Note that as GPSDate has no hour, neither will this datetime"""
+        return _pd.Timestamp(self._timestamp).to_pydatetime()
 
     @property
     def yr(self) -> str:
@@ -98,16 +102,16 @@ class GPSDate:
     @property
     def next(self):
         """The following day"""
-        return GPSDate(self.ts + 1)
+        return GPSDate(self._timestamp + 1)
 
     @property
     def prev(self):
         """The previous day"""
-        return GPSDate(self.ts - 1)
+        return GPSDate(self._timestamp - 1)
 
     def __str__(self) -> str:
         """Same string representation as the underlying numpy datetime64 object"""
-        return str(self.ts)
+        return str(self._timestamp)
 
 
 def dt2gpswk(dt, wkday_suff=False, both=False) -> Union[str, tuple[str, str]]:

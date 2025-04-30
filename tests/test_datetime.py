@@ -1,6 +1,7 @@
 import unittest
 from gnssanalysis import gn_datetime
 from datetime import datetime as _datetime
+from datetime import date as _date
 import numpy as np
 
 
@@ -32,7 +33,7 @@ class TestDateTime(unittest.TestCase):
 
 class TestGPSDate(unittest.TestCase):
     def test_gpsdate(self):
-        date = gn_datetime.GPSDate(np.datetime64("2021-08-31"))
+        date: gn_datetime.GPSDate = gn_datetime.GPSDate(np.datetime64("2021-08-31"))
         self.assertEqual(int(date.yr), 2021)
         self.assertEqual(int(date.dy), 243)
         self.assertEqual(int(date.gpswk), 2173)
@@ -53,6 +54,31 @@ class TestGPSDate(unittest.TestCase):
         np.testing.assert_array_equal(yds_datetime, np.asarray(["2000-01-01T00:00:00"], dtype="datetime64[s]"))
         yds_yds = gn_datetime.datetime2yydoysec(yds_datetime)
         np.testing.assert_array_equal(yds_yds, yds)
+
+        # Test as_datetime property
+        # Expect 2021-09-01 as a python datetime, not a date or a Numpy datetime64
+        self.assertEqual(date.as_datetime, _datetime(year=2021, month=9, day=1))
+        self.assertTrue(isinstance(date.as_datetime, _datetime))
+
+        # Test construction from other types
+        date = gn_datetime.GPSDate(_datetime(year=2021, month=9, day=5))
+        self.assertEqual(date.dy, "248")
+        self.assertEqual(date.as_datetime, _datetime(year=2021, month=9, day=5))
+
+        date = gn_datetime.GPSDate(_date(year=2021, month=9, day=5))
+        self.assertEqual(date.dy, "248")
+        self.assertEqual(date.as_datetime, _datetime(year=2021, month=9, day=5))
+
+        date = gn_datetime.GPSDate("2021-09-05")
+        self.assertEqual(date.dy, "248")
+        self.assertEqual(date.as_datetime, _datetime(year=2021, month=9, day=5))
+
+        # And exceptions on trying to construct from incorrect types or date string formats
+        with self.assertRaises(TypeError):
+            gn_datetime.GPSDate(5)  # An int isn't one of the supported date types
+
+        with self.assertRaises(ValueError):
+            gn_datetime.GPSDate("123-12-123")  # A string, but not a valid date format
 
 
 class TestSNXTimeConversion(unittest.TestCase):
