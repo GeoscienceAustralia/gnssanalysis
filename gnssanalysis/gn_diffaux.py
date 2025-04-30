@@ -479,34 +479,23 @@ def calculate_sisre(
     *QZSS (J) is being ignored
     *BeiDou different coeffs for MEO/GEO not implemented yet
 
-    Parameters
-    ----------
-    sp3_test : sp3 DataFrame a / test
+    :param sp3_test DataFrame: sp3 DataFrame a / test
         Output of read_sp3 function or a similar sp3 DataFrame.
-    sp3_baseline : sp3 DataFrame b / baseline
+    :param sp3_baseline DataFrame: sp3 DataFrame b / baseline
         Output of read_sp3 function or a similar sp3 DataFrame.
-    clk_test : clk DataFrame a / test (optional)
+    :param clk_baseline DataFrame | None: clk DataFrame b / baseline (optional)
         Output of read_clk function or a similar clk DataFrame.
-    clk_baseline : clk DataFrame b / baseline (optional)
+    :param clk_test DataFrame | None: clk DataFrame a / test (optional)
         Output of read_clk function or a similar clk DataFrame.
-    norm_types : list[str]
-        normalization parameter used for removing the clk common modes before
-        differencing.
-    output_mode : str
-        controls at what stage to output SISRE
-    clean : bool
-        switch to use sigma filtering on the data.
-    cutoff : int or float, default None
-        A cutoff value in meters that is used to clip the values above it in
-        both RAC frame values and clk offset differences. Operation is skipped
-        if None is provided (default).
-    use_rms : bool, default False
-        A switch to compute RMS timeseries of RAC and T per each GNSS before
+    :param norm_types list[str]: normalization parameter used for removing the clk common modes before differencing.
+    :param output_mode str: controls at what stage to output SISRE
+    :param clean bool: switch to use sigma filtering on the data.
+    :param cutoff int | float | None: defaults to None. A cutoff value in meters that is used to clip the values above
+    it in both RAC frame values and clk offset differences. Operation is skipped if None is provided (default).
+    :param use_rms bool: default False.  A switch to compute RMS timeseries of RAC and T per each GNSS before
         computing SISRE.
 
-    Returns
-    -------
-    sisre : DataFrame or Series depending in the output_mode selection
+    :return DataFrame | Series: DataFrame or Series depending in the output_mode selection (see below)
         output_mode = 'rms'  : Series of RMS SISRE values, value per GNSS.
         output_mode = 'gnss' : DataFrame of epoch-wise RMS SISRE values per GNSS.
         output_mode = 'sv'   : DataFrame of epoch-wise SISRE values per SV. NOTE: SV here refers to Satellite
@@ -540,7 +529,7 @@ def calculate_sisre(
         _logging.info(msg="plotting RAC difference")
         _gn_plot.racplot(rac_unstack=rac_unstack, output=plot if isinstance(plot, str) else None)
 
-    if (clk_test is not None) & (clk_baseline is not None):  # check if clk data is present
+    if (clk_test is not None) and (clk_baseline is not None):  # check if clk data is present
         clk_diff = (
             diff_clk(
                 clk_baseline=clk_baseline,
@@ -811,15 +800,15 @@ def sp3_difference(
     diff_est_df = test_sp3_df.loc[common_indices, "EST"] - base_sp3_df.loc[common_indices, "EST"]
     diff_xyz_df = diff_est_df.drop(columns=["CLK"]) * 1e3
 
+    # TODO Eugene: compare orbits by constellation:
     diff_rac_df = _gn_io.sp3.diff_sp3_rac(
         base_sp3_df, test_sp3_df, ref_frame=orb_ref_frame, hlm_mode=orb_hlm_mode, epochwise_hlm=epochwise_hlm
-    )  # TODO Eugene: compare orbits by constellation
+    )
     diff_rac_df.columns = diff_rac_df.columns.droplevel(0)
     diff_rac_df = diff_rac_df * 1e3
 
-    diff_clk_df = compare_clk(
-        test_sp3_df, base_sp3_df, norm_types=clk_norm_types
-    )  # TODO Eugene: compare clocks by constellation
+    # TODO Eugene: compare clocks by constellation:
+    diff_clk_df = compare_clk(test_sp3_df, base_sp3_df, norm_types=clk_norm_types)
     diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e3
 
     diff_sp3_df = diff_xyz_df.join(diff_rac_df)
@@ -857,9 +846,8 @@ def clk_difference(
     mask = test_clk_df.index.get_level_values("CODE").isin(svs)
     test_clk_df = test_clk_df[mask]
 
-    diff_clk_df = compare_clk(
-        test_clk_df, base_clk_df, norm_types=clk_norm_types
-    )  # TODO Eugene: compare clocks by constellation
+    # TODO Eugene: compare clocks by constellation:
+    diff_clk_df = compare_clk(test_clk_df, base_clk_df, norm_types=clk_norm_types)
     diff_clk_df = diff_clk_df.stack(dropna=False).to_frame(name="Clock") * 1e9
     diff_clk_df["|Clock|"] = diff_clk_df.abs()
 
