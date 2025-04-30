@@ -8,6 +8,56 @@ import click as _click
 
 from typing import List, Union
 
+from gnssanalysis.enum_meta_properties import EnumMetaProperties
+
+
+class StrictMode(metaclass=EnumMetaProperties):
+    name: str
+    long_name: str
+
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
+
+
+class STRICT_OFF(StrictMode):
+    """
+    Strict mode: off
+    """
+
+    name = "OFF"
+    long_name = "Strict mode: off"
+
+
+class STRICT_WARN(StrictMode):
+    """
+    Strict mode: warn
+    """
+
+    name = "WARN"
+    long_name = "Strict mode: warn"
+
+
+class STRICT_RAISE(StrictMode):
+    """
+    Strict mode: raise
+    """
+
+    name = "RAISE"
+    long_name = "Strict mode: raise"
+
+
+class StrictModes(metaclass=EnumMetaProperties):
+    """
+    Defines all strict mode settings
+    """
+
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
+
+    STRICT_OFF = STRICT_OFF  # Strict mode off
+    STRICT_WARN = STRICT_WARN  # Strict mode warn
+    STRICT_RAISE = STRICT_RAISE  # Strict mode warn
+
 
 def diffutil_verify_input(input):
     #     log_lvl = 40 if atol is None else 30 # 40 is error, 30 is warning. Constant tolerance differences are reported as warnings

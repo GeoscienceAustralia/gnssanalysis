@@ -10,6 +10,8 @@ import numpy as _np
 import pandas as _pd
 from scipy import interpolate as _interpolate
 
+from gnssanalysis.gn_utils import StrictMode, StrictModes
+
 from .. import filenames
 from .. import gn_aux as _gn_aux
 from .. import gn_const as _gn_const
@@ -646,15 +648,17 @@ def check_epoch_counts_for_discrepancies(
     # All good, validation passed.
 
 
-def check_sp3_version(sp3_bytes: bytes, strict: bool = False) -> bool:
+def check_sp3_version(sp3_bytes: bytes, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN) -> bool:
     """
     Reads the the SP3 version character from the provided SP3 data as bytes, and raises / warns if this
     implementation does not support it.
     The version character is specified as the second character in the file/header.
     :param bytes sp3_bytes: The raw SP3 data to check.
-    :param bool strict: raise ValueError for all versions we don't actively support. Otherwise for possibly compatible
-        versions, a warning is logged and parsing is still attempted.
-    :raises ValueError: if the SP3 data is of a version we cannot parse (e.g. a, or > d)
+    :param type[StrictMode] strict_mode: How strict to be about versions we don't actively support. Default STRICT_WARN,
+        which will log a warning and attempt parsing of possibly compatible versions. In STRICT_RAISE mode, a
+        ValueError is raised rather than attempting parsing.
+    :raises ValueError: if the SP3 data is of a version we cannot parse (e.g. a, or > d), also for versions 'b' and
+        'c' in strict mode STRICT_RAISE.
     :return bool: True if this version is actively supported (currently only version 'd'), False otherwise.
     """
 
@@ -670,11 +674,14 @@ def check_sp3_version(sp3_bytes: bytes, strict: bool = False) -> bool:
             f"SP3 file version '{version_char_as_string}' is too new! We support version 'd', and can potentially read (untested) version 'c' and 'b'"
         )
     elif version_char in (b"c", b"b"):  # Tentative, may not work properly.
-        if strict:
+        if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(
                 f"Support for SP3 file version '{version_char_as_string}' is untested. Refusing to read as strict mode is on."
             )
-        logger.warning(f"Reading an older SP3 file version '{version_char_as_string}'. This may not parse correctly!")
+        if strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Reading an older SP3 file version '{version_char_as_string}'. This may not parse correctly!"
+            )
         return False
     elif version_char == b"a":  # First version doesn't have constellation letters (e.g. G01, R01) as it is GPS only.
         raise ValueError(
@@ -694,7 +701,7 @@ def read_sp3(
     # The following two apply when the above is enabled:
     skip_filename_in_discrepancy_check: bool = False,
     continue_on_discrepancies: bool = False,
-    stricter_format_checks: bool = False,
+    format_check_strictness: type[StrictMode] = StrictModes.STRICT_WARN,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -733,8 +740,9 @@ def read_sp3(
     """
     content = _gn_io.common.path2bytes(sp3_path_or_bytes)  # Will raise EOFError if file empty
 
-    # Extract and check version. Raises exception for completely unsupported versions, logs warning for version b and c.
-    check_sp3_version(sp3_bytes=content, strict=stricter_format_checks)
+    # Extract and check version. Raises exception for completely unsupported versions.
+    # For version b and c behaviour depends on strict_mode setting
+    check_sp3_version(sp3_bytes=content, strict_mode=format_check_strictness)
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
     comment_lines_bytes: list[bytes] = _RE_SP3_COMMENT_STRIP.findall(content)
@@ -1143,7 +1151,9 @@ def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
     return sp3_df.index.get_level_values(0).unique()
 
 
-def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_mode: bool = False) -> str:
+def gen_sp3_header(
+    sp3_df: _pd.DataFrame, output_comments: bool = False, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN
+) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
     NOTE: much of the header information is drawn from the DataFrame attrs structure. If this has not been
@@ -1151,7 +1161,8 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
 
     :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool output_comment: Write the SP3 comment lines stored with the DataFrame, into the output. Off by default.
-    :param bool strict_mode: More strictly enforce SP3 specification rules (e.g. comments must have a leading space)
+    :param type[StrictMode] strict_mode: Level of strictness with which to enforce SP3 specification rules (e.g.
+        comments must have a leading space). Options defined by StrictModes, default STRICT_WARN.
     :return str: The generated SP3 header as a string.
     """
     if output_comments and not "COMMENTS" in sp3_df.attrs:
@@ -1269,10 +1280,16 @@ def gen_sp3_header(sp3_df: _pd.DataFrame, output_comments: bool = False, strict_
         for line in sp3_comment_lines:
             if len(line) > 80:  # Limit in SP3d (in SP3c the max is 60, but we don't output anything older than SP3d)
                 raise ValueError(f"SP3 comment line found that was longer than 80 chars! '{line}'")
-            if strict_mode:
+            if strict_mode in (StrictModes.STRICT_WARN, StrictModes.STRICT_RAISE):
                 # All comment lines must begin with "/* ", whether there is further comment data there or not.
-                if len(line) < 3 or line[:2] != "/* ":  # Line too short, or first three chars weren't to spec
-                    raise ValueError(
+                if len(line) < 3 or line[:3] != "/* ":  # Line too short, or first three chars weren't to spec
+                    if strict_mode == StrictModes.STRICT_RAISE:
+                        raise ValueError(
+                            f"SP3 comment line didn't begin with '/* ' (including leading space) '{line}'. "
+                            "Turn off strict mode to skip this check"
+                        )
+                    # Otherwise just log
+                    logging.warning(
                         f"SP3 comment line didn't begin with '/* ' (including leading space) '{line}'. "
                         "Turn off strict mode to skip this check"
                     )
