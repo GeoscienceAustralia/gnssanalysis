@@ -62,7 +62,7 @@ class GPSDate:
     print(f"tomorrow year: {tomorrow.year}, doy: {tomorrow.dy}, GPS week and weekday: {tomorrow.gpswkD}")
     """
 
-    def __init__(self, ts: _np.datetime64):
+    def __init__(self, ts: Union[_np.datetime64, str]):
         if isinstance(ts, str):
             ts = _np.datetime64(ts)
 
