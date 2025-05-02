@@ -747,6 +747,8 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
             "project": long_match["project"],
         }
     else:
+        # TODO we could add support for raising an exception in this case, if a long filename was expected. This
+        # could include use of StrictMode
         logging.captureWarnings(True)  # Probably unnecessary, but for safety's sake...
         warnings.warn(
             "(Via warnings system) Extracting long filename properties (via regex) failed. "
