@@ -285,11 +285,13 @@ class TestSP3(unittest.TestCase):
         sp3_df.attrs["COMMENTS"] = [
             "malformed comment is missing lead-in",
             "/*malformed comment is missing space",
+            "/* ",
+            "/* ",
         ]
         sp3.update_sp3_comments(sp3_df)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"],
-            ["/* malformed comment is missing lead-in", "/* malformed comment is missing space"],
+            ["/* malformed comment is missing lead-in", "/* malformed comment is missing space", "/* ", "/* "],
             "Lead in and spacing should be added to existing comments if missing",
         )
 
@@ -298,30 +300,51 @@ class TestSP3(unittest.TestCase):
             "malformed comment is overlong malformed comment is overlong malformed comment is overlong",
         ]
         with self.assertRaises(ValueError):
-            sp3.update_sp3_comments(sp3_df)
+            sp3.update_sp3_comments(sp3_df, strict_mode=STRICT_RAISE)
 
-        self.assertTrue(len(sp3_df.attrs["COMMENTS"]) == 1, "Single malformed comment line should still be there")
+        self.assertTrue(
+            sp3_df.attrs["COMMENTS"][0].endswith(
+                "malformed comment is overlong malformed comment is overlong malformed comment is overlong"
+            ),
+            "First malformed comment should still be present, with or without lead-in added",
+        )
+        self.assertTrue(
+            len(sp3_df.attrs["COMMENTS"]) == 4,
+            "In addition to malformed comment there should be 3 padding comments",
+        )
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"][1],
+            "/* ",
+            "Padding comment expected on second line",
+        )
 
         # Check deletion of all comments
         sp3.update_sp3_comments(sp3_df, ammend=False)
-        self.assertEqual(sp3_df.attrs["COMMENTS"], [], "Should be no comments after running ammend with no input")
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"],
+            ["/* ", "/* ", "/* ", "/* "],
+            "Should be no comments besides 4 padding ones, after running ammend with no input",
+        )
 
         # Write initial comment lines
-        sp3.update_sp3_comments(sp3_df, comment_lines=["line 1", "line 2"], ammend=False)
-        self.assertEqual(sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2"])
+        sp3.update_sp3_comments(sp3_df, comment_lines=["line 1", "line 2", "line 3", "line 4"], ammend=False)
+        self.assertEqual(sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4"])
 
         # Write more lines
-        sp3.update_sp3_comments(sp3_df, comment_lines=["line 3", "line 4"], ammend=True)
-        self.assertEqual(sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4"])
+        sp3.update_sp3_comments(sp3_df, comment_lines=["line 5", "line 6"], ammend=True)
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* line 5", "/* line 6"]
+        )
 
         # Write more lines, free form
         sp3.update_sp3_comments(sp3_df, comment_string="arbitrary length line", ammend=True)
         self.assertEqual(
-            sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* arbitrary length line"]
+            sp3_df.attrs["COMMENTS"],
+            ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* line 5", "/* line 6", "/* arbitrary length line"],
         )
 
         # Write more lines, both modes at once
-        sp3.update_sp3_comments(sp3_df, comment_lines=["line 6"], comment_string="some other comment", ammend=True)
+        sp3.update_sp3_comments(sp3_df, comment_lines=["line 8"], comment_string="some other comment", ammend=True)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"],
             [
@@ -329,8 +352,10 @@ class TestSP3(unittest.TestCase):
                 "/* line 2",
                 "/* line 3",
                 "/* line 4",
-                "/* arbitrary length line",
+                "/* line 5",
                 "/* line 6",
+                "/* arbitrary length line",
+                "/* line 8",
                 "/* some other comment",
             ],
         )
@@ -341,6 +366,8 @@ class TestSP3(unittest.TestCase):
             [
                 "/* new line",
                 "/* some new comment",
+                "/* ",
+                "/* ",
             ],
         )
 
@@ -349,6 +376,9 @@ class TestSP3(unittest.TestCase):
             sp3_df.attrs["COMMENTS"],
             [
                 "/* some other new comment",
+                "/* ",
+                "/* ",
+                "/* ",
             ],
         )
 
