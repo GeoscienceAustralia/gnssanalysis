@@ -9,7 +9,7 @@ import pandas as pd
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
 import gnssanalysis.gn_io.sp3 as sp3
 
-from gnssanalysis.gn_utils import StrictModes, trim_line_ends
+from gnssanalysis.gn_utils import STRICT_OFF, STRICT_RAISE, STRICT_WARN, trim_line_ends
 from test_datasets.sp3_test_data import (
     fake_header_version_a,
     fake_header_version_b,
@@ -89,7 +89,7 @@ class TestSP3(unittest.TestCase):
 
         # StrictModes.STRICT_RAISE should cause a *possibly* supported version to raise an exception.
         with self.assertRaises(ValueError):
-            sp3.check_sp3_version(fake_header_version_c, strict_mode=StrictModes.STRICT_RAISE)
+            sp3.check_sp3_version(fake_header_version_c, strict_mode=STRICT_RAISE)
 
     @patch("builtins.open", new_callable=mock_open, read_data=input_data)
     def test_read_sp3_pOnly(self, mock_file):
@@ -352,13 +352,232 @@ class TestSP3(unittest.TestCase):
             ],
         )
 
-    def test_sp3_comment_validation_many_spaces(self):
-        # This comment line is overlong due to many trailing spaces
-        sp3_df = sp3.read_sp3(sp3_with_overlong_comment)
+    def test_sp3_comment_validation_standalone(self):
 
-        # Rewrite and validate comments in place. Should throw an exception for overlong lines
-        with self.assertRaises(ValueError, msg="Validating overlong SP3 comment should raise ValueError"):
-            sp3.update_sp3_comments(sp3_df)
+        # Other examples of valid and invalid lines we could use.
+
+        # valid_lines: list[str] = [
+        #     "/* line 1",
+        #     "/* line 2",
+        #     "/* line 3 is long          quite long in fact          but not quite 80 chars ",
+        #     "/* line 4 is long        quite long in fact exactly 80 chars just due to content",
+        #     "/* line 4 is long          quite long in fact exactly 80 chars including spaces ",
+        #     "/* line 5 has an embedded comment sequence /* ... should probably still be valid",
+        # ]
+
+        # invalid_lines_fixable: list[str] = [
+        #     "missing lead-in",
+        #     " /* lead-in has leading space",
+        #     "/*lead-in is missing trailing space",
+        #     " /*lead-in has leading space and no trailing space",
+        # ]
+
+        # invalid_lines_unfixable: list[str] = [
+        #     "/* line is overlong (81 chars) due to trailing spaces                            ",
+        #     "/* line is overlong (81 chars)                                  ...due to content",
+        # ]
+
+        # Insufficient number of lines should fail validation
+        self.assertFalse(sp3.validate_sp3_comment_lines(["/* Must have >= 4 comment lines!"], STRICT_OFF))
+        self.assertFalse(
+            sp3.validate_sp3_comment_lines(
+                [
+                    "/* Must have >= 4 comment lines!",
+                    "/* Must have >= 4 comment lines!",
+                    "/* Must have >= 4 comment lines!",
+                ],
+                STRICT_OFF,
+            )
+        )
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                [
+                    "/* Must have >= 4 comment lines!",
+                    "/* Must have >= 4 comment lines!",
+                    "/* Must have >= 4 comment lines!",
+                    "/* Ok we're good now",
+                ],
+                STRICT_OFF,
+            )
+        )
+
+        # We have a convenience flag to turn that one off, to make testing less cumbersome:
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                ["/* Must have >= 4 comment lines! ...Unless that check is turned off"],
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+            )
+        )
+
+        # # The bulk tests may be overkill.
+        # # Bulk test valid and invalid lines, with different settings
+        # for valid_line in valid_lines:
+        #     v_line = [valid_line]  # Ridiculously short variable name purely for layout here
+        #     self.assertTrue(validate_comment_lines(v_line, STRICT_OFF))
+        #     self.assertTrue(validate_comment_lines(v_line, STRICT_RAISE, skip_min_4_lines_test=True))
+        #     self.assertTrue(validate_comment_lines(v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=False))
+        #     self.assertTrue(validate_comment_lines(v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=True))
+        #     self.assertTrue(
+        #         validate_comment_lines(
+        #             v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=False, fail_on_fixed_issues=False
+        #         )
+        #     )
+        #     self.assertTrue(
+        #         validate_comment_lines(
+        #             v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=False, fail_on_fixed_issues=True
+        #         )
+        #     )
+        #     self.assertTrue(
+        #         validate_comment_lines(
+        #             v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=True, fail_on_fixed_issues=False
+        #         )
+        #     )
+        #     self.assertTrue(
+        #         validate_comment_lines(
+        #             v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=True, fail_on_fixed_issues=True
+        #         )
+        #     )
+
+        # Uneventful cases
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(["/* this line is fine"], STRICT_RAISE, skip_min_4_lines_test=True)
+        )
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                ["/* line 1", "/* line 2"],
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+                attempt_fixes=False,
+                fail_on_fixed_issues=True,
+            )
+        )
+
+        # Turning off fail_on_fixed_issues should make no difference here.
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                ["/* line 1", "/* line 2"],
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+                attempt_fixes=False,
+                fail_on_fixed_issues=False,
+            )
+        )
+
+        # Strict mode shouldn't change how valid lines are handled
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                ["/* line 1", "/* line 2"],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                attempt_fixes=False,
+                fail_on_fixed_issues=False,
+            )
+        )
+
+        # With strictness off, invalid lines shouldn't raise exceptions, but should still fail validation
+        # Note that fail-on-fixed currently has no effect if attempt_fixes is off.
+        self.assertFalse(
+            sp3.validate_sp3_comment_lines(
+                ["this line has no lead-in"],
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+                attempt_fixes=False,
+                fail_on_fixed_issues=True,
+            ),
+            "Invalid comment line should fail validation but not raise exception as strict mode is off",
+        )
+
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(
+                ["this line has no lead-in"],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+            )
+
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(
+                ["/*this line has missing space after lead-in"],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+            )
+
+        # An extra leading space is quite bad. Fail in all cases for this
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(
+                [" /* this line has extra space before lead-in"],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                fail_on_fixed_issues=False,
+            )
+
+        # In fix mode, this issue should be addressed in place. Whether validation still fails depends on fail_on_fixed_issues
+        comment_lines = ["/*this line has missing space after lead-in"]
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                comment_lines,
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                attempt_fixes=True,
+                fail_on_fixed_issues=False,
+            )
+        )
+        # And check the issue did get fixed in place
+        self.assertEqual(
+            comment_lines,
+            ["/* this line has missing space after lead-in"],
+            "Missing space should be addressed in place",
+        )
+
+        # With fail on fixed: fail validation because the input was wrong, even though we were able to remedy it.
+        comment_lines = ["/*this line has missing space after lead-in"]
+        self.assertFalse(
+            sp3.validate_sp3_comment_lines(
+                comment_lines,
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+                attempt_fixes=True,
+                fail_on_fixed_issues=True,
+            )
+        )
+        # Check it got fixed
+        self.assertEqual(
+            comment_lines,
+            ["/* this line has missing space after lead-in"],
+            "Missing space should be addressed in place",
+        )
+
+        # Same as above, but with strict mode: raise, that should be an exception.
+        comment_lines = ["/*this line has missing space after lead-in"]
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(
+                comment_lines,
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                attempt_fixes=True,
+                fail_on_fixed_issues=True,
+            )
+
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(  # 81 chars
+                ["/* this line is too long                                                         "],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+            )
+
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(  # 81 chars
+                ["/*this line is too long and missing space after lead in                          "],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+            )
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(  # 80 chars (valid but max), 81 after adding missing space (invalid)
+                ["/*this line *will* be too long after fixing the missing space after lead in     "],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                attempt_fixes=True,
+            )
 
     def test_sp3_comment_reflow(self):
         # Test that string reflow utility correctly splits a string and converts it into SP3 comment lines.
