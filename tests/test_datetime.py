@@ -19,6 +19,29 @@ class TestDateTime(unittest.TestCase):
         formatted_time = gn_datetime.j2000_to_igs_epoch_row_header_dt(input_time)
         self.assertEqual(formatted_time[0], "*  2021  5 22  0  0  0.00000000\n")
 
+    def test_gps_week_day_to_datetime(self):
+        # GPS week 2173: Sunday 2021-08-29, day of year 241
+        dt_week_only = gn_datetime.gps_week_day_to_datetime("2173")
+        self.assertEqual(dt_week_only.strftime("%Y"), "2021")  # Check year
+        self.assertEqual(dt_week_only.strftime("%j"), "241")  # Check day of year
+
+        # GPS week 2173, day 2: Tuesday 2021-08-31, day of year 243
+        dt_week_and_day_of_week = gn_datetime.gps_week_day_to_datetime("21732")
+        self.assertEqual(dt_week_and_day_of_week.strftime("%Y"), "2021")
+        self.assertEqual(dt_week_and_day_of_week.strftime("%j"), "243")
+
+        with self.assertRaises(ValueError):
+            gn_datetime.gps_week_day_to_datetime("")  # Too short
+
+        with self.assertRaises(ValueError):
+            gn_datetime.gps_week_day_to_datetime("217")  # Too short
+
+        with self.assertRaises(ValueError):
+            gn_datetime.gps_week_day_to_datetime("217345")  # Too long
+
+        with self.assertRaises(TypeError):
+            gn_datetime.gps_week_day_to_datetime(2173)  # Not a string!
+
 
 class TestGPSDate(unittest.TestCase):
     def test_gpsdate(self):
@@ -50,12 +73,12 @@ class TestSNXTimeConversion(unittest.TestCase):
     def test_conversion(self):
         # Test cases in the format (snx_time, expected_datetime)
         test_cases = [
-            ('24:001:00000', _datetime(2024, 1, 1, 0, 0, 0)),
-            ('99:365:86399', _datetime(1999, 12, 31, 23, 59, 59)),
-            ('00:001:00000', _datetime(2000, 1, 1, 0, 0, 0)),
-            ('2024:185:11922', _datetime(2024, 7, 3, 3, 18, 42)),
-            ('1970:001:00000', _datetime(1970, 1, 1, 0, 0, 0)),
-            ('75:365:86399', _datetime(1975, 12, 31, 23, 59, 59)),
+            ("24:001:00000", _datetime(2024, 1, 1, 0, 0, 0)),
+            ("99:365:86399", _datetime(1999, 12, 31, 23, 59, 59)),
+            ("00:001:00000", _datetime(2000, 1, 1, 0, 0, 0)),
+            ("2024:185:11922", _datetime(2024, 7, 3, 3, 18, 42)),
+            ("1970:001:00000", _datetime(1970, 1, 1, 0, 0, 0)),
+            ("75:365:86399", _datetime(1975, 12, 31, 23, 59, 59)),
         ]
 
         for snx_time, expected in test_cases:

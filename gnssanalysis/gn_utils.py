@@ -75,6 +75,7 @@ def diffutil_verify_input(input):
 
 def diffutil_verify_status(status, passthrough):
     if status:
+        # TODO type of 'status' and 'passthrough' here is a bit unclear, so it's hard to make the checks more explicit
         if not passthrough:
             _logging.error(msg=f":diffutil failed. Calling sys.exit\n")
             _sys.exit(status)
@@ -708,6 +709,7 @@ def orbq(
         satellite_data = conv_to_m(rms_df).to_json(orient=json_format, index=index)
         constellation_data = conv_to_m(rms_df.attrs["summary"]).to_json(orient=json_format, index=index)
 
+    # TODO work out the types of these, in order to make these checks more explicit
     if satellite:
         output_data.append(satellite_data)
     if constellation:
@@ -863,6 +865,8 @@ def clkq(
     A simple utility to assess pairs of clk files. Statistics is in meters
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux, gn_const
+
+    # TODO work out the types of these parameters and apply more robust equality checks
 
     logger = configure_logging(verbose=verbose, output_logger=True)
 

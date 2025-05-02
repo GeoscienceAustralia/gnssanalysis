@@ -441,11 +441,11 @@ def filter_by_svs(
     keep_set: set[str] = set(all_sv_names)
 
     # Disqualify SVs unless the match the given names
-    if filter_by_name:
+    if filter_by_name is not None:
         keep_set = keep_set.intersection(filter_by_name)
 
     # Disqualify SVs unless they match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
-    if filter_to_sat_letter:
+    if filter_to_sat_letter is not None:
         if len(filter_to_sat_letter) != 1:
             raise ValueError(
                 "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GE'"
@@ -455,7 +455,7 @@ def filter_by_svs(
         keep_set = keep_set.intersection(constellation_sats_to_keep)
 
     # Drop SVs beyond n (i.e. keep only the first n SVs)
-    if filter_by_count:
+    if filter_by_count is not None:
         if filter_by_count < 0:
             raise ValueError("Cannot filter to a negative number of SVs!")
         if total_svs <= filter_by_count:
@@ -602,7 +602,7 @@ def check_epoch_counts_for_discrepancies(
             f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
         )
 
-    if not sp3_filename:
+    if sp3_filename is None or len(sp3_filename) == 0:
         logger.info("SP3 filename not available to check for epoch count discrepancies, continuing")
         return
     # Filename available to validate
@@ -931,7 +931,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
 
     # How many SVs did the header say were there (start of first line of SV entries) E.g 30 here: +   30   G02G03...
     head_sv_expected_count = None
-    if sv_regex_matches:  # Result found
+    if len(sv_regex_matches) != 0:  # Result found
         head_sv_expected_count = int(sv_regex_matches[0][0])  # Line 1, group 1
     else:
         logger.warning("Failed to extract count of expected SVs from SP3 header.")
@@ -1699,7 +1699,7 @@ def trim_df(
     last_keep_time = last_time - trim_end.total_seconds()
 
     # Operating in mode of trimming from start, to start + x amount of time in. As opposed to trimming a delta from each end.
-    if keep_first_delta_amount:
+    if keep_first_delta_amount is not None:
         first_keep_time = first_time
         last_keep_time = first_time + keep_first_delta_amount.total_seconds()
         if trim_start.total_seconds() != 0 or trim_end.total_seconds() != 0:
@@ -1728,8 +1728,8 @@ def trim_to_first_n_epochs(
     :return _pd.DataFrame: DataFrame trimmed to the requested number of epochs.
     """
     sample_rate = sp3_sample_rate
-    if not sample_rate:
-        if not sp3_filename:
+    if sample_rate is None:
+        if sp3_filename is None or len(sp3_filename) == 0:
             raise ValueError("Either sp3_sample_rate or sp3_filename must be provided")
         sample_rate = filenames.convert_nominal_span(
             filenames.determine_properties_from_filename(sp3_filename)["sampling_rate"]

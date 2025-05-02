@@ -86,7 +86,7 @@ def get_IF_pairs(
     :return _pd.Index: index with selected signal pairs only
     """
     idx1 = IF_bias_1.index
-    if force_C_L:
+    if force_C_L is not False:
         idx1 = idx1[IF_bias_1["C/L"] == force_C_L]
 
     if IF_bias_2 is None:
