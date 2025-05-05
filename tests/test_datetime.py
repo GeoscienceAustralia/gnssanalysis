@@ -5,6 +5,19 @@ import numpy as np
 
 
 class TestDateTime(unittest.TestCase):
+    def test_j2000_to_sp3_head_dt(self):
+        # Ensure formatting comes out as expected
+        # E.g. 674913600 -> '2021-05-22T00:00:00' -> '2021  5 22  0  0  0.00000000'
+        input_time = np.array([674913600])
+        header_formatted_time = gn_datetime.j2000_to_sp3_head_dt(input_time)
+        self.assertEqual(header_formatted_time, "2021  5 22  0  0  0.00000000")
+
+    def test_j2000_to_igs_epoch_row_header_dt(self):
+        # Ensure formatting comes out as expected
+        # E.g. 674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0  0.00000000\n'
+        input_time = np.array([674913600])
+        formatted_time = gn_datetime.j2000_to_igs_epoch_row_header_dt(input_time)
+        self.assertEqual(formatted_time[0], "*  2021  5 22  0  0  0.00000000\n")
 
     def test_gps_week_day_to_datetime(self):
         # GPS week 2173: Sunday 2021-08-29, day of year 241
@@ -60,12 +73,12 @@ class TestSNXTimeConversion(unittest.TestCase):
     def test_conversion(self):
         # Test cases in the format (snx_time, expected_datetime)
         test_cases = [
-            ('24:001:00000', _datetime(2024, 1, 1, 0, 0, 0)),
-            ('99:365:86399', _datetime(1999, 12, 31, 23, 59, 59)),
-            ('00:001:00000', _datetime(2000, 1, 1, 0, 0, 0)),
-            ('2024:185:11922', _datetime(2024, 7, 3, 3, 18, 42)),
-            ('1970:001:00000', _datetime(1970, 1, 1, 0, 0, 0)),
-            ('75:365:86399', _datetime(1975, 12, 31, 23, 59, 59)),
+            ("24:001:00000", _datetime(2024, 1, 1, 0, 0, 0)),
+            ("99:365:86399", _datetime(1999, 12, 31, 23, 59, 59)),
+            ("00:001:00000", _datetime(2000, 1, 1, 0, 0, 0)),
+            ("2024:185:11922", _datetime(2024, 7, 3, 3, 18, 42)),
+            ("1970:001:00000", _datetime(1970, 1, 1, 0, 0, 0)),
+            ("75:365:86399", _datetime(1975, 12, 31, 23, 59, 59)),
         ]
 
         for snx_time, expected in test_cases:
