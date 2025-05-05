@@ -468,7 +468,7 @@ def log2snx(logglob, rnxglob, outfile, frame_snx, frame_dis, frame_psd, datetime
     from .gn_io import igslog
 
     if isinstance(rnxglob, list):
-        if (len(rnxglob) == 1) & (
+        if (len(rnxglob) == 1) and (
             rnxglob[0].find("*") != -1
         ):  # it's rnx_glob expression (may be better to check if star is present)
             rnxglob = rnxglob[0]
