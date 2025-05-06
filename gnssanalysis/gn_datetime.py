@@ -64,25 +64,34 @@ class GPSDate:
     Usage:
     today = GPSDate("today")
     tomorrow = today.next
-    print(f"today year: {today.year}, doy: {today.dy}, GPS week and weekday: {today.gpswkD}")
-    print(f"tomorrow year: {tomorrow.year}, doy: {tomorrow.dy}, GPS week and weekday: {tomorrow.gpswkD}")
+    print(f"today year: {today.year}, doy: {today.day_of_year}, GPS week and weekday: {today.gps_week_and_day_of_week}")
+    print(f"tomorrow year: {tomorrow.year}, doy: {tomorrow.day_of_year}, GPS week and weekday: {tomorrow.gps_week_and_day_of_week}")
     """
 
-    _timestamp: _np.datetime64
+    # For compatibility, we have accessors called 'ts' and 'timestamp'.
+    _internal_dt64: _np.datetime64
 
-    def __init__(self, timestamp: Union[_np.datetime64, _datetime, _date, str]):
-        if isinstance(timestamp, _np.datetime64):
-            self._timestamp = timestamp
-        elif isinstance(timestamp, (_datetime, _date, str)):
+    def __init__(self, time: Union[_np.datetime64, _datetime, _date, str]):
+        if isinstance(time, _np.datetime64):
+            self._internal_dt64 = time
+        elif isinstance(time, (_datetime, _date, str)):
             # Something we may be able to convert to a datetime64
-            self._timestamp = _np.datetime64(timestamp)
+            self._internal_dt64 = _np.datetime64(time)
         else:
             raise TypeError("GPSDate() takes only Numpy datetime64, datetime, date, or str representation of a date")
 
     @property
+    def get_datetime64(self) -> _np.datetime64:
+        return self._internal_dt64
+
+    @property  # For backwards compatibility
+    def ts(self) -> _np.datetime64:
+        return self.get_datetime64
+
+    @property
     def as_datetime(self) -> _datetime:
         """Convert to Python `datetime` object. Note that as GPSDate has no hour, neither will this datetime"""
-        return _pd.Timestamp(self._timestamp).to_pydatetime()
+        return _pd.Timestamp(self._internal_dt64).to_pydatetime()
 
     @property
     def yr(self) -> str:
@@ -107,16 +116,16 @@ class GPSDate:
     @property
     def next(self):
         """The following day"""
-        return GPSDate(self._timestamp + 1)
+        return GPSDate(self._internal_dt64 + 1)
 
     @property
     def prev(self):
         """The previous day"""
-        return GPSDate(self._timestamp - 1)
+        return GPSDate(self._internal_dt64 - 1)
 
     def __str__(self) -> str:
         """Same string representation as the underlying numpy datetime64 object"""
-        return str(self._timestamp)
+        return str(self._internal_dt64)
 
 
 def dt2gpswk(dt, wkday_suff=False, both=False) -> Union[str, tuple[str, str]]:
