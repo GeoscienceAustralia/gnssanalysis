@@ -94,24 +94,49 @@ class GPSDate:
         return _pd.Timestamp(self._internal_dt64).to_pydatetime()
 
     @property
-    def yr(self) -> str:
+    def as_date(self) -> _date:
+        """Convert to Python `date` object."""
+        return self._internal_dt64.astype(_date)
+
+    @property
+    def year(self) -> str:
         """Year"""
         return self.as_datetime.strftime("%Y")
 
+    @property  # For backwards compatibility
+    def yr(self) -> str:
+        """Year DEPRECATED, use GPSDate.year"""
+        return self.year
+
     @property
-    def dy(self) -> str:
+    def day_of_year(self) -> str:
         """Day of year"""
         return self.as_datetime.strftime("%j")
 
-    @property
-    def gpswk(self) -> str:
-        """GPS week"""
-        return gpsweekD(self.yr, self.dy, wkday_suff=False)
+    @property  # For backwards compatibility
+    def dy(self) -> str:
+        """Day of year. DEPRECATED, use GPSDate.day_of_year"""
+        return self.day_of_year
 
     @property
-    def gpswkD(self) -> str:
+    def gps_week(self) -> str:
+        """GPS week"""
+        return derive_gps_week(self.yr, self.dy, weekday_suffix=False)
+
+    @property  # For backwards compatibility
+    def gpswk(self) -> str:
+        """GPS week. DEPRECATED, use GPSDate.gps_week"""
+        return self.gps_week
+
+    @property
+    def gps_week_and_day_of_week(self) -> str:
         """GPS week with weekday suffix"""
-        return gpsweekD(self.yr, self.dy, wkday_suff=True)
+        return derive_gps_week(self.yr, self.dy, weekday_suffix=True)
+
+    @property  # For backwards compatibility
+    def gpswkD(self) -> str:
+        """GPS week with weekday suffix. DEPRECATED, use GPSDate.gps_week_and_day_of_week"""
+        return self.gps_week_and_day_of_week
 
     @property
     def next(self):
