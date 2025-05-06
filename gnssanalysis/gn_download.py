@@ -436,8 +436,11 @@ def generate_product_filename(
         else:
             hour = f"{reference_start.hour:02}"
             prefix = "igs" if solution_type == "FIN" else "igr" if solution_type == "RAP" else "igu"
-            product_filename = f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z" if solution_type == "ULT" else \
-                f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
+            product_filename = (
+                f"{prefix}{gps_date.gps_week_and_day_of_week}_{hour}.{file_ext}.Z"
+                if solution_type == "ULT"
+                else f"{prefix}{gps_date.gps_week_and_day_of_week}.{file_ext}.Z"
+            )
     return product_filename, gps_date, reference_start
 
 
@@ -865,7 +868,7 @@ def download_product_from_cddis(
         project=project_type,
     )
     logging.debug(
-        f"Generated filename: {product_filename}, with GPS Date: {gps_date.gpswkD} and reference: {reference_start}"
+        f"Generated filename: {product_filename}, with GPS Date: {gps_date.gps_week_and_day_of_week} and reference: {reference_start}"
     )
 
     ensure_folders([download_dir])
