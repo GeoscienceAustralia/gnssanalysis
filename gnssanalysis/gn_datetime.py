@@ -1,5 +1,7 @@
 """Base time conversion functions"""
 
+import logging
+
 from datetime import datetime as _datetime
 from datetime import date as _date
 from datetime import timedelta as _timedelta
@@ -10,6 +12,9 @@ import numpy as _np
 import pandas as _pd
 
 from . import gn_const as _gn_const
+
+
+logger = logging.getLogger(__name__)
 
 
 def gpsweekD(yr, doy, wkday_suff=False):
@@ -304,11 +309,72 @@ def mjd2j2000(mjd: _np.ndarray, seconds_frac: _np.ndarray, pea_partials=False) -
     return datetime2j2000(datetime)
 
 
+def j2000_to_igs_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
+    """
+    Converts array of j2000 times to format string representation used by many IGS formats including Rinex and SP3.
+    E.g. 674913600 -> '2021-05-22T00:00:00' -> '2021  5 22  0  0  0.00000000'
+    :param _np.ndarray j2000_secs: Numpy NDArray of (typically epoch) times in J2000 seconds.
+    :return _np.ndarray: Numpy NDArray with those same times as strings.
+    """
+    datetime = j20002datetime(j2000_secs)
+    year = datetime.astype("datetime64[Y]")
+    month = datetime.astype("datetime64[M]")
+    day = datetime.astype("datetime64[D]")
+    hour = datetime.astype("datetime64[h]")
+    minute = datetime.astype("datetime64[m]")
+
+    date_y = _pd.Series(year.astype(str)).str.rjust(4).values
+    date_m = _pd.Series(((month - year).astype("int64") + 1).astype(str)).str.rjust(3).values
+    date_d = _pd.Series(((day - month).astype("int64") + 1).astype(str)).str.rjust(3).values
+
+    time_h = _pd.Series((hour - day).astype("int64").astype(str)).str.rjust(3).values
+    time_m = _pd.Series((minute - hour).astype("int64").astype(str)).str.rjust(3).values
+    # Width 12 due to one extra leading space (for easier concatenation next), then _0.00000000 format per SP3d spec:
+    time_s = (_pd.Series((datetime - minute)).view("int64") / 1e9).apply("{:.8f}".format).str.rjust(12).values
+    return date_y + date_m + date_d + time_h + time_m + time_s
+
+
+def j2000_to_igs_epoch_row_header_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
+    """
+    Utility wrapper function to format J2000 time values (typically epoch values) to be written as epoch header lines
+    within the body of SP3, Rinex, etc. files.
+    E.g. 674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0  0.00000000\n'
+    :param _np.ndarray j2000_secs: Numpy NDArray of (typically epoch) times in J2000 seconds.
+    :return _np.ndarray: Numpy NDArray with those same times as strings, including epoch line lead-in and newline.
+    """
+    # Add leading "*  "s and trailing newlines around all values
+    return "*  " + j2000_to_igs_dt(j2000_secs) + "\n"
+
+
+def j2000_to_sp3_head_dt(j2000secs: _np.ndarray) -> str:
+    """
+    Utility wrapper function to format a J2000 time value for the SP3 header. Takes NDArray, but only expects one value
+    in it.
+    :param _np.ndarray j2000_secs: Numpy NDArray containing a *single* time value in J2000 seconds.
+    :return str: The provided time value as a string.
+    """
+    formatted_times = j2000_to_igs_dt(j2000secs)
+
+    # If making a header there should be one value. If not it's a mistake, or at best inefficient.
+    if len(formatted_times) != 1:
+        logger.warning(
+            "More than one time value passed through. This function is meant to be used to format a single value "
+            "in the SP3 header."
+        )
+    return formatted_times[0]
+
+
+# TODO DEPRECATED.
 def j20002rnxdt(j2000secs: _np.ndarray) -> _np.ndarray:
     """
-    Converts j2000 array to rinex format string representation
+    DEPRECATED since about version 0.0.58
+    TODO remove in version 0.0.59
+    Converts array of j2000 times to rinex format string representation
+    NOTE: the following is incorrect by SP3d standard; there should be another space before the seconds.
     674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0 0.00000000\n'
     """
+    logger.warning("j20002rnxdt() is deprecated. Please use j2000_to_igs_epoch_row_header_dt() instead.")
+
     datetime = j20002datetime(j2000secs)
     year = datetime.astype("datetime64[Y]")
     month = datetime.astype("datetime64[M]")
@@ -322,6 +388,7 @@ def j20002rnxdt(j2000secs: _np.ndarray) -> _np.ndarray:
 
     time_h = _pd.Series((hour - day).astype("int64").astype(str)).str.rjust(3).values
     time_m = _pd.Series((minute - hour).astype("int64").astype(str)).str.rjust(3).values
+    # NOTE: The following may be wrong by the SP3d spec. Again, please use j2000_to_igs_epoch_row_header_dt() instead.
     time_s = (_pd.Series((datetime - minute)).view("int64") / 1e9).apply("{:.8f}\n".format).str.rjust(13).values
     return date_y + date_m + date_d + time_h + time_m + time_s
 

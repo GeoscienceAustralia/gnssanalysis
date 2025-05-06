@@ -846,7 +846,7 @@ def llh2snxdms(llh):
     ll_stack = _pd.concat([llh_degminsec_df.LON, llh_degminsec_df.LAT], axis=0)
     ll_stack = ll_stack.D.str.rjust(4).values + ll_stack.M.str.rjust(3).values + ll_stack.S.str.rjust(5).values
     buf = ll_stack[:n_rows] + ll_stack[n_rows:] + llh_degminsec_df.HEI.str.rjust(8).values
-
+    # The following is a Numpy OR operator (not a standard Python bitwise OR):
     buf[(height > 8000) | (height < -2000)] = " 000 00 00.0  00 00 00.0   000.0"  # | zero_mask
     return buf
 

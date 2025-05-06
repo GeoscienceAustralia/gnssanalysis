@@ -10,6 +10,8 @@ import numpy as _np
 import pandas as _pd
 from scipy import interpolate as _interpolate
 
+from gnssanalysis.gn_utils import StrictMode, StrictModes
+
 from .. import filenames
 from .. import gn_aux as _gn_aux
 from .. import gn_const as _gn_const
@@ -28,6 +30,12 @@ _RE_SP3_HEAD = _re.compile(
                                     (\w+)(?:[ ]+(\w+)|)""",
     _re.VERBOSE,
 )
+
+# SP3 comment line requirements, from SP3d spec:
+#   There are now an unlimited number of comment records allowed in the header, and the maximum length of each comment
+#   record has been increased from 60 characters to 80 characters.
+# And elsewhere:
+#   For backwards compatibility, there will always be at least 4 comment lines.
 
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
 
@@ -152,9 +160,9 @@ SP3_VELOCITY_COLUMNS = [
 # not 14 (the official width of the column i.e. F14.6), again because Pandas insists on adding a further space.
 # See comment in gen_sp3_content() line ~645 for further discussion.
 # Another related 'hack' can be found at line ~602, handling the FLAGS columns.
-SP3_CLOCK_NODATA_STRING = " 999999.999999" # This is currently formatted for full width (ie 14 chars)
+SP3_CLOCK_NODATA_STRING = " 999999.999999"  # This is currently formatted for full width (ie 14 chars)
 SP3_CLOCK_NODATA_NUMERIC = 999999
-SP3_POS_NODATA_STRING = "      0.000000" # This is currently formatted for full width (ie 14 chars)
+SP3_POS_NODATA_STRING = "      0.000000"  # This is currently formatted for full width (ie 14 chars)
 SP3_POS_NODATA_NUMERIC = 0
 # The numeric values below are only relevant within this codebase, and signify nodata / NaN.
 # They are created by the functions pos_log() and clk_log()
@@ -162,6 +170,11 @@ SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL = -1000
 SP3_CLOCK_STD_NODATA_STRING = "   "
 SP3_POS_STD_NODATA_NUMERIC_INTERNAL = -100
 SP3_POS_STD_NODATA_STRING = "  "
+
+
+# Other SP3 constants
+SP3_COMMENT_START: str = "/* "
+SP3_COMMENT_MAX_LENGTH: int = 80
 
 
 def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
@@ -228,7 +241,125 @@ def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]) -> N
     # name with an SV).
 
 
-def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = ""):
+def reflow_string_as_lines_for_comment_block(
+    comment_string: str, line_length_limit: int = SP3_COMMENT_MAX_LENGTH, comment_line_lead_in: str = SP3_COMMENT_START
+) -> list[str]:
+    """
+    Wraps the provided, arbitrary length string into an array of strings capped at the line length limit provided.
+        Tries not to break words, by splitting only on spaces if possible.
+    By default, creates SP3d compliant comment lines, with the SP3d comment lead in of '/* ' at the start of each line.
+    NOTE: expects input string NOT to have comment lead-in already applied.
+
+    :param str comment_string: Arbitrary length string to wrap / reflow.
+    :param int line_length_limit: Line length limit for output lines. This includes the length of comment_line_lead_in
+        which is prepended to the start of each line. Defaults to 80 chars, which is the limit for SP3d.
+    :param str comment_line_lead_in: Starting string of comment lines. SP3 by default i.e. '/* '
+    :return list[str]: The input string wrapped and formatted as (by default) SP3 comment lines.
+    """
+
+    # Entire comment fits without reflowing. Just add the lead-in and return immediately.
+    if (len(comment_string) + len(comment_line_lead_in)) <= line_length_limit:
+        return [comment_line_lead_in + comment_string]
+
+    # Splitting required.
+    remaining_data = comment_string
+    output_lines: list[str] = []
+
+    # What is the highest index we can seek into a string without grabbing a line that will be too long once we add
+    # the comment lead-in?
+    max_seek_index = line_length_limit - len(comment_line_lead_in) - 1
+
+    while len(remaining_data) > 0:
+        # If all remaining data will fit on a single line, we don't need to split further. Add this line, and finish.
+        if len(remaining_data) - 1 <= max_seek_index:
+            output_lines.append(comment_line_lead_in + remaining_data)
+            return output_lines
+
+        # Max seek for this line specifically. The next line worth of data, or all remaining data.
+        max_line_seek_index = min(len(remaining_data) - 1, max_seek_index)
+
+        # Find the last space within the next line worth of data.
+        unclean_split = False
+        split_index = remaining_data[:max_line_seek_index].rfind(" ")
+        if split_index == -1:  # Error: No space within that line worth of data: clean split not possible
+            unclean_split = True
+            split_index = max_line_seek_index  # Split at the end of the line, breaking words/data
+
+        # Split at determined point and add to output, then truncate remaining data to remove what we just split off.
+        output_lines.append(comment_line_lead_in + remaining_data[:split_index])
+        # We want to index new data starting *after* the space that we split on (*if* there was one). So the index
+        # below is +1 if we split on a space, +0 if not (to avoid deleting a char from the start of the next line):
+        remaining_data = remaining_data[split_index + (0 if unclean_split else 1) :]
+
+    return output_lines
+
+
+def get_sp3_comments(sp3_df: _pd.DataFrame) -> list[str]:
+    """
+    Utility function to retrieve stored SP3 comment lines from the attributes of an SP3 DataFrame.
+    :return list[str]: List of comment lines, verbatim. Note that comment line lead-in of '/* ' is not removed.
+    """
+    return sp3_df.attrs["COMMENTS"]
+
+
+def update_sp3_comments(
+    sp3_df: _pd.DataFrame,
+    comment_lines: Union[list[str], None] = None,
+    comment_string: Union[str, None] = None,
+    ammend: bool = True,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE,
+) -> None:
+    """
+    Update SP3 comment lines in-place for the SP3 DataFrame provided. By default ammends new lines to
+    what was already there (e.g. as read in from a source SP3 file). Can optionally remove existing lines and replace
+    with the lines provided.
+
+    New comment lines Can be passed as either a list of lines and or a string to wrap and reformat as comment lines, or
+    both. All comment lines, including those already present, will be checked for compliance with the SP3 comment spec
+    (except for minimum *number* of comment lines, which is checked on write-out in gen_sp3_header()).
+
+    Order of updated comments will be:
+    - existing comments (unless ammend=False)
+    - comment_lines (if provided)
+    - comment_string (if provided)
+
+    Note: neither comment_lines or comment_string is mandatory. Both or neither can be provided.
+    If neither, existing comments will be format checked and rewritten (unless ammend is set to False; then there
+    will be no comments).
+
+    :param _pd.DataFrame sp3_df: SP3 DataFrame on which to update / replace comments (in place).
+    :param Union[list[str], None] comment_lines: List of comment lines to ammend / overwrite with. SP3 comment line
+        lead-in ('/* ') is optional and will be added if missing.
+    :param Union[str, None] comment_string: Arbitrary length string to be broken into lines and formatted as SP3
+        comments. This should NOT have SP3 comment line lead-in ('/* ') on it; that will be added.
+    :param bool ammend: Whether to ammend (specifically add additional) comment lines, or delete existing lines and
+        replace with the provided input. Defaults to True.
+    :param type[StrictMode] strict_mode: Strictness about validation errors (ignore, warn, or raise). Default: raise.
+    :raises ValueError: if any lines are too long (>80 chars including lead-in sequence '/* ', added if missing)
+    """
+    # Start with the existing comment lines if we're in ammend mode, else start afresh
+    new_lines: list[str] = sp3_df.attrs["COMMENTS"] if ammend else []
+
+    if comment_lines:
+        new_lines.extend(comment_lines)
+        # Validation / adding comment lead-in if missing, will be done shortly.
+
+    if comment_string:
+        # Reflow free text comments and add these
+        new_lines.extend(reflow_string_as_lines_for_comment_block(comment_string))
+
+    # Now validate all lines at once
+    if not validate_sp3_comment_lines(
+        new_lines, strict_mode=strict_mode, attempt_fixes=True, fail_on_fixed_issues=False
+    ):
+        logger.warning("SP3 comment validation identified unfixable issues while writing comments!")
+
+    # Write updated lines back to the DataFrame attributes
+    sp3_df.attrs["COMMENTS"] = new_lines
+    logger.info(f"Updated SP3 comment lines in DataFrame attrs. Currently {len(new_lines)} comment lines")
+
+
+def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = "") -> _pd.DataFrame:
     """
     Remove any satellites that have "0.0" or NaN for all three position coordinates - this indicates satellite offline.
     Note that this removes a satellite which has *any* missing coordinate data, meaning a satellite with partial
@@ -512,6 +643,157 @@ def check_epoch_counts_for_discrepancies(
     # All good, validation passed.
 
 
+def check_sp3_version(sp3_bytes: bytes, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN) -> bool:
+    """
+    Reads the the SP3 version character from the provided SP3 data as bytes, and raises / warns if this
+    implementation does not support it.
+    The version character is specified as the second character in the file/header.
+    :param bytes sp3_bytes: The raw SP3 data to check.
+    :param type[StrictMode] strict_mode: How strict to be about versions we don't actively support. Default STRICT_WARN,
+        which will log a warning and attempt parsing of possibly compatible versions. In STRICT_RAISE mode, a
+        ValueError is raised rather than attempting parsing.
+    :raises ValueError: if the SP3 data is of a version we cannot parse (e.g. a, or > d), also for versions 'b' and
+        'c' in strict mode STRICT_RAISE.
+    :return bool: True if this version is actively supported (currently only version 'd'), False otherwise.
+    """
+
+    # Check the SP3 data we are reading is a version we support (currenly only SP3d is actively used, and support is
+    # not complete).
+    version_char = sp3_bytes[1:2]
+    version_char_as_string = version_char.decode(errors="ignore")
+
+    if version_char == b"d":  # Version d, ~2016. This is the version we actively support.
+        return True
+    elif version_char > b"d":  # Too new. Bail out, we don't know what has changed.
+        raise ValueError(
+            f"SP3 file version '{version_char_as_string}' is too new! We support version 'd', and can potentially read (untested) version 'c' and 'b'"
+        )
+    elif version_char in (b"c", b"b"):  # Tentative, may not work properly.
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(
+                f"Support for SP3 file version '{version_char_as_string}' is untested. Refusing to read as strict mode is on."
+            )
+        if strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Reading an older SP3 file version '{version_char_as_string}'. This may not parse correctly!"
+            )
+        return False
+    elif version_char == b"a":  # First version doesn't have constellation letters (e.g. G01, R01) as it is GPS only.
+        raise ValueError(
+            f"SP3 file version 'a' (the original version) is unsupported. We support version 'd', with partial (possible) support for 'c' and 'b'"
+        )
+    else:
+        raise ValueError(f"Failure determining SP3 data version. Got '{version_char_as_string}'")
+
+
+def validate_sp3_comment_lines(
+    sp3_comment_lines: list[str],
+    strict_mode: type[StrictMode],
+    attempt_fixes: bool = False,
+    fail_on_fixed_issues: bool = True,
+    skip_min_4_lines_test: bool = False,
+) -> bool:
+    """
+    Utility to check validity of SP3 comment lines according to SP3 version d specification.
+    Checks for overlong lines, and lines which don't begin with '/* ' (note the space is required)
+
+    :param list[str] sp3_comment_lines: List of sp3 comments decoded into strings.
+    :param type[StrictMode] strict_mode: Sets how strictly to respond to validation errors (ignore, warn, or raise).
+    :param bool attempt_fixes: Attempt to apply fixes for small issues. Off by default. Fixes include ensuring the
+        minimum number of comment lines, and ensuring lines start with the correct lead in '/* ' (including the
+        trailing space).
+    :param bool fail_on_fixed_issues: Should issues which we fixed, still cause validation to fail? On by default,
+        given the main purpose of this function is validation.
+    :param bool skip_min_4_lines_test: Skip the check for a minimum of 4 comment lines. Off by default. This is mostly
+        here for testing convenience.
+    :return bool: True if all lines are valid, False otherwise (provided an exception isn't raised first)
+    :raises ValueError: If an invalid line is found, and strict_mode is set to STRICT_RAISE
+    """
+
+    # comment technicalities from SP3d spec:
+    # - There are always at least 4 comments for backwards compatibility.
+    # - Comments always start with '/* '
+    # - Max length 80
+    # - First Epoch Header record (time record) immediately follows the comments. TODO test for that somewhere else
+    #   From that we know that:
+    #   - comments can't be elsewhere in the file
+    #   - no other field is permitted between comments and the first epoch record
+
+    issue_found: bool = False  # For any issue, including non-fatal and issues we may later fix
+    # To distinguish between finding issues and failing validation (as we can pass validation after fixing some issues):
+    validation_failed: bool = False
+    # issues_were_fixed: bool = False
+
+    if (not isinstance(sp3_comment_lines, list)) or (
+        len(sp3_comment_lines) > 0 and (not isinstance(sp3_comment_lines[0], str))
+    ):
+        raise ValueError("Comment line input must be a list of strings")
+
+    # First check: SP3 files must have >= 4 comment lines
+    if (not skip_min_4_lines_test) and (short_by_lines := 4 - len(sp3_comment_lines)) > 0:
+        # This is non-fatal, and we can fix it.
+        issue_found = True
+
+        # We can fix this, so we only consider it a failure if:
+        # - fixing is turned off, OR
+        # - we are flagging issues *regardless* of fix status, due to fail_on_fixed_issues
+        if (not attempt_fixes) or fail_on_fixed_issues:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(
+                    f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that"
+                )
+            if strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that")
+
+        if attempt_fixes:
+            sp3_comment_lines.extend([SP3_COMMENT_START] * short_by_lines)
+
+    for i in range(len(sp3_comment_lines)):
+
+        # Next check: comment lines must start with '/* ' (which we will call lead-in)
+        if not sp3_comment_lines[i].startswith(SP3_COMMENT_START):
+            issue_found = True
+
+            # We *could* fix this. However...
+            # Is this considered a failure (we're not fixing it, OR we're failing on all issues regardless of fix state)?
+            if (not attempt_fixes) or fail_on_fixed_issues:
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
+                if strict_mode == StrictModes.STRICT_WARN:
+                    logger.warning(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
+
+            if attempt_fixes:
+                if sp3_comment_lines[i][0:2] == "/*":
+                    # If just the trailing space was missing, trim and re-apply
+                    sp3_comment_lines[i] = SP3_COMMENT_START + sp3_comment_lines[i][2:]
+                else:  # We infer there was no lead-in, so we just need to add it.
+                    sp3_comment_lines[i] = SP3_COMMENT_START + sp3_comment_lines[i]
+
+        # Next check: comment lines are <80 chars long (after doing any required adjustment to lead-in)
+        # Note that the limit in SP3c is 60, but we don't output anything older than SP3d.
+        if len(sp3_comment_lines[i]) > SP3_COMMENT_MAX_LENGTH:
+            issue_found = True
+            validation_failed = True  # This one is fatal. Proactively wrapping lines would be a bad idea.
+
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(
+                    "SP3 comment lines must not exceed 80 chars (including lead-in). "
+                    f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
+                )
+            if strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(
+                    "SP3 comment lines must not exceed 80 chars (including lead-in). "
+                    f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
+                )
+
+    # Validation is considered to have failed if EITHER:
+    # - validation_failed == False
+    # - issue_found and fail_on_fixed issues: meaning some issue was encountered (which we may or may not have been able to fix), but we are flagging all issues.
+    if issue_found and fail_on_fixed_issues:
+        validation_failed = True
+    return not validation_failed
+
+
 def read_sp3(
     sp3_path_or_bytes: Union[str, Path, bytes],
     pOnly: bool = True,
@@ -519,9 +801,10 @@ def read_sp3(
     drop_offline_sats: bool = False,
     continue_on_ep_ev_encountered: bool = True,
     check_header_vs_filename_vs_content_discrepancies: bool = False,
-    # These only apply when the above is enabled:
+    # The following two apply when the above is enabled:
     skip_filename_in_discrepancy_check: bool = False,
     continue_on_discrepancies: bool = False,
+    format_check_strictness: type[StrictMode] = StrictModes.STRICT_WARN,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -536,11 +819,20 @@ def read_sp3(
             raise a NotImplementedError instead.
     :param bool check_header_vs_filename_vs_content_discrepancies: enable discrepancy checks on SP3 content vs
         header vs filename.
+    :param bool skip_filename_in_discrepancy_check: If discrepancy checks enabled (see above), this allows skipping
+        the filename part of the checks, even if filename is available.
     :param bool continue_on_discrepancies: (Only applicable with check_header_vs_filename_vs_content_discrepancies)
         If True, logs a warning and continues if major discrepancies are detected between the SP3 content, SP3 header,
         and SP3 filename (if available). Set to false to raise a ValueError instead.
-    :param bool skip_filename_in_discrepancy_check: If discrepancy checks enabled (see above), this allows skipping
-        the filename part of the checks, even if filename is available.
+    :param type[StrictMode] format_check_strictness: (work in progress) defines the response to things that are not
+        quite to SP3 spec: whether to ignore, warn, or raise. Default: warn.
+        Current functionality influenced by this includes:
+         - trying to read an SP3 version b or c file (not officially supported)
+         - SP3 comment specification voilations including < 4 comment lines, overlong comment lines, and incorrect
+           start sequence i.e. line didn't begin exactly '/* '.
+        In future it could also impact things like:
+         - less than min number of SV entries
+        This parameter could be renamed to enforce_strict_format_compliance once more extensive checks are added.
     :return _pd.DataFrame: The SP3 data as a DataFrame.
     :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
     :raises Exception: For other errors reading SP3 file/bytes
@@ -554,16 +846,29 @@ def read_sp3(
     """
     content = _gn_io.common.path2bytes(sp3_path_or_bytes)  # Will raise EOFError if file empty
 
-    # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
-    comments: list = _RE_SP3_COMMENT_STRIP.findall(content)
-    for comment in comments:
-        content = content.replace(comment, b"")  # Not in place?? Really?
-    # Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
-    # immediately followed by the mandatory 4+ comment lines.
-    # It is unclear from the specification whether comment lines can appear anywhere else. For robustness we
-    # strip them from the data before continuing parsing.
+    # Extract and check version. Raises exception for completely unsupported versions.
+    # For version b and c behaviour depends on strict_mode setting
+    check_sp3_version(sp3_bytes=content, strict_mode=format_check_strictness)
 
-    # %i is the last thing in the header, then epochs start.
+    # NOTE: Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
+    # immediately followed by the mandatory 4+ comment lines.
+
+    # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
+    comment_lines_bytes: list[bytes] = _RE_SP3_COMMENT_STRIP.findall(content)
+    for comment in comment_lines_bytes:
+        content = content.replace(comment, b"")  # Not in place?? Really?
+    # These will be written to DataFrame.attrs["COMMENTS"] for easy access (but please use get_sp3_comments())
+    comment_lines: list[str] = [line.decode("utf-8", errors="ignore").rstrip("\n") for line in comment_lines_bytes]
+    # Validate comment lines (but don't make changes)
+    validate_sp3_comment_lines(comment_lines, strict_mode=format_check_strictness)
+    # NOTE: The comment lines should be contiguous (not fragmented throughout the file), and they should be immediately
+    # followed by the first Epoch Header Record.
+    # Note: this interpretation is based on page 16 of the SP3d spec, which says 'The comment lines should be read in
+    # until the first Epoch Header Record (i.e. the first time tag line) is encountered.'
+    # For robustness we strip comments THROUGHOUT the data before continuing parsing.
+
+    # NOTE: We just stripped all comment lines from the input data, so the %i records are now the last thing in the
+    # header before the first Epoch Header Record.
     # Get the start of the last %i line, then scan forward to the next \n, then +1 for start of the following line.
     # We used to use the start of the first comment line. While simpler, that seemed risky.
     header_end = content.find(b"\n", content.rindex(b"%i")) + 1
@@ -624,9 +929,10 @@ def read_sp3(
     # Position and Velocity (if present) now have thier own columns, and are indexed on SV (rather than
     # being interlaced as in source data).
 
-    # As the main transformations are done, write header data to DataFrame attributes now,
-    # so it can travel with the DataFrame from here on. NOTE: Pandas docs say .attrs is an experimental feature.
+    # As the main transformations are done, write header data and SP3 comments to dataframe attributes now,
+    # so it can travel with the dataframe from here on. NOTE: Pandas docs say .attrs is an experimental feature.
     sp3_df.attrs["HEADER"] = parsed_header
+    sp3_df.attrs["COMMENTS"] = comment_lines
     sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
 
     # DataFrame has been consolidated. Run remaining consistency checks, conversions, and removal steps. Doing this
@@ -958,15 +1264,23 @@ def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
     return sp3_df.index.get_level_values(0).unique()
 
 
-def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
+def gen_sp3_header(
+    sp3_df: _pd.DataFrame, output_comments: bool = False, strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE
+) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
     NOTE: much of the header information is drawn from the DataFrame attrs structure. If this has not been
     updated as the DataFrame has been transformed, the header will not reflect the data.
 
     :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param bool output_comment: Write the SP3 comment lines stored with the DataFrame, into the output. Off by default.
+    :param type[StrictMode] strict_mode: Level of strictness with which to enforce SP3 specification rules (e.g.
+        comments must have a leading space). Options defined by StrictModes, default STRICT_RAISE.
     :return str: The generated SP3 header as a string.
     """
+    if output_comments and not "COMMENTS" in sp3_df.attrs:
+        raise IndexError("SP3 comment output requested, but comment data was not found in DataFrame.attrs")
+
     sp3_j2000 = sp3_df.index.levels[0].values
     sp3_j2000_begin = sp3_j2000[0]
 
@@ -974,11 +1288,42 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     head = header.HEAD
     sv_tbl = header.SV_INFO
 
-    # need to update DATETIME outside before writing
+    if head.VERSION != "d":
+        logger.warning(
+            f"Stored SP3 header indicates version '{head.VERSION}'. Changing to version 'd' for "
+            "write-out given that's the version this implementation is designed to create"
+        )
+        head.VERSION = "d"
+
     line1 = [
-        f"#{head.VERSION}{head.PV_FLAG}{_gn_datetime.j20002rnxdt(sp3_j2000_begin)[0][3:-2]}"
-        + f"{sp3_j2000.shape[0]:>9}{head.DATA_USED:>6}"
-        + f"{head.COORD_SYS:>6}{head.ORB_TYPE:>4}{head.AC:>5}\n"
+        f"#{head.VERSION}"  # Col 1-2: Version symbol, A2. E.g. '#d'
+        + f"{head.PV_FLAG}"  # Col 3: Pos or Vel flag, A1. E.g. 'P' or 'V'
+        # Covers col 4-31 (start time in: year, month, day of month, hour, minute, second), various formats.
+        # Widths are: 4, 2, 2, 2, 2, f11.8 (8 digits after decimal point)
+        # Combined output E.g. '2024  7 19  0  0  0.00000000'
+        + f"{_gn_datetime.j2000_to_sp3_head_dt(sp3_j2000_begin)}"
+        + " "  # Col 32: Unused / space
+        + f"{sp3_j2000.shape[0]:>7}"  # Col 33-39: Num epochs, I7. E.g '_____96'
+        + " "  # Col 40
+        # Col 41-45: Data used, A5. E.g. 'ORBIT' or '__u+U', etc.
+        # SP3d spec page 14 says:
+        # - 'The data used descriptor was included for ease in distinguishing between multiple orbital solutions
+        #    from a single organization.'
+        # - 'A possible convention is given below; this is not considered final and suggestions are welcome.'
+        # - 'Combinations such as "__u+U" seem reasonable.'
+        # Given this, we infer that left padding i.e. right alignment is expected, but that this might not be strict.
+        # CODE (EU) appears to use left alignment e.g. 'd+D  '.
+        + f"{head.DATA_USED:>5}"
+        + " "  # Col 46
+        + f"{head.COORD_SYS:>5}"  # Col 47-51: Coordinate Sys, A5. E.g. 'WGS84' or 'IGS20'(?)
+        + " "  # Col 52
+        + f"{head.ORB_TYPE:>3}"  # Col 53-55: Orbit Type, A3. E.g. 'BCT' 'FIT'(?), etc. TODO what is BCT? Is that a valid type?
+        + " "  # Col 56
+        + f"{head.AC:>4}"  # Col 57-60: Agency, A4. E.g. 'MGEX', 'GAA', 'AIUB', etc.
+        + "\n"
+        # We add a newline here because currently all header content has trailing newlines, rather than being stored
+        # without them, and having them added at the end when joining together and outputting as one string.
+        # TODO that might be a nicer approach.
     ]
 
     gpsweek, gpssec = _gn_datetime.datetime2gpsweeksec(sp3_j2000_begin)
@@ -1039,10 +1384,23 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
         + ["%i    0    0    0    0      0      0      0      0         0\n"]
         + ["%i    0    0    0    0      0      0      0      0         0\n"]
     )
+    # Default comments, which meet the specification requirement for >= 4 lines.
+    sp3_comment_lines = [SP3_COMMENT_START] * 4
+    if output_comments:
+        # Use actual comments from the DataFrame, not placeholders
+        sp3_comment_lines = get_sp3_comments(sp3_df)
+        # Inspect incoming comments for validity, but don't change them.
+        if (strict_mode != StrictModes.STRICT_OFF) and not validate_sp3_comment_lines(
+            sp3_comment_lines,
+            strict_mode=strict_mode,
+            attempt_fixes=False,
+            fail_on_fixed_issues=True,
+        ):
+            logger.warning("SP3 comments failed validation while being read in. Please see above logs for details.")
 
-    comment = ["/*\n"] * 4
-
-    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
+    # Put the newlines back on the end of each comment line, before merging into the output header
+    sp3_comment_lines = [line + "\n" for line in sp3_comment_lines]
+    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + sp3_comment_lines)
 
 
 # Option 1: don't provide a buffer, the data will be returned as a string
@@ -1389,7 +1747,9 @@ def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -
     hlm = []
     if epochwise:
         for epoch in b.index.get_level_values("J2000").unique():
-            b.loc[epoch, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]], hlm_epoch = hlm_trans(a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values)
+            b.loc[epoch, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]], hlm_epoch = hlm_trans(
+                a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values
+            )
             hlm.append(hlm_epoch)
     else:
         b.iloc[:, :3], hlm = hlm_trans(a.EST[["X", "Y", "Z"]].values, b.EST[["X", "Y", "Z"]].values)

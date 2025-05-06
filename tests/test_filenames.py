@@ -41,6 +41,7 @@ class TestPropsFromNameAndContent(TestCase):
         sp3_compliant_filename = Path(path_string_compliant)
 
         # Run
+        # TODO we don't test for this warning apart from with SP3 for now.
         with self.assertWarns(Warning):
             # Temporary, until we confirm warnings are appearing in standard logs. Then logging.warning() call can go.
             logging.disable(logging.WARNING)
