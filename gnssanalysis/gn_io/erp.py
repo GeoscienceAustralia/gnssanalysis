@@ -594,7 +594,9 @@ def erp_outfile(datetime_epoch: datetime.datetime, output_dir: pathlib.Path):
     # Restrict the amount data we output
     resampled_df = resampled_df[resampled_df["MJD"] > mjd - 3]
 
-    gps_date = _gn_datetime.gpsweekD(datetime_epoch.strftime("%Y"), datetime_epoch.strftime("%j"), wkday_suff=True)
+    gps_date = _gn_datetime.derive_gps_week(
+        datetime_epoch.strftime("%Y"), datetime_epoch.strftime("%j"), weekday_suffix=True
+    )
     file_suffix = f'_{int(int(str(mjd).split(".")[1].ljust(2,"0"))*0.24):02}'
     file_name = f"igu{gps_date}{file_suffix}.erp"
 
