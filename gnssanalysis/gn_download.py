@@ -336,7 +336,7 @@ def generate_long_filename(
     start_epoch: _datetime.datetime,  # YYYYDDDHHMM
     end_epoch: _datetime.datetime = None,
     timespan: _datetime.timedelta = None,  # LEN
-    solution_type: str = "",  # TTT
+    solution_type: str = "",  # TTT # TODO look at updating to formalised SolutionType
     sampling_rate: str = "15M",  # SMP
     version: str = "0",  # V
     project: str = "EXP",  # PPP, e.g. EXP, OPS
