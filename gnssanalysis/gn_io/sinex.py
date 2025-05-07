@@ -565,9 +565,9 @@ def _get_snx_vector(
             "Indices are likely inconsistent between ESTIMATE and APRIORI in the EMR AC files hence files might be parsed incorrectly"
         )
 
-    _logging.info(f"Passing stypes through SType validator: {stypes}")
+    _logging.info(f"Passing stypes through SType validator: {stypes}. Input path if available: {path}")
     stypes = _get_valid_stypes(stypes)  # EST is always first as APR may have skips
-    _logging.info(f"STypes after validator: {stypes}")
+    _logging.info(f"STypes after validator: {stypes}. Input path if available: {path}")
 
     extracted = _snx_extract(snx_bytes=snx_bytes, stypes=stypes, obj_type="VECTOR", verbose=verbose)
     if extracted is None:
