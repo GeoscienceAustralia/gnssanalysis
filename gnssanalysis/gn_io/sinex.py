@@ -771,7 +771,7 @@ def _get_snx_vector_gzchunks(filename: str, block_name="SOLUTION/ESTIMATE", size
                     stop = True
             i += 1
 
-    return _get_snx_vector(path_or_bytes=block_bytes, stypes=set("EST"), format=format)
+    return _get_snx_vector(path_or_bytes=block_bytes, stypes=set(["EST"]), format=format)
 
 
 def _get_snx_id(path):
