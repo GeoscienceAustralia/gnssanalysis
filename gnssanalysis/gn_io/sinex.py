@@ -327,7 +327,7 @@ def _get_valid_stypes(stypes: Union[list[str], set[str]]) -> _List[str]:
     """Returns only stypes in allowed list
     Fastest if stypes size is small"""
     allowed_stypes = ["EST", "APR", "NEQ"]
-    stypes = set(stypes) if not isinstance(stypes, set) else stypes
+    stypes = set(stypes) if not isinstance(stypes, set) else stypes  # Convert to set if not one.
     ok_stypes = sorted(stypes.intersection(allowed_stypes), key=allowed_stypes.index)  # need EST to always be first
     if len(ok_stypes) != len(stypes):
         not_ok_stypes = stypes.difference(allowed_stypes)
@@ -544,12 +544,17 @@ def _get_snx_vector(
     if isinstance(path_or_bytes, str):
         path = path_or_bytes
         snx_bytes = _gn_io.common.path2bytes(path)
-    # TODO Removed this very broken code path, not sure what happened
-    # elif isinstance(path_or_bytes, list):
-    #     path, stypes, format, verbose = path_or_bytes
-    #     snx_bytes = _gn_io.common.path2bytes(path)
-    else:
+    # Very weird code path, should be removed if possible
+    elif isinstance(path_or_bytes, list):
+        _logging.error(
+            f"path_or_bytes was a list! Using legacy code path. Please update this! Input values: {path_or_bytes}"
+        )
+        path, stypes, format, verbose = path_or_bytes
+        snx_bytes = _gn_io.common.path2bytes(path)
+    elif isinstance(path_or_bytes, bytes):
         snx_bytes = path_or_bytes
+    else:
+        raise ValueError(f"Unexpected type for path_or_bytes: {type(path_or_bytes)}. Value: {path_or_bytes}")
 
     if snx_header == {}:
         snx_header = _get_snx_header(
@@ -560,7 +565,9 @@ def _get_snx_vector(
             "Indices are likely inconsistent between ESTIMATE and APRIORI in the EMR AC files hence files might be parsed incorrectly"
         )
 
+    _logging.info(f"Passing stypes through SType validator: {stypes}. Input path if available: {path}")
     stypes = _get_valid_stypes(stypes)  # EST is always first as APR may have skips
+    _logging.info(f"STypes after validator: {stypes}. Input path if available: {path}")
 
     extracted = _snx_extract(snx_bytes=snx_bytes, stypes=stypes, obj_type="VECTOR", verbose=verbose)
     if extracted is None:
