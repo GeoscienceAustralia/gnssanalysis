@@ -197,6 +197,197 @@ class TestSP3(unittest.TestCase):
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
 
+    @staticmethod
+    def get_example_dataframe(template_name: str = "normal", include_simple_header: bool = True) -> pd.DataFrame:
+
+        dataframe_templates = {
+            # "normal": {  # TODO fill in
+            #     "data_vals": [],
+            #     "index_vals": [],
+            # },
+            "dupe_epoch_offline_sat_empty_epoch": {
+                "data_vals": [
+                    # Epoch 1 ---------------------------------
+                    #     EST, X         EST, Y         EST, Z
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [0.000000, 0.000000, 0.000000],  # ---------------- < G03 (offline)
+                    # Epoch 2 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [0.000000, 0.000000, 0.000000],  # ---------------- < G03 (offline)
+                    # Epoch 3 --------------------------------- Effectively missing epoch, to test trimming.
+                    [np.nan, np.nan, np.nan],
+                    [np.nan, np.nan, np.nan],
+                    [np.nan, np.nan, np.nan],
+                ],
+                "index_vals": [[774619200, 774619200, 774619201], ["G01", "G02", "G03"]],
+            },
+            "offline_sat_nan": {
+                "data_vals": [
+                    # Epoch 1 ---------------------------------
+                    #     EST, X         EST, Y         EST, Z
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [np.nan, np.nan, np.nan],  # ---------------- < G03 (offline)
+                    # Epoch 2 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [np.nan, np.nan, np.nan],  # ---------------- < G03 (offline)
+                    # Epoch 3 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],
+                    [4510.358405, -23377.282442, -11792.723580],
+                    [np.nan, np.nan, np.nan],
+                ],
+                "index_vals": [[774619200, 774619200, 774619201], ["G01", "G02", "G03"]],
+            },
+            "offline_sat_zero": {
+                "data_vals": [
+                    # Epoch 1 ---------------------------------
+                    #     EST, X         EST, Y         EST, Z
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [0.000000, 0.000000, 0.000000],  # ---------------- < G03 (offline)
+                    # Epoch 2 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [0.000000, 0.000000, 0.000000],  # ---------------- < G03 (offline)
+                    # Epoch 3 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],
+                    [4510.358405, -23377.282442, -11792.723580],
+                    [0.000000, 0.000000, 0.000000],
+                ],
+                "index_vals": [[774619200, 774619200, 774619201], ["G01", "G02", "G03"]],
+            },
+        }
+
+        if template_name not in dataframe_templates:
+            raise ValueError(f"Unsupported template name: {template_name}")
+
+        # Worked example for defining MultiIndex
+        # # Build a MultiIndex of J2000 then PRN values
+        # # ----------------------------- Epochs: ---------- | PRNs within each of those Epochs:
+        # # ------------------ Epoch 1 -- Epoch 2 -- Epoch 3 - PRN 1  PRN 2  PRN 3
+        # index_elements = [[774619200, 774619200, 774619201], ["G01", "G02", "G03"]]
+
+        # Define columns: top level 'EST' and nested under that, 'X', 'Y', 'Z'
+        frame_columns = [["EST", "EST", "EST"], ["X", "Y", "Z"]]
+
+        # Load template
+        template = dataframe_templates[template_name]
+        frame_data = template["data_vals"]
+        index_elements = template["index_vals"]
+
+        index_names = ["J2000", "PRN"]
+        multi_index = pd.MultiIndex.from_product(index_elements, names=index_names)
+
+        # Compose it all into a DataFrame
+        df = pd.DataFrame(frame_data, index=multi_index, columns=frame_columns)
+
+        if include_simple_header:
+            # Build SV table
+            head_svs = ["G01", "G02", "G03"]  # SV header entries
+            head_svs_std = [0, 0, 0]  # Accuracy codes for those SVs
+            sv_tbl = pd.Series(head_svs_std, index=head_svs)
+
+            # Build header
+            header_array = np.asarray(
+                [
+                    "d",
+                    "P",
+                    "Time TODO",
+                    "3",  # Num epochs
+                    "Data TODO",
+                    "coords TODO",
+                    "orb type TODO",
+                    "GAA",
+                    "SP3",  # Probably
+                    "Time sys TODO",
+                    "3",  # Stated SVs
+                ]
+            ).astype(str)
+            sp3_heading = pd.Series(
+                data=header_array,
+                index=[
+                    "VERSION",
+                    "PV_FLAG",
+                    "DATETIME",
+                    "N_EPOCHS",
+                    "DATA_USED",
+                    "COORD_SYS",
+                    "ORB_TYPE",
+                    "AC",
+                    "FILE_TYPE",
+                    "TIME_SYS",
+                    "SV_COUNT_STATED",
+                ],
+            )
+
+            # Merge SV table and header, and store as 'HEADER'
+            df.attrs["HEADER"] = pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
+        return df
+
+    def test_clean_sp3_orb(self):
+        """
+        Tests cleaning an SP3 DataFrame of duplicates, leading or trailing nodata values, and offline sats
+        """
+
+        # Create dataframe manually, as read function does deduplication itself. This also makes the test more self-contained
+        sp3_df = TestSP3.get_example_dataframe("dupe_epoch_offline_sat_empty_epoch")
+
+        self.assertTrue(
+            # all() enables elementwise equality check
+            np.array_equal(sp3_df.index.get_level_values(0).unique(), [774619200, 774619201]),
+            "Sample data should have 2 unique epochs (one of which is empty)",
+        )
+        self.assertTrue(
+            np.array_equal(sp3_df.index.get_level_values(1).unique(), ["G01", "G02", "G03"]),
+            "Sample data should have 3 sats",
+        )
+
+        # There should be duplicates of each sat in the first epoch
+        self.assertTrue(
+            np.array_equal(sp3_df.loc[774619200, "G01"]["EST"]["X"].values, [4510.358405, 4510.358405]),
+            "Expect dupe in first epoch",
+        )
+
+        # Test cleaning function without offline sat removal
+        sp3_df_no_offline_removal = sp3.clean_sp3_orb(sp3_df, False)
+
+        self.assertTrue(
+            np.array_equal(sp3_df_no_offline_removal.index.get_level_values(0).unique(), [774619200]),
+            "After cleaning there should be a single unique epoch",
+        )
+
+        # This checks both (indirectly) that there is only one epoch (as the multi-index will repeat second level
+        # values, and the input doesn't change sats in successive epochs), and that those second level values
+        # aren't duplicated.
+        self.assertTrue(
+            np.array_equal(sp3_df_no_offline_removal.index.get_level_values(1), ["G01", "G02", "G03"]),
+            "After cleaning there should be no dupe PRNs",
+        )
+        # Other things we could do...
+        # One test could be len(sp3_df_no_offline_removal.loc[774619200]["EST"]["X"]) == 3
+        # Three x values implies three sats, but doesn't prove no dupe sat...
+        # Also testing that the unique list of PRNs is 3 would cover it...
+
+        self.assertTrue(
+            np.array_equal(sp3_df_no_offline_removal.index.get_level_values(1).unique(), ["G01", "G02", "G03"]),
+            "With offline sat removal off, expect offline sat to remain",
+        )
+
+        # Now check with offline sat removal enabled too
+        sp3_df_with_offline_removal = sp3.clean_sp3_orb(sp3_df, True)
+        self.assertTrue(
+            np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
+            "With offline sat removal off, expect offline sat to be gone",
+        )
+        # Check that we still seen to have one epoch with no dupe sats
+        self.assertTrue(
+            np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
+            "After cleaning there should be no dupe PRNs",
+        )
+
     def test_gen_sp3_fundamentals(self):
         """
         Tests that the SP3 header and content generation functions produce output that (apart from trailing
@@ -736,6 +927,39 @@ SP3 comment reflow test. This should not break words if possible."""
         r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r)
         self.assertIsNotNone(r2)
+
+    def test_sp3_offline_sat_removal_standalone(self):
+        """
+        Standalone test for remove_offline_sats() using manually constructed DataFrame to
+        avoid dependency on read_sp3()
+        """
+        sp3_df_nans = TestSP3.get_example_dataframe("offline_sat_nan")
+        sp3_df_zeros = TestSP3.get_example_dataframe("offline_sat_zero")
+
+        self.assertEqual(
+            sp3_df_zeros.index.get_level_values(1).unique().array.tolist(),
+            ["G01", "G02", "G03"],
+            "Should start with 3 SVs",
+        )
+        self.assertEqual(
+            sp3_df_nans.index.get_level_values(1).unique().array.tolist(),
+            ["G01", "G02", "G03"],
+            "Should start with 3 SVs",
+        )
+
+        sp3_df_zeros_removed = sp3.remove_offline_sats(sp3_df_zeros)
+        sp3_df_nans_removed = sp3.remove_offline_sats(sp3_df_nans)
+
+        self.assertEqual(
+            sp3_df_zeros_removed.index.get_level_values(1).unique().array.tolist(),
+            ["G01", "G02"],
+            "Should be two SVs after removing offline ones",
+        )
+        self.assertEqual(
+            sp3_df_nans_removed.index.get_level_values(1).unique().array.tolist(),
+            ["G01", "G02"],
+            "Should be two SVs after removing offline ones",
+        )
 
     @patch("builtins.open", new_callable=mock_open, read_data=offline_sat_test_data)
     def test_sp3_offline_sat_removal(self, mock_file):
