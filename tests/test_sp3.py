@@ -336,7 +336,7 @@ class TestSP3(unittest.TestCase):
         sp3_df = TestSP3.get_example_dataframe("dupe_epoch_offline_sat_empty_epoch")
 
         self.assertTrue(
-            # all() enables elementwise equality check
+            # Alterantively you can use all(array == array) to do an elementwise equality check
             np.array_equal(sp3_df.index.get_level_values(0).unique(), [774619200, 774619201]),
             "Sample data should have 2 unique epochs (one of which is empty)",
         )
@@ -364,16 +364,7 @@ class TestSP3(unittest.TestCase):
         # aren't duplicated.
         self.assertTrue(
             np.array_equal(sp3_df_no_offline_removal.index.get_level_values(1), ["G01", "G02", "G03"]),
-            "After cleaning there should be no dupe PRNs",
-        )
-        # Other things we could do...
-        # One test could be len(sp3_df_no_offline_removal.loc[774619200]["EST"]["X"]) == 3
-        # Three x values implies three sats, but doesn't prove no dupe sat...
-        # Also testing that the unique list of PRNs is 3 would cover it...
-
-        self.assertTrue(
-            np.array_equal(sp3_df_no_offline_removal.index.get_level_values(1).unique(), ["G01", "G02", "G03"]),
-            "With offline sat removal off, expect offline sat to remain",
+            "After cleaning there should be no dupe PRNs. As offline sat removal is off, offline sat should remain",
         )
 
         # Now check with offline sat removal enabled too
