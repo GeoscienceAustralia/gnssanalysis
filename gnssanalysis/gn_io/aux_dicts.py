@@ -56,7 +56,8 @@ translation_country = {
     "VIRGIN ISLANDS": "VIRGIN ISL",
     "US VIRGIN ISLANDS": "VIRGIN ISL",
     "WALLIS AND FUTUNA": "WALLIS",
-    "WEST ANTARCTICA": "W AFRICA",
+    "WEST ANTARCTICA": "ANTARCTICA",
+    "W ANTARCTICA": "ANTARCTICA",
 }
 
 translation_rec = {

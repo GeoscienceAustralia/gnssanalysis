@@ -378,7 +378,7 @@ def nominal_span_string(span_seconds: float) -> str:
     # That is, if a span is longer than a day, then we will ignore any deviation from an
     # integer day that is smaller than an hour. But a time of 2 days, 3 hours and 30
     # minutes will be reported as 27 hours.
-    # If this would result in more than 99 periods, we return the 00U invalid code instead.
+    # If this would result in a value above 99 in the determined unit, we return the 00U invalid code instead.
     # We ignore months, because they're a little weird and not overly helpful.
     if span_seconds >= sec_in_year:
         if (span_seconds % sec_in_year) < gn_const.SEC_IN_WEEK:
@@ -619,10 +619,10 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         if "SOLUTION/EPOCHS" in snx_blocks:
             with open(file_path, mode="rb") as f:
                 blk = gn_io.sinex._snx_extract_blk(f.read(), "SOLUTION/EPOCHS")
-            if blk:
+            if blk is not None:
                 soln_df = pd.read_csv(
                     io.BytesIO(blk[0]),
-                    delim_whitespace=True,
+                    sep="\\s+",  # delim_whitespace is deprecated
                     comment="*",
                     names=["CODE", "PT", "SOLN", "T", "START_EPOCH", "END_EPOCH", "MEAN_EPOCH"],
                     converters={
@@ -754,7 +754,7 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
         basename,
         re.VERBOSE,
     )
-    if long_match:
+    if long_match is not None:
         return {
             "analysis_center": long_match["analysis_center"].upper(),
             "content_type": long_match["content_type"].upper(),
@@ -776,6 +776,8 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
             "project": long_match["project"],
         }
     else:
+        # TODO we could add support for raising an exception in this case, if a long filename was expected. This
+        # could include use of StrictMode
         logging.captureWarnings(True)  # Probably unnecessary, but for safety's sake...
         warnings.warn(
             "(Via warnings system) Extracting long filename properties (via regex) failed. "

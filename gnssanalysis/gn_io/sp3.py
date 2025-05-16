@@ -1,13 +1,18 @@
+from datetime import timedelta
 import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Literal, Union, List, Tuple
+from typing import Callable, Literal, Mapping, Optional, Union, List, Tuple, overload
+from pathlib import Path
 
 import numpy as _np
 import pandas as _pd
 from scipy import interpolate as _interpolate
 
+from gnssanalysis.gn_utils import StrictMode, StrictModes
+
+from .. import filenames
 from .. import gn_aux as _gn_aux
 from .. import gn_const as _gn_const
 from .. import gn_datetime as _gn_datetime
@@ -26,9 +31,17 @@ _RE_SP3_HEAD = _re.compile(
     _re.VERBOSE,
 )
 
+# SP3 comment line requirements, from SP3d spec:
+#   There are now an unlimited number of comment records allowed in the header, and the maximum length of each comment
+#   record has been increased from 60 characters to 80 characters.
+# And elsewhere:
+#   For backwards compatibility, there will always be at least 4 comment lines.
+
 _RE_SP3_COMMENT_STRIP = _re.compile(rb"^(\/\*.*$\n)", _re.MULTILINE)
+
 # Regex to extract Satellite Vehicle (SV) names (E.g. G02). In SP3-d (2016) up to 999 satellites can be included).
 # Regex options/flags: multiline, findall. Updated to extract expected SV count too.
+# Note this extracts both the stated number of SVs AND the actual SV names.
 _RE_SP3_HEADER_SV = _re.compile(rb"^\+[ ]+([\d]+|)[ ]+((?:[A-Z]\d{2})+)\W", _re.MULTILINE)
 
 # Regex for orbit accuracy codes (E.g. ' 15' - space padded, blocks are three chars wide).
@@ -147,12 +160,21 @@ SP3_VELOCITY_COLUMNS = [
 # not 14 (the official width of the column i.e. F14.6), again because Pandas insists on adding a further space.
 # See comment in gen_sp3_content() line ~645 for further discussion.
 # Another related 'hack' can be found at line ~602, handling the FLAGS columns.
-SP3_CLOCK_NODATA_STRING = "999999.999999"
+SP3_CLOCK_NODATA_STRING = " 999999.999999"  # This is currently formatted for full width (ie 14 chars)
 SP3_CLOCK_NODATA_NUMERIC = 999999
-SP3_POS_NODATA_STRING = "     0.000000"
+SP3_POS_NODATA_STRING = "      0.000000"  # This is currently formatted for full width (ie 14 chars)
 SP3_POS_NODATA_NUMERIC = 0
-SP3_CLOCK_STD_NODATA = -1000
-SP3_POS_STD_NODATA = -100
+# The numeric values below are only relevant within this codebase, and signify nodata / NaN.
+# They are created by the functions pos_log() and clk_log()
+SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL = -1000
+SP3_CLOCK_STD_NODATA_STRING = "   "
+SP3_POS_STD_NODATA_NUMERIC_INTERNAL = -100
+SP3_POS_STD_NODATA_STRING = "  "
+
+
+# Other SP3 constants
+SP3_COMMENT_START: str = "/* "
+SP3_COMMENT_MAX_LENGTH: int = 80
 
 
 def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
@@ -181,6 +203,7 @@ def sp3_pos_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
 def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     """
     Converts the SP3 Clock column's nodata values (999999 or 999999.999999 - fractional component optional) to NaNs.
+    Operates on the DataFrame in place.
     See https://files.igs.org/pub/data/format/sp3_docu.txt
 
     :param _pd.DataFrame sp3_df: SP3 data frame to filter nodata values for
@@ -188,6 +211,269 @@ def sp3_clock_nodata_to_nan(sp3_df: _pd.DataFrame) -> None:
     """
     nan_mask = sp3_df[("EST", "CLK")] >= SP3_CLOCK_NODATA_NUMERIC
     sp3_df.loc[nan_mask, ("EST", "CLK")] = _np.nan
+
+
+def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]) -> None:
+    """
+    Utility function to update the internal representation of an SP3 header, when SVs are removed from the SP3
+    DataFrame. This is useful e.g. when removing offline satellites.
+
+    :param _pd.DataFrame sp3_df: SP3 DataFrame on which to update the header (in place).
+    :param list[str] sats_to_remove: list of SV names to remove from the header.
+    :return None
+    """
+    num_to_remove: int = len(sats_to_remove)
+
+    # Update header SV count (bunch of type conversion because header is stored as strings)
+    sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED = str(int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove)
+
+    # Remove sats from the multi-index which contains SV_INFO and HEAD. This does both SV list and accuracy code list.
+    sp3_df.attrs["HEADER"].drop(level=1, labels=sats_to_remove, inplace=True)
+
+    # Notes on the multi-index update:
+
+    # The hierarchy here is:
+    # dict (HEADER) > series (unnamed) > HEAD (part of multi-index) > str (SV_COUNT_STATED)
+    # So we operate on the overall Series in the dict.
+
+    # In the above statement, Level 1 gets us to the 'column' names (like G02), not the 'section' names (like SV_INFO).
+    # Labels will apply to anything at that level (including things in HEAD - but those columns should never share a
+    # name with an SV).
+
+
+def reflow_string_as_lines_for_comment_block(
+    comment_string: str, line_length_limit: int = SP3_COMMENT_MAX_LENGTH, comment_line_lead_in: str = SP3_COMMENT_START
+) -> list[str]:
+    """
+    Wraps the provided, arbitrary length string into an array of strings capped at the line length limit provided.
+        Tries not to break words, by splitting only on spaces if possible.
+    By default, creates SP3d compliant comment lines, with the SP3d comment lead in of '/* ' at the start of each line.
+    NOTE: expects input string NOT to have comment lead-in already applied.
+
+    :param str comment_string: Arbitrary length string to wrap / reflow.
+    :param int line_length_limit: Line length limit for output lines. This includes the length of comment_line_lead_in
+        which is prepended to the start of each line. Defaults to 80 chars, which is the limit for SP3d.
+    :param str comment_line_lead_in: Starting string of comment lines. SP3 by default i.e. '/* '
+    :return list[str]: The input string wrapped and formatted as (by default) SP3 comment lines.
+    """
+
+    # Entire comment fits without reflowing. Just add the lead-in and return immediately.
+    if (len(comment_string) + len(comment_line_lead_in)) <= line_length_limit:
+        return [comment_line_lead_in + comment_string]
+
+    # Splitting required.
+    remaining_data = comment_string
+    output_lines: list[str] = []
+
+    # What is the highest index we can seek into a string without grabbing a line that will be too long once we add
+    # the comment lead-in?
+    max_seek_index = line_length_limit - len(comment_line_lead_in) - 1
+
+    while len(remaining_data) > 0:
+        # If all remaining data will fit on a single line, we don't need to split further. Add this line, and finish.
+        if len(remaining_data) - 1 <= max_seek_index:
+            output_lines.append(comment_line_lead_in + remaining_data)
+            return output_lines
+
+        # Max seek for this line specifically. The next line worth of data, or all remaining data.
+        max_line_seek_index = min(len(remaining_data) - 1, max_seek_index)
+
+        # Find the last space within the next line worth of data.
+        unclean_split = False
+        split_index = remaining_data[:max_line_seek_index].rfind(" ")
+        if split_index == -1:  # Error: No space within that line worth of data: clean split not possible
+            unclean_split = True
+            split_index = max_line_seek_index  # Split at the end of the line, breaking words/data
+
+        # Split at determined point and add to output, then truncate remaining data to remove what we just split off.
+        output_lines.append(comment_line_lead_in + remaining_data[:split_index])
+        # We want to index new data starting *after* the space that we split on (*if* there was one). So the index
+        # below is +1 if we split on a space, +0 if not (to avoid deleting a char from the start of the next line):
+        remaining_data = remaining_data[split_index + (0 if unclean_split else 1) :]
+
+    return output_lines
+
+
+def get_sp3_comments(sp3_df: _pd.DataFrame) -> list[str]:
+    """
+    Utility function to retrieve stored SP3 comment lines from the attributes of an SP3 DataFrame.
+    :return list[str]: List of comment lines, verbatim. Note that comment line lead-in of '/* ' is not removed.
+    """
+    return sp3_df.attrs["COMMENTS"]
+
+
+def update_sp3_comments(
+    sp3_df: _pd.DataFrame,
+    comment_lines: Union[list[str], None] = None,
+    comment_string: Union[str, None] = None,
+    ammend: bool = True,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE,
+) -> None:
+    """
+    Update SP3 comment lines in-place for the SP3 DataFrame provided. By default ammends new lines to
+    what was already there (e.g. as read in from a source SP3 file). Can optionally remove existing lines and replace
+    with the lines provided.
+
+    New comment lines Can be passed as either a list of lines and or a string to wrap and reformat as comment lines, or
+    both. All comment lines, including those already present, will be checked for compliance with the SP3 comment spec
+    (except for minimum *number* of comment lines, which is checked on write-out in gen_sp3_header()).
+
+    Order of updated comments will be:
+    - existing comments (unless ammend=False)
+    - comment_lines (if provided)
+    - comment_string (if provided)
+
+    Note: neither comment_lines or comment_string is mandatory. Both or neither can be provided.
+    If neither, existing comments will be format checked and rewritten (unless ammend is set to False; then there
+    will be no comments).
+
+    :param _pd.DataFrame sp3_df: SP3 DataFrame on which to update / replace comments (in place).
+    :param Union[list[str], None] comment_lines: List of comment lines to ammend / overwrite with. SP3 comment line
+        lead-in ('/* ') is optional and will be added if missing.
+    :param Union[str, None] comment_string: Arbitrary length string to be broken into lines and formatted as SP3
+        comments. This should NOT have SP3 comment line lead-in ('/* ') on it; that will be added.
+    :param bool ammend: Whether to ammend (specifically add additional) comment lines, or delete existing lines and
+        replace with the provided input. Defaults to True.
+    :param type[StrictMode] strict_mode: Strictness about validation errors (ignore, warn, or raise). Default: raise.
+    :raises ValueError: if any lines are too long (>80 chars including lead-in sequence '/* ', added if missing)
+    """
+    # Start with the existing comment lines if we're in ammend mode, else start afresh
+    new_lines: list[str] = sp3_df.attrs["COMMENTS"] if ammend else []
+
+    if comment_lines:
+        new_lines.extend(comment_lines)
+        # Validation / adding comment lead-in if missing, will be done shortly.
+
+    if comment_string:
+        # Reflow free text comments and add these
+        new_lines.extend(reflow_string_as_lines_for_comment_block(comment_string))
+
+    # Now validate all lines at once
+    if not validate_sp3_comment_lines(
+        new_lines, strict_mode=strict_mode, attempt_fixes=True, fail_on_fixed_issues=False
+    ):
+        logger.warning("SP3 comment validation identified unfixable issues while writing comments!")
+
+    # Write updated lines back to the DataFrame attributes
+    sp3_df.attrs["COMMENTS"] = new_lines
+    logger.info(f"Updated SP3 comment lines in DataFrame attrs. Currently {len(new_lines)} comment lines")
+
+
+def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = "") -> _pd.DataFrame:
+    """
+    Remove any satellites that have "0.0" or NaN for all three position coordinates - this indicates satellite offline.
+    Note that this removes a satellite which has *any* missing coordinate data, meaning a satellite with partial
+    observations will get removed entirely.
+    Note: the internal representation of the SP3 header will be updated to reflect the removal.
+    Added in version 0.0.57
+
+    :param _pd.DataFrame sp3_df: SP3 DataFrame to remove offline / nodata satellites from.
+    :param str df_friendly_name: Name to use when referring to the DataFrame in log output (purely for clarity). Empty
+           string by default.
+    :return _pd.DataFrame: the SP3 DataFrame, with the offline / nodata satellites removed
+    """
+    # Get all entries with missing positions (i.e. nodata value, represented as either 0 or NaN), then get the
+    # satellite names (SVs) of these and dedupe them, giving a list of all SVs with one or more missing positions.
+
+    # Mask for nodata POS values in raw form:
+    mask_zero = (sp3_df.EST.X == 0.0) & (sp3_df.EST.Y == 0.0) & (sp3_df.EST.Z == 0.0)
+    # Mask for converted values, as NaNs:
+    mask_nan = (sp3_df.EST.X.isna()) & (sp3_df.EST.Y.isna()) & (sp3_df.EST.Z.isna())
+    mask_either = _np.logical_or(mask_zero, mask_nan)
+
+    # We expect EV, EP rows to have already been filtered out
+    if "PV_FLAG" in sp3_df.index.names:
+        raise Exception(
+            "PV_FLAG index level found in DataFrame while trying to remove offline sats. "
+            "De-interlacing of Pos, Vel and EV / EP rows must be performed before running this"
+        )
+    # With mask, filter for entries with no POS value, then get the sat name (SVs) from the entry, then dedupe:
+    offline_sats = sp3_df[mask_either].index.get_level_values(1).unique()
+
+    # Using that list of offline / partially offline sats, remove all entries for those sats from the SP3 DataFrame:
+    sp3_df = sp3_df.drop(offline_sats, level=1, errors="ignore")
+
+    if len(offline_sats) > 0:
+        # Update the internal representation of the SP3 header to match the change
+        remove_svs_from_header(sp3_df, offline_sats.values)
+        logger.info(
+            f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame (including header): {offline_sats.values}"
+        )
+    else:
+        logger.info(f"No offline / nodata sats detected to be dropped from {df_friendly_name} SP3 DataFrame")
+    return sp3_df
+
+
+def filter_by_svs(
+    sp3_df: _pd.DataFrame,
+    filter_by_count: Optional[int] = None,
+    filter_by_name: Optional[list[str]] = None,
+    filter_to_sat_letter: Optional[str] = None,
+) -> _pd.DataFrame:
+    """
+    Utility function to trim an SP3 DataFrame down, intended for creating small sample SP3 files for
+    unit testing (but could be used for other purposes).
+    Can filter to a specific number of SVs, to specific SV names, and to a specific constellation.
+    Note: updates (internal representation of) SP3 header, to reflect new SV count.
+
+    These filters can be used together (though filter by name and filter by sat letter i.e. constellation, does
+    not make sense).
+    E.g. you may filter sats to a set of possible SV names, and also to a maximum of n sats. Or you might filter to
+    a specific constellation, then cap at a max of n sats.
+
+    :param _pd.DataFrame sp3_df: input SP3 DataFrame to perform filtering on
+    :param Optional[int] filter_by_count: max number of sats to return
+    :param Optional[list[str]] filter_by_name: names of sats to constrain to
+    :param Optional[str] filter_to_sat_letter: name of constellation (single letter) to constrain to
+    :return _pd.DataFrame: new SP3 DataFrame after filtering
+    """
+    # Get all SV names
+    all_sv_names = get_unique_svs(sp3_df)
+    total_svs = len(all_sv_names)
+    logger.info(f"Total SVs: {total_svs}")
+
+    # Starting with all SVs
+    keep_set: set[str] = set(all_sv_names)
+
+    # Disqualify SVs unless the match the given names
+    if filter_by_name is not None:
+        keep_set = keep_set.intersection(filter_by_name)
+
+    # Disqualify SVs unless they match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
+    if filter_to_sat_letter is not None:
+        if len(filter_to_sat_letter) != 1:
+            raise ValueError(
+                "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GE'"
+            )
+        # Make set of every SV name in the constellation we're keeping
+        constellation_sats_to_keep = set([sv for sv in all_sv_names if filter_to_sat_letter.upper() in sv])
+        keep_set = keep_set.intersection(constellation_sats_to_keep)
+
+    # Drop SVs beyond n (i.e. keep only the first n SVs)
+    if filter_by_count is not None:
+        if filter_by_count < 0:
+            raise ValueError("Cannot filter to a negative number of SVs!")
+        if total_svs <= filter_by_count:
+            raise ValueError(
+                f"Cannot filter to max of {filter_by_count} sats, as there are only {total_svs} sats total!"
+            )
+
+        # Convert working set of SVs to keep, into a sorted list so we can index in sorted order and trim
+        # to e.g. G01, G02, not the first two arbitrary numbers as the set represents them.
+        keep_list = list(keep_set)
+        keep_list.sort()
+        keep_list = keep_list[:filter_by_count]  # Trim to first n sats of sorted list
+
+        keep_set = set(keep_list)
+
+    discard_set = set(all_sv_names).difference(keep_set)
+    # sp3_df = sp3_df.loc[sp3_df.index.get_level_values(1) in list(keep_set)] # Ideally something like this (but I've missed a detail)
+    sp3_df = sp3_df.drop(list(discard_set), level=1)
+
+    # Update internal header to match
+    remove_svs_from_header(sp3_df, discard_set)
+
+    return sp3_df
 
 
 def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, float]:
@@ -212,7 +498,10 @@ def _process_sp3_block(
     names: List[str] = _SP3_DEF_PV_NAME,
 ) -> _pd.DataFrame:
     """Process a single block of SP3 data.
-
+    NOTE: this process creates a temporary DataFrame for *every epoch* of SP3 data read in, complete with indexes, etc.
+    This process is expensive! Epoch count has far more impact on SP3 loading speed, than number of sats.
+    TODO It may be possible to speed up SP3 reading by changing this logic to parse the data but not build a full
+    DataFrame from it, only converting to a DataFrame in the parent function, once all the data is concatenated.
 
     :param    str date: The date of the SP3 data block.
     :param    str data: The SP3 data block.
@@ -223,8 +512,10 @@ def _process_sp3_block(
     if not data or len(data) == 0:
         return _pd.DataFrame()
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
+    # NOTE: setting dtype_backend="pyarrow" currently breaks parsing.
     temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
     # TODO set datatypes per column in advance
+    # TODO maybe change this after updating everyting else to use actual NaNs ?
     temp_sp3["Clock_Event_Flag"] = temp_sp3["Clock_Event_Flag"].fillna(" ")
     temp_sp3["Clock_Pred_Flag"] = temp_sp3["Clock_Pred_Flag"].fillna(" ")
     temp_sp3["Maneuver_Flag"] = temp_sp3["Maneuver_Flag"].fillna(" ")
@@ -238,16 +529,313 @@ def _process_sp3_block(
     return temp_sp3
 
 
-def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _pd.DataFrame:
+def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Optional[str]:
+    if isinstance(path_or_bytes, (str, Path)):
+        return str(path_or_bytes)
+    else:
+        return "Data passed as bytes: no path available"
+
+
+def try_get_sp3_filename(path_or_bytes: Union[str, Path, bytes]) -> Union[str, None]:
+    """
+    Utility for validation during parsing. Attempts to pull the filename from the path or bytes SP3 source.
+
+    :param Union[str, Path, bytes] path_or_bytes: path or bytes SP3 source to try and get filename from
+    :return Union[str, None]: filename if able to extract, otherwise `None`
+    """
+    if isinstance(path_or_bytes, bytes):
+        return None
+
+    if isinstance(path_or_bytes, Path):
+        return path_or_bytes.name
+
+    if isinstance(path_or_bytes, str):
+        return path_or_bytes.rsplit("/")[-1]
+
+    logger.warning("sp3_path_or_bytes was of an unexpected type. Filename not extracted")
+    return None
+
+
+def check_epoch_counts_for_discrepancies(
+    draft_sp3_df: _pd.DataFrame,
+    parsed_sp3_header: _pd.Series,
+    sp3_path_or_bytes: Union[Path, str, bytes, None] = None,
+    continue_on_error: bool = True,
+):
+    """
+    Utility function for use during SP3 parsing. Checks for discrepancies in the number of epochs the SP3 header
+    states are there, how many *unique* epochs exist in the content, and how many epochs we would expect based on
+    the period and sample_rate specified in the SP3 filename (if available to check - not possible when reading
+    from bytes object rather than filepath)
+
+    :param _pd.DataFrame draft_sp3_df: the work-in-progress DataFrame currently being parsed. Used to access
+        indexes. Header is not added till late in parsing, so it is passed in separately.
+    :param _pd.Series parsed_sp3_header: draft SP3 header, passed in separately as it gets added to the DataFrame
+        later in the SP3 reading process.
+    :param Union[Path, str, bytes, None] sp3_path_or_bytes: representation of the source SP3 file path or binary data,
+        used to determine whether a filename can be found, and extract it if so.
+    :raises ValueError: if discrepancies found in number of epochs indicated by SP3 filename/header/contents
+    """
+    sp3_filename: Union[str, None] = None
+    if sp3_path_or_bytes is not None:
+        sp3_filename = try_get_sp3_filename(sp3_path_or_bytes)
+
+    # Could potentially check has_duplicates first for speed?
+    content_unique_epoch_count = get_unique_epochs(draft_sp3_df).size
+    # content_total_epoch_count = draft_sp3_df.index.get_level_values(0).size
+
+    header_epoch_count = int(parsed_sp3_header.HEAD.N_EPOCHS)
+
+    if content_unique_epoch_count != header_epoch_count:
+        if not continue_on_error:
+            raise ValueError(
+                f"Header says there should be {header_epoch_count} epochs, however there are "
+                f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
+            )
+        logger.warning(
+            f"WARNING: Header says there should be {header_epoch_count} epochs, however there are "
+            f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
+        )
+
+    if sp3_filename is None or len(sp3_filename) == 0:
+        logger.info("SP3 filename not available to check for epoch count discrepancies, continuing")
+        return
+    # Filename available to validate
+    # Derive epoch count from filename period(as timedelta) / filename sampeleRate(as timedelta).
+    # We shouldn't need sample rate to check for off by one as we're working in epochs this time.
+    filename_derived_epoch_count: Union[int, None] = None
+
+    # Try extracting properties from filename
+    try:
+        filename_props: dict = filenames.determine_properties_from_filename(sp3_filename)
+        filename_timespan_timedelta = filename_props.get("timespan")
+        if not isinstance(filename_timespan_timedelta, timedelta):
+            raise KeyError(f"Failed to get timespan from filename '{sp3_filename}'")
+
+        filename_sample_rate = filename_props.get("sampling_rate")
+        if not isinstance(filename_sample_rate, str):
+            raise KeyError(f"Failed to get sampling_rate from filename '{sp3_filename}'")
+
+        filename_sample_rate_timedelta = filenames.convert_nominal_span(filename_sample_rate)
+        filename_derived_epoch_count = int(
+            timedelta(
+                seconds=filename_timespan_timedelta.total_seconds() / filename_sample_rate_timedelta.total_seconds()
+            ).total_seconds()
+        )
+    except Exception as e:
+        logger.warning("Failed to extract filename properties to validate against header / contents: ", e)
+        return
+
+    # Now for the actual checks.
+    # Check if the header states a number of epochs equal to (or one less than) the filename period implies
+    # Note filename is allowed to indicate a period one epoch longer than the data. E.g. 01D can end at 23:55
+    # if in 5 min epochs.
+    if header_epoch_count not in (filename_derived_epoch_count, filename_derived_epoch_count - 1):
+        if not continue_on_error:
+            raise ValueError(
+                f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+                f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
+            )
+        logger.warning(
+            f"WARNING: Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+            f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
+        )
+    # All good, validation passed.
+
+
+def check_sp3_version(sp3_bytes: bytes, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN) -> bool:
+    """
+    Reads the the SP3 version character from the provided SP3 data as bytes, and raises / warns if this
+    implementation does not support it.
+    The version character is specified as the second character in the file/header.
+    :param bytes sp3_bytes: The raw SP3 data to check.
+    :param type[StrictMode] strict_mode: How strict to be about versions we don't actively support. Default STRICT_WARN,
+        which will log a warning and attempt parsing of possibly compatible versions. In STRICT_RAISE mode, a
+        ValueError is raised rather than attempting parsing.
+    :raises ValueError: if the SP3 data is of a version we cannot parse (e.g. a, or > d), also for versions 'b' and
+        'c' in strict mode STRICT_RAISE.
+    :return bool: True if this version is actively supported (currently only version 'd'), False otherwise.
+    """
+
+    # Check the SP3 data we are reading is a version we support (currenly only SP3d is actively used, and support is
+    # not complete).
+    version_char = sp3_bytes[1:2]
+    version_char_as_string = version_char.decode(errors="ignore")
+
+    if version_char == b"d":  # Version d, ~2016. This is the version we actively support.
+        return True
+    elif version_char > b"d":  # Too new. Bail out, we don't know what has changed.
+        raise ValueError(
+            f"SP3 file version '{version_char_as_string}' is too new! We support version 'd', and can potentially read (untested) version 'c' and 'b'"
+        )
+    elif version_char in (b"c", b"b"):  # Tentative, may not work properly.
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(
+                f"Support for SP3 file version '{version_char_as_string}' is untested. Refusing to read as strict mode is on."
+            )
+        if strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Reading an older SP3 file version '{version_char_as_string}'. This may not parse correctly!"
+            )
+        return False
+    elif version_char == b"a":  # First version doesn't have constellation letters (e.g. G01, R01) as it is GPS only.
+        raise ValueError(
+            f"SP3 file version 'a' (the original version) is unsupported. We support version 'd', with partial (possible) support for 'c' and 'b'"
+        )
+    else:
+        raise ValueError(f"Failure determining SP3 data version. Got '{version_char_as_string}'")
+
+
+def validate_sp3_comment_lines(
+    sp3_comment_lines: list[str],
+    strict_mode: type[StrictMode],
+    attempt_fixes: bool = False,
+    fail_on_fixed_issues: bool = True,
+    skip_min_4_lines_test: bool = False,
+) -> bool:
+    """
+    Utility to check validity of SP3 comment lines according to SP3 version d specification.
+    Checks for overlong lines, and lines which don't begin with '/* ' (note the space is required)
+
+    :param list[str] sp3_comment_lines: List of sp3 comments decoded into strings.
+    :param type[StrictMode] strict_mode: Sets how strictly to respond to validation errors (ignore, warn, or raise).
+    :param bool attempt_fixes: Attempt to apply fixes for small issues. Off by default. Fixes include ensuring the
+        minimum number of comment lines, and ensuring lines start with the correct lead in '/* ' (including the
+        trailing space).
+    :param bool fail_on_fixed_issues: Should issues which we fixed, still cause validation to fail? On by default,
+        given the main purpose of this function is validation.
+    :param bool skip_min_4_lines_test: Skip the check for a minimum of 4 comment lines. Off by default. This is mostly
+        here for testing convenience.
+    :return bool: True if all lines are valid, False otherwise (provided an exception isn't raised first)
+    :raises ValueError: If an invalid line is found, and strict_mode is set to STRICT_RAISE
+    """
+
+    # comment technicalities from SP3d spec:
+    # - There are always at least 4 comments for backwards compatibility.
+    # - Comments always start with '/* '
+    # - Max length 80
+    # - First Epoch Header record (time record) immediately follows the comments. TODO test for that somewhere else
+    #   From that we know that:
+    #   - comments can't be elsewhere in the file
+    #   - no other field is permitted between comments and the first epoch record
+
+    issue_found: bool = False  # For any issue, including non-fatal and issues we may later fix
+    # To distinguish between finding issues and failing validation (as we can pass validation after fixing some issues):
+    validation_failed: bool = False
+    # issues_were_fixed: bool = False
+
+    if (not isinstance(sp3_comment_lines, list)) or (
+        len(sp3_comment_lines) > 0 and (not isinstance(sp3_comment_lines[0], str))
+    ):
+        raise ValueError("Comment line input must be a list of strings")
+
+    # First check: SP3 files must have >= 4 comment lines
+    if (not skip_min_4_lines_test) and (short_by_lines := 4 - len(sp3_comment_lines)) > 0:
+        # This is non-fatal, and we can fix it.
+        issue_found = True
+
+        # We can fix this, so we only consider it a failure if:
+        # - fixing is turned off, OR
+        # - we are flagging issues *regardless* of fix status, due to fail_on_fixed_issues
+        if (not attempt_fixes) or fail_on_fixed_issues:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(
+                    f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that"
+                )
+            if strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that")
+
+        if attempt_fixes:
+            sp3_comment_lines.extend([SP3_COMMENT_START] * short_by_lines)
+
+    for i in range(len(sp3_comment_lines)):
+
+        # Next check: comment lines must start with '/* ' (which we will call lead-in)
+        if not sp3_comment_lines[i].startswith(SP3_COMMENT_START):
+            issue_found = True
+
+            # We *could* fix this. However...
+            # Is this considered a failure (we're not fixing it, OR we're failing on all issues regardless of fix state)?
+            if (not attempt_fixes) or fail_on_fixed_issues:
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
+                if strict_mode == StrictModes.STRICT_WARN:
+                    logger.warning(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
+
+            if attempt_fixes:
+                if sp3_comment_lines[i][0:2] == "/*":
+                    # If just the trailing space was missing, trim and re-apply
+                    sp3_comment_lines[i] = SP3_COMMENT_START + sp3_comment_lines[i][2:]
+                else:  # We infer there was no lead-in, so we just need to add it.
+                    sp3_comment_lines[i] = SP3_COMMENT_START + sp3_comment_lines[i]
+
+        # Next check: comment lines are <80 chars long (after doing any required adjustment to lead-in)
+        # Note that the limit in SP3c is 60, but we don't output anything older than SP3d.
+        if len(sp3_comment_lines[i]) > SP3_COMMENT_MAX_LENGTH:
+            issue_found = True
+            validation_failed = True  # This one is fatal. Proactively wrapping lines would be a bad idea.
+
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(
+                    "SP3 comment lines must not exceed 80 chars (including lead-in). "
+                    f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
+                )
+            if strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(
+                    "SP3 comment lines must not exceed 80 chars (including lead-in). "
+                    f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
+                )
+
+    # Validation is considered to have failed if EITHER:
+    # - validation_failed == False
+    # - issue_found and fail_on_fixed issues: meaning some issue was encountered (which we may or may not have been able to fix), but we are flagging all issues.
+    if issue_found and fail_on_fixed_issues:
+        validation_failed = True
+    return not validation_failed
+
+
+def read_sp3(
+    sp3_path_or_bytes: Union[str, Path, bytes],
+    pOnly: bool = True,
+    nodata_to_nan: bool = True,
+    drop_offline_sats: bool = False,
+    continue_on_ep_ev_encountered: bool = True,
+    check_header_vs_filename_vs_content_discrepancies: bool = False,
+    # The following two apply when the above is enabled:
+    skip_filename_in_discrepancy_check: bool = False,
+    continue_on_discrepancies: bool = False,
+    format_check_strictness: type[StrictMode] = StrictModes.STRICT_WARN,
+) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
-
-    :param str sp3_path: The path to the SP3 file.
+    :param Union[str, Path, bytes] sp3_path_or_bytes: SP3 file path (as str or Path) or SP3 data as bytes object.
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
     :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
-    :return pandas.DataFrame: The SP3 data as a DataFrame.
-    :raise FileNotFoundError: If the SP3 file specified by sp3_path does not exist.
+    :param bool drop_offline_sats: If True, drops satellites from the DataFrame if they have ANY missing (nodata)
+            values in the SP3 POS column.
+    :param bool continue_on_ep_ev_encountered: If True, logs a warning and continues if EV or EP rows are found in
+            the input SP3. These are currently unsupported by this function and will be ignored. Set to false to
+            raise a NotImplementedError instead.
+    :param bool check_header_vs_filename_vs_content_discrepancies: enable discrepancy checks on SP3 content vs
+        header vs filename.
+    :param bool skip_filename_in_discrepancy_check: If discrepancy checks enabled (see above), this allows skipping
+        the filename part of the checks, even if filename is available.
+    :param bool continue_on_discrepancies: (Only applicable with check_header_vs_filename_vs_content_discrepancies)
+        If True, logs a warning and continues if major discrepancies are detected between the SP3 content, SP3 header,
+        and SP3 filename (if available). Set to false to raise a ValueError instead.
+    :param type[StrictMode] format_check_strictness: (work in progress) defines the response to things that are not
+        quite to SP3 spec: whether to ignore, warn, or raise. Default: warn.
+        Current functionality influenced by this includes:
+         - trying to read an SP3 version b or c file (not officially supported)
+         - SP3 comment specification voilations including < 4 comment lines, overlong comment lines, and incorrect
+           start sequence i.e. line didn't begin exactly '/* '.
+        In future it could also impact things like:
+         - less than min number of SV entries
+        This parameter could be renamed to enforce_strict_format_compliance once more extensive checks are added.
+    :return _pd.DataFrame: The SP3 data as a DataFrame.
+    :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
+    :raises Exception: For other errors reading SP3 file/bytes
 
     :note: The SP3 file format is a standard format used for representing precise satellite ephemeris and clock data.
         This function reads the SP3 file, parses the header information, and extracts the data into a DataFrame.
@@ -256,48 +844,135 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
         (mm/ps) and remove unnecessary columns. If pOnly is True, only P* values are included in the DataFrame.
         If nodata_to_nan is True, nodata values in the SP3 POS and CLK columns are converted to NaN.
     """
-    content = _gn_io.common.path2bytes(str(sp3_path))
+    content = _gn_io.common.path2bytes(sp3_path_or_bytes)  # Will raise EOFError if file empty
+
+    # Extract and check version. Raises exception for completely unsupported versions.
+    # For version b and c behaviour depends on strict_mode setting
+    check_sp3_version(sp3_bytes=content, strict_mode=format_check_strictness)
+
+    # NOTE: Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
+    # immediately followed by the mandatory 4+ comment lines.
 
     # Match comment lines, including the trailing newline (so that it gets removed in a second too): ^(\/\*.*$\n)
-    comments: list = _RE_SP3_COMMENT_STRIP.findall(content)
-    for comment in comments:
+    comment_lines_bytes: list[bytes] = _RE_SP3_COMMENT_STRIP.findall(content)
+    for comment in comment_lines_bytes:
         content = content.replace(comment, b"")  # Not in place?? Really?
-    # Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
-    # immediately followed by the mandatory 4+ comment lines.
-    # It is unclear from the specification whether comment lines can appear anywhere else. For robustness we
-    # strip them from the data before continuing parsing.
+    # These will be written to DataFrame.attrs["COMMENTS"] for easy access (but please use get_sp3_comments())
+    comment_lines: list[str] = [line.decode("utf-8", errors="ignore").rstrip("\n") for line in comment_lines_bytes]
+    # Validate comment lines (but don't make changes)
+    validate_sp3_comment_lines(comment_lines, strict_mode=format_check_strictness)
+    # NOTE: The comment lines should be contiguous (not fragmented throughout the file), and they should be immediately
+    # followed by the first Epoch Header Record.
+    # Note: this interpretation is based on page 16 of the SP3d spec, which says 'The comment lines should be read in
+    # until the first Epoch Header Record (i.e. the first time tag line) is encountered.'
+    # For robustness we strip comments THROUGHOUT the data before continuing parsing.
 
-    # %i is the last thing in the header, then epochs start.
+    # NOTE: We just stripped all comment lines from the input data, so the %i records are now the last thing in the
+    # header before the first Epoch Header Record.
     # Get the start of the last %i line, then scan forward to the next \n, then +1 for start of the following line.
     # We used to use the start of the first comment line. While simpler, that seemed risky.
     header_end = content.find(b"\n", content.rindex(b"%i")) + 1
     header = content[:header_end]
     content = content[header_end:]
     parsed_header = parse_sp3_header(header)
-    counts = parsed_header.SV_INFO.count()
     fline_b = header.find(b"%f") + 2  # TODO add to header parser
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
     date_lines, data_blocks = _split_sp3_content(content)
     sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
     sp3_df = _reformat_df(sp3_df)
+
+    # P/V/EP/EV flag handling is currently incomplete. The current implementation truncates to the first letter,
+    # so can't parse nor differenitate between EP and EV!
+    if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
+        if not continue_on_ep_ev_encountered:
+            raise NotImplementedError("EP and EV flag rows are currently not supported")
+        logger.warning("EP / EV flag rows encountered. These are not yet supported. Dropping them from DataFrame...")
+        # Filter out EV / EP records, before we trip ourselves up with them. Technically this is redundant as in the
+        # next section we extract P and V records, then drop the PV_FLAG level.
+        sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"]
+
+    # Extract and merge Position and Velocity data. I.e. take the interlaced P and V rows, and restructure them into columns
+    # Check very top of the header to see if this SP3 is Position only, or also contains Velocities.
+    if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
+        sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
+        sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
+    else:
+        # DF contains interlaced Position & Velocity measurements for each sat. Split the data based on this, and
+        # recombine, turning Pos and Vel into separate columns.
+
+        pv_flag_values = sp3_df.index.get_level_values("PV_FLAG").unique().values
+        if "V" not in pv_flag_values:
+            raise ValueError(
+                "SP3 header PV flag was not P, but no V (velocity) index appears to exist! "
+                f"Unique PV flag values seen: {pv_flag_values}"
+            )
+
+        position_df = sp3_df.xs("P", level="PV_FLAG")
+        velocity_df = sp3_df.xs("V", level="PV_FLAG")
+
+        # NOTE: care must now be taken to ensure this split and merge operation does not duplicate the FLAGS columns!
+
+        # Remove the (per sat per epoch, not per pos / vel section) FLAGS from one of our DFs so when we concat them
+        # back together we don't have duplicated flags.
+        # The param axis=1, removes from columns rather than indexes (i.e. we want to drop the column from the data,
+        # not drop all the data to which the column previously applied!)
+        # We drop from pos rather than vel, because vel is on the right hand side, so the layout resembles the
+        # layout of an SP3 file better. Functionally, this shouldn't make a difference.
+        position_df = position_df.drop(axis=1, columns="FLAGS")
+
+        velocity_df.columns = SP3_VELOCITY_COLUMNS
+        # NOTE from the docs: pandas.concat copies attrs only if all input datasets have the same attrs.
+        # For simplity, we write the header to .attrs in the next section.
+        sp3_df = _pd.concat([position_df, velocity_df], axis=1)
+
+    # Position and Velocity (if present) now have thier own columns, and are indexed on SV (rather than
+    # being interlaced as in source data).
+
+    # As the main transformations are done, write header data and SP3 comments to dataframe attributes now,
+    # so it can travel with the dataframe from here on. NOTE: Pandas docs say .attrs is an experimental feature.
+    sp3_df.attrs["HEADER"] = parsed_header
+    sp3_df.attrs["COMMENTS"] = comment_lines
+    sp3_df.attrs["path"] = sp3_path_or_bytes if type(sp3_path_or_bytes) in (str, Path) else ""
+
+    # DataFrame has been consolidated. Run remaining consistency checks, conversions, and removal steps. Doing this
+    # earlier would risk things like trying to pull pos values from an EV / EP row before it had been filtered out.
+
+    if drop_offline_sats:
+        sp3_df = remove_offline_sats(sp3_df)
     if nodata_to_nan:
         # Convert 0.000000 (which indicates nodata in the SP3 POS column) to NaN
         sp3_pos_nodata_to_nan(sp3_df)
         # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)
-    if pOnly or parsed_header.HEAD.loc["PV_FLAG"] == "P":
-        sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") == "P"]
-        sp3_df.index = sp3_df.index.droplevel("PV_FLAG")
-        # TODO consider exception handling if EP rows encountered
-    else:
-        position_df = sp3_df.xs("P", level="PV_FLAG")
-        velocity_df = sp3_df.xs("V", level="PV_FLAG")
-        # TODO consider exception handling if EV rows encountered
-        velocity_df.columns = SP3_VELOCITY_COLUMNS
-        sp3_df = _pd.concat([position_df, velocity_df], axis=1)
 
-    # sp3_df.drop(columns="PV_FLAG", inplace=True)
+    # Are we running discrepancy checks?
+    if check_header_vs_filename_vs_content_discrepancies:
+        # SV count discrepancy check
+
+        content_sv_count = get_unique_svs(sp3_df).size
+        # count() gives total of non-NA/null (vs shape, which gets dims of whole structure):
+        header_sv_count = sp3_df.attrs["HEADER"].SV_INFO.count()
+        if header_sv_count != content_sv_count:
+            if not continue_on_discrepancies:
+                raise ValueError(
+                    f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
+                )
+            logger.warning(
+                f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
+            )
+
+        # Epoch count discrepancy check
+
+        # Include filename in check?
+        path_bytes_to_pass = None if skip_filename_in_discrepancy_check else sp3_path_or_bytes
+        check_epoch_counts_for_discrepancies(
+            draft_sp3_df=sp3_df,
+            parsed_sp3_header=parsed_header,
+            sp3_path_or_bytes=path_bytes_to_pass,
+            continue_on_error=continue_on_discrepancies,
+        )
+
     # Check for duplicate epochs, dedupe and log warning
     if sp3_df.index.has_duplicates:  # a literaly free check
         # This typically runs in sub ms time. Marks all but first instance as duped:
@@ -306,13 +981,11 @@ def read_sp3(sp3_path: str, pOnly: bool = True, nodata_to_nan: bool = True) -> _
         logging.warning(
             f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
             f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
-            f"SP3 path is: '{str(sp3_path)}'. Duplicates will be removed, keeping first."
+            f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
         )
         # Now dedupe them, keeping the first of any clashes:
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
-    # Write header data to dataframe attributes:
-    sp3_df.attrs["HEADER"] = parsed_header
-    sp3_df.attrs["path"] = sp3_path
+
     return sp3_df
 
 
@@ -320,7 +993,7 @@ def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
     """
     Reformat the SP3 DataFrame for internal use
 
-    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :return _pd.DataFrame: reformated SP3 data as a DataFrame.
     """
     name_float = [
@@ -361,29 +1034,8 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     Parse the header of an SP3 file and extract relevant information.
 
     :param bytes header: The header of the SP3 file (as a byte string).
-    :return pandas.Series: A Series containing the parsed information from the SP3 header.
+    :return _pd.Series: A pandas Series containing the parsed information from the SP3 header.
     """
-    try:
-        sp3_heading = _pd.Series(
-            data=_np.asarray(_RE_SP3_HEAD.search(header).groups() + _RE_SP3_HEAD_FDESCR.search(header).groups()).astype(
-                str
-            ),
-            index=[
-                "VERSION",
-                "PV_FLAG",
-                "DATETIME",
-                "N_EPOCHS",
-                "DATA_USED",
-                "COORD_SYS",
-                "ORB_TYPE",
-                "AC",
-                "FILE_TYPE",
-                "TIME_SYS",
-            ],
-        )
-    except AttributeError as e:  # Make the exception slightly clearer.
-        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
-
     # Find all Satellite Vehicle (SV) entries
     # Updated to also extract the count of expected SVs from the header, and compare that to the number of SVs we get.
     # Tuple per match/line, containing the capture groups. I.e. [(group 1, group 2), (group 1, group 2)]
@@ -392,10 +1044,10 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
 
     # How many SVs did the header say were there (start of first line of SV entries) E.g 30 here: +   30   G02G03...
     head_sv_expected_count = None
-    try:
+    if len(sv_regex_matches) != 0:  # Result found
         head_sv_expected_count = int(sv_regex_matches[0][0])  # Line 1, group 1
-    except Exception as e:
-        logger.warning("Failed to extract count of expected SVs from SP3 header.", e)
+    else:
+        logger.warning("Failed to extract count of expected SVs from SP3 header.")
 
     # Get second capture group from each match, concat into byte string. These are the actual SVs. i.e. 'G02G03G04'...
     sv_id_matches = b"".join([x[1] for x in sv_regex_matches])
@@ -403,7 +1055,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     head_svs = _np.asarray(sv_id_matches)[_np.newaxis].view("S3").astype(str)
 
     # Sanity check that the number of SVs the regex found, matches what the header said should be there.
-    found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array.
+    found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array. Note this could include null/NA/NaN
     if head_sv_expected_count is not None and found_sv_count != head_sv_expected_count:
         logger.warning(
             "Number of Satellite Vehicle (SV) entries extracted from the SP3 header, did not match the "
@@ -434,16 +1086,88 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
             f"Parsed SVs and ACCs: {sv_tbl}"
         )
 
+    try:
+        claimed_sv_count_str = str(head_sv_expected_count) if head_sv_expected_count is not None else ""
+        header_array = _np.asarray(
+            _RE_SP3_HEAD.search(header).groups()
+            + _RE_SP3_HEAD_FDESCR.search(header).groups()
+            + (bytes(claimed_sv_count_str, "utf-8"),)  # Number of SVs header states should be there
+        ).astype(str)
+        sp3_heading = _pd.Series(
+            data=header_array,
+            index=[
+                "VERSION",
+                "PV_FLAG",
+                "DATETIME",
+                "N_EPOCHS",
+                "DATA_USED",
+                "COORD_SYS",
+                "ORB_TYPE",
+                "AC",
+                "FILE_TYPE",
+                "TIME_SYS",
+                "SV_COUNT_STATED",  # (Here for convenience) parsed earlier with _RE_SP3_HEADER_SV, not by above regex
+            ],
+        )
+        # SP3 file versions:
+        # - a: Oct 1995 - Single constellation.
+        # - b: Oct 1998 - Adds GLONASS support.
+        # - c: ~2006 to Aug 2010 - Appears to add multiple new constellations, Japan's QZSS added in 2010.
+        # - d: Feb 2016 - Max number of satellites raised from 85 to 999.
+
+        header_version = str(header_array[0])
+        if header_version in ("a", "b"):
+            logger.warning(f"SP3 file is old version: '{header_version}', you may experience parsing issues")
+        elif header_version in ("c", "d"):
+            logger.info(f"SP3 header states SP3 file version is: {header_array[0]}")
+        else:
+            logger.warning(
+                f"SP3 header is of an unknown version, or failed to parse! Version appears to be: '{header_version}'"
+            )
+
+    except AttributeError as e:  # Make the exception slightly clearer.
+        raise AttributeError("Failed to parse SP3 header. Regex likely returned no match.", e)
+
     return _pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
 
 
+def clean_sp3_orb(sp3_df: _pd.DataFrame, use_offline_sat_removal: bool) -> _pd.DataFrame:
+    """
+    Clean SP3 orbit data: remove duplicates, remove leading or trailing rows of NA values, optionally remove satellites
+    with *any* missing position values.
+
+    :param _pd.DataFrame sp3_df: The input SP3 DataFrame.
+    :param bool use_offline_sat_removal: Flag indicating whether to remove satellites which are offline / have some
+           nodata position values.
+    :return _pd.DataFrame: A cleaned version of the SP3 DataFrame
+    """
+    # Trim DataFrame to position estimate columns
+    sp3_df_updated: _pd.DataFrame = sp3_df.filter(items=[("EST", "X"), ("EST", "Y"), ("EST", "Z")])
+
+    # Drop any duplicates in the index
+    sp3_df_updated = sp3_df_updated[~sp3_df_updated.index.duplicated(keep="first")]
+
+    # Trim the leading and ending epochs that are empty (i.e. all values are NaN) to avoid dropping all data
+    valid_rows = sp3_df_updated.dropna(how="all")
+    first_valid_epoch = valid_rows.index[0][0]
+    last_valid_epoch = valid_rows.index[-1][0]
+    sp3_df_updated = sp3_df_updated.loc[first_valid_epoch:last_valid_epoch]
+
+    if use_offline_sat_removal:
+        sp3_df_updated = remove_offline_sats(sp3_df_updated)
+
+    return sp3_df_updated
+
+
 def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:
-    """Returns the velocity spline of the input dataframe.
+    """Returns the velocity spline of the input DataFrame.
 
-    :param DataFrame sp3Df: The input dataframe containing position data.
-    :return DataFrame: The dataframe containing the velocity spline.
+    :param _pd.DataFrame sp3Df: The input pandas DataFrame containing SP3 position data.
+    :return _pd.DataFrame: The DataFrame containing the velocity spline.
 
-    :note :The velocity is returned in the same units as the input dataframe, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard).
+    :caution :This function cannot handle *any* NaN / nodata / non-finite position values. By contrast, getVelPoly()
+              is more forgiving, but accuracy of results, particulary in the presence of NaNs, has not been assessed.
+    :note :The velocity is returned in the same units as the input DataFrame, e.g. km/s (needs to be x10000 to be in cm as per sp3 standard).
     """
     sp3dfECI = sp3Df.EST.unstack(1)[["X", "Y", "Z"]]  # _ecef2eci(sp3df)
     datetime = sp3dfECI.index.get_level_values("J2000").values
@@ -460,34 +1184,33 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     """
     Interpolates the positions for -1s and +1s in the sp3_df DataFrame and outputs velocities.
 
-    :param DataFrame sp3Df: A pandas DataFrame containing the sp3 data.
+    :param _pd.DataFrame sp3Df: A pandas DataFrame containing the sp3 data.
     :param int deg: Degree of the polynomial fit. Default is 35.
-    :return DataFrame: A pandas DataFrame with the interpolated velocities added as a new column.
-
+    :return _pd.DataFrame: A pandas DataFrame with the interpolated velocities added as a new column.
     """
     est = sp3Df.unstack(1).EST[["X", "Y", "Z"]]
-    x = est.index.get_level_values("J2000").values
-    # x = est.index.values
-    y = est.values
+    times = est.index.get_level_values("J2000").values
+    positions = est.values
 
-    off, scl = mapparm([x.min(), x.max()], [-1, 1])  # map from input scale to [-1,1]
+    # map from input scale to [-1,1]
+    offset, scale_factor = mapparm([times.min(), times.max()], [-1, 1])
 
-    x_new = off + scl * (x)
-    coeff = _np.polyfit(x=x_new, y=y, deg=deg)
+    normalised_times = offset + scale_factor * (times)
+    coeff = _np.polyfit(x=normalised_times, y=positions, deg=deg)
 
-    x_prev = off + scl * (x - 1)
-    x_next = off + scl * (x + 1)
+    time_prev = offset + scale_factor * (times - 1)
+    time_next = offset + scale_factor * (times + 1)
 
-    xx_prev_combined = _np.broadcast_to((x_prev)[None], (deg + 1, x_prev.shape[0]))
-    xx_next_combined = _np.broadcast_to((x_next)[None], (deg + 1, x_prev.shape[0]))
+    time_prev_sqrd_combined = _np.broadcast_to((time_prev)[None], (deg + 1, time_prev.shape[0]))
+    time_next_sqrd_combined = _np.broadcast_to((time_next)[None], (deg + 1, time_prev.shape[0]))
 
-    inputs_prev = xx_prev_combined ** _np.flip(_np.arange(deg + 1))[:, None]
-    inputs_next = xx_next_combined ** _np.flip(_np.arange(deg + 1))[:, None]
+    inputs_prev = time_prev_sqrd_combined ** _np.flip(_np.arange(deg + 1))[:, None]
+    inputs_next = time_next_sqrd_combined ** _np.flip(_np.arange(deg + 1))[:, None]
 
     res_prev = coeff.T.dot(inputs_prev)
     res_next = coeff.T.dot(inputs_next)
     vel_i = _pd.DataFrame(
-        (((y - res_prev.T) + (res_next.T - y)) / 2),
+        (((positions - res_prev.T) + (res_next.T - positions)) / 2),
         columns=est.columns,
         index=est.index,
     ).stack(future_stack=True)
@@ -497,13 +1220,62 @@ def getVelPoly(sp3Df: _pd.DataFrame, deg: int = 35) -> _pd.DataFrame:
     return _pd.concat([sp3Df, vel_i], axis=1)
 
 
-def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
+def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
+    """
+    Utility function to get count of unique SVs in an SP3 DataFrame (contents not header).
+    This isn't a complex operation, but it's needed in a handful of places, and there are several nuances that
+    could lead to incorrect data, such as forgetting to exclude EV / EP rows if present.
+
+    :param _pd.DataFrame sp3_df: DataFrame of SP3 data to calculate on
+    :return _pd.Index: pandas Index object describing the SVs in the DataFrame content
+    """
+    # Are we dealing with a DF which is early in processing: with Position, Velocity, and EV / EP rows in it?
+    # -> This will have the PV_FLAG index level. It *may* contain EV / EP rows, though until we support these they
+    #    should be promptly removed at that point.
+
+    # Alternativley, has this DF had Position and Velocity data merged (into columns, not interlaced rows)?
+    # -> In this case the PV_FLAG index level will have been dropped.
+    if "PV_FLAG" in sp3_df.index.names:
+        if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
+            logger.warning(
+                "EV/EP record found late in SP3 processing. Until we actually support them, "
+                "they should be removed by the EV/EP check earlier on! Filtering out while determining unique SVs."
+            )
+            # Filter to data that doesn't relate to EV / EP rows, then get SVs from index (level 1).
+            return sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"].index.get_level_values(1).unique()
+
+    # Get index values from level 1 (which is SVs)
+    return sp3_df.index.get_level_values(1).unique()
+
+
+def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
+    """
+    Utility function to get count of unique epochs in an SP3 DataFrame (contents not header).
+
+    :param _pd.DataFrame sp3_df: DataFrame of SP3 data to calculate on
+    :return _pd.Index: pandas Index object describing the epochs in the DataFrame content
+    """
+    # First index level is time (j2000); these are our epochs
+    return sp3_df.index.get_level_values(0).unique()
+
+
+def gen_sp3_header(
+    sp3_df: _pd.DataFrame, output_comments: bool = False, strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE
+) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
+    NOTE: much of the header information is drawn from the DataFrame attrs structure. If this has not been
+    updated as the DataFrame has been transformed, the header will not reflect the data.
 
-    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param bool output_comment: Write the SP3 comment lines stored with the DataFrame, into the output. Off by default.
+    :param type[StrictMode] strict_mode: Level of strictness with which to enforce SP3 specification rules (e.g.
+        comments must have a leading space). Options defined by StrictModes, default STRICT_RAISE.
     :return str: The generated SP3 header as a string.
     """
+    if output_comments and not "COMMENTS" in sp3_df.attrs:
+        raise IndexError("SP3 comment output requested, but comment data was not found in DataFrame.attrs")
+
     sp3_j2000 = sp3_df.index.levels[0].values
     sp3_j2000_begin = sp3_j2000[0]
 
@@ -511,11 +1283,42 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     head = header.HEAD
     sv_tbl = header.SV_INFO
 
-    # need to update DATETIME outside before writing
+    if head.VERSION != "d":
+        logger.warning(
+            f"Stored SP3 header indicates version '{head.VERSION}'. Changing to version 'd' for "
+            "write-out given that's the version this implementation is designed to create"
+        )
+        head.VERSION = "d"
+
     line1 = [
-        f"#{head.VERSION}{head.PV_FLAG}{_gn_datetime.j20002rnxdt(sp3_j2000_begin)[0][3:-2]}"
-        + f"{sp3_j2000.shape[0]:>9}{head.DATA_USED:>6}"
-        + f"{head.COORD_SYS:>6}{head.ORB_TYPE:>4}{head.AC:>5}\n"
+        f"#{head.VERSION}"  # Col 1-2: Version symbol, A2. E.g. '#d'
+        + f"{head.PV_FLAG}"  # Col 3: Pos or Vel flag, A1. E.g. 'P' or 'V'
+        # Covers col 4-31 (start time in: year, month, day of month, hour, minute, second), various formats.
+        # Widths are: 4, 2, 2, 2, 2, f11.8 (8 digits after decimal point)
+        # Combined output E.g. '2024  7 19  0  0  0.00000000'
+        + f"{_gn_datetime.j2000_to_sp3_head_dt(sp3_j2000_begin)}"
+        + " "  # Col 32: Unused / space
+        + f"{sp3_j2000.shape[0]:>7}"  # Col 33-39: Num epochs, I7. E.g '_____96'
+        + " "  # Col 40
+        # Col 41-45: Data used, A5. E.g. 'ORBIT' or '__u+U', etc.
+        # SP3d spec page 14 says:
+        # - 'The data used descriptor was included for ease in distinguishing between multiple orbital solutions
+        #    from a single organization.'
+        # - 'A possible convention is given below; this is not considered final and suggestions are welcome.'
+        # - 'Combinations such as "__u+U" seem reasonable.'
+        # Given this, we infer that left padding i.e. right alignment is expected, but that this might not be strict.
+        # CODE (EU) appears to use left alignment e.g. 'd+D  '.
+        + f"{head.DATA_USED:>5}"
+        + " "  # Col 46
+        + f"{head.COORD_SYS:>5}"  # Col 47-51: Coordinate Sys, A5. E.g. 'WGS84' or 'IGS20'(?)
+        + " "  # Col 52
+        + f"{head.ORB_TYPE:>3}"  # Col 53-55: Orbit Type, A3. E.g. 'BCT' 'FIT'(?), etc. TODO what is BCT? Is that a valid type?
+        + " "  # Col 56
+        + f"{head.AC:>4}"  # Col 57-60: Agency, A4. E.g. 'MGEX', 'GAA', 'AIUB', etc.
+        + "\n"
+        # We add a newline here because currently all header content has trailing newlines, rather than being stored
+        # without them, and having them added at the end when joining together and outputting as one string.
+        # TODO that might be a nicer approach.
     ]
 
     gpsweek, gpssec = _gn_datetime.datetime2gpsweeksec(sp3_j2000_begin)
@@ -526,13 +1329,35 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
     sats = sv_tbl.index.to_list()
     n_sats = sv_tbl.shape[0]
 
+    # Check that number of SVs the header metadata says should be here, matches the number of SVs *listed* in
+    # header metadata (which we use to output the new header). Then check that this in turn matches the number of
+    # unique SVs in the SP3 DataFrame itself.
+    dataframe_sv_count = get_unique_svs(sp3_df).size
+    header_sv_stated_count = int(head["SV_COUNT_STATED"])
+    header_sv_actual_count = int(n_sats)
+
+    # Check header internal consistency, regarding number of SVs
+    if header_sv_actual_count != header_sv_stated_count:
+        raise AttributeError(
+            f"Number of SVs listed in SP3 header ({str(header_sv_actual_count)}), did not match "
+            f"the number of SVs the header says are there ({header_sv_stated_count})"
+        )
+    # Check header vs DataFrame content regarding number of SVs
+    if header_sv_actual_count != dataframe_sv_count:
+        raise AttributeError(
+            f"Number of SVs listed in SP3 header ({header_sv_actual_count}) did not match "
+            f"SP3 DataFrame contents ({dataframe_sv_count})!"
+        )
+
+    # Alternatively: max(n_sats // 17, 5) # As many lines as needed, minimum 5
     sats_rows = (n_sats // 17) + 1 if n_sats > (17 * 5) else 5  # should be 5 but MGEX need more lines (e.g. CODE sp3)
     sats_header = (
         _np.asarray(sats + ["  0"] * (17 * sats_rows - n_sats), dtype=object).reshape(sats_rows, -1).sum(axis=1) + "\n"
     )
 
+    # Add *calculated, not stated* SV count within the lead-in / padding of the first row of SVs
     sats_header[0] = "+ {:4}   ".format(n_sats) + sats_header[0]
-    sats_header[1:] = "+        " + sats_header[1:]
+    sats_header[1:] = "+        " + sats_header[1:]  # Format remaining rows of SVs with just their lead-in string
 
     sv_orb_head = (
         _np.asarray(sv_tbl.astype(str).str.rjust(3).to_list() + ["  0"] * (17 * sats_rows - n_sats), dtype=object)
@@ -554,47 +1379,120 @@ def gen_sp3_header(sp3_df: _pd.DataFrame) -> str:
         + ["%i    0    0    0    0      0      0      0      0         0\n"]
         + ["%i    0    0    0    0      0      0      0      0         0\n"]
     )
+    # Default comments, which meet the specification requirement for >= 4 lines.
+    sp3_comment_lines = [SP3_COMMENT_START] * 4
+    if output_comments:
+        # Use actual comments from the DataFrame, not placeholders
+        sp3_comment_lines = get_sp3_comments(sp3_df)
+        # Inspect incoming comments for validity, but don't change them.
+        if (strict_mode != StrictModes.STRICT_OFF) and not validate_sp3_comment_lines(
+            sp3_comment_lines,
+            strict_mode=strict_mode,
+            attempt_fixes=False,
+            fail_on_fixed_issues=True,
+        ):
+            logger.warning("SP3 comments failed validation while being read in. Please see above logs for details.")
 
-    comment = ["/*\n"] * 4
+    # Put the newlines back on the end of each comment line, before merging into the output header
+    sp3_comment_lines = [line + "\n" for line in sp3_comment_lines]
+    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + sp3_comment_lines)
 
-    return "".join(line1 + line2 + sats_header.tolist() + sv_orb_head.tolist() + head_c + head_fi + comment)
+
+# Option 1: don't provide a buffer, the data will be returned as a string
+@overload
+def gen_sp3_content(
+    sp3_df: _pd.DataFrame,
+    in_buf: None = None,
+    sort_outputs: bool = ...,
+    continue_on_unhandled_velocity_data: bool = ...,
+) -> str: ...
+
+
+# Option 2: (not typically used) provide a buffer and have the data written there
+@overload
+def gen_sp3_content(
+    sp3_df: _pd.DataFrame,
+    in_buf: _io.StringIO,
+    sort_outputs: bool = ...,
+    continue_on_unhandled_velocity_data: bool = ...,
+) -> None: ...
 
 
 def gen_sp3_content(
     sp3_df: _pd.DataFrame,
+    in_buf: Union[None, _io.StringIO] = None,
     sort_outputs: bool = False,
-    buf: Union[None, _io.TextIOBase] = None,
-) -> str:
+    continue_on_unhandled_velocity_data: bool = True,
+) -> Union[str, None]:
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
     it otherwise.
 
-    Args:
     :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
-    :param io.TextIOBase  buf: The buffer to write the SP3 content to. Defaults to None.
-    :return str or None: The SP3 content if `buf` is None, otherwise None.
+    :param Union[_io.StringIO, None] in_buf: The buffer to write the SP3 content to. Defaults to None.
+    :param bool continue_on_unhandled_velocity_data: If (currently unsupported) velocity data exists in the DataFrame,
+        log a warning and skip velocity data, but write out position data. Set to false to raise an exception instead.
+    :return str or None: Return SP3 content as a string if `in_buf` is None, otherwise write SP3 content to `in_buf`,
+        and return None.
     """
-    out_buf = buf if buf is not None else _io.StringIO()
+    out_buf = in_buf if in_buf is not None else _io.StringIO()
     if sort_outputs:
         # If we need to do particular sorting/ordering of satellites and constellations we can use some of the
         # options that .sort_index() provides
         sp3_df = sp3_df.sort_index(ascending=True)
     out_df = sp3_df["EST"]
-    flags_df = sp3_df["FLAGS"]  # Prediction, maneuver, etc.
+
+    # Check for velocity columns (named by read_sp3() with a V prefix)
+    if any([col.startswith("V") for col in out_df.columns.values]):
+        if not continue_on_unhandled_velocity_data:
+            raise NotImplementedError("Output of SP3 velocity data not currently supported")
+
+        # Drop any of the defined velocity columns that are present, so it doesn't mess up the output.
+        logger.warning("SP3 velocity output not currently supported! Dropping velocity columns before writing out.")
+        # Remove any defined velocity column we have, don't raise exceptions for defined vel columns we may not have:
+        out_df = out_df.drop(columns=SP3_VELOCITY_COLUMNS[1], errors="ignore")
+
+        # NOTE: correctly writing velocity records would involve interlacing records, i.e.:
+        # PG01... X Y Z CLK ...
+        # VG01... VX VY VZ ...
+
+    # Extract flags for Prediction, maneuver, etc.
+    flags_df = sp3_df["FLAGS"]
+
+    # Valid values for the respective flags are 'E' 'P' 'M' 'P' (or blank), as per page 11-12 of the SP3d standard:
+    # https://files.igs.org/pub/data/format/sp3d.pdf
+    if not (
+        flags_df["Clock_Event"].astype(str).isin(["E", " "]).all()
+        and flags_df["Clock_Pred"].astype(str).isin(["P", " "]).all()
+        and flags_df["Maneuver"].astype(str).isin(["M", " "]).all()
+        and flags_df["Orbit_Pred"].astype(str).isin(["P", " "]).all()
+    ):
+        raise ValueError(
+            "Invalid SP3 flag found! Valid values are 'E', 'P', 'M', ' '. "
+            "Actual values were: " + str(flags_df.values.astype(str))
+        )
 
     # (Another) Pandas output hack to ensure we don't get extra spaces between flags columns.
     # Squish all the flag columns into a single string with the required amount of space (or none), so that
     # DataFrame.to_string() can't mess it up for us by adding a compulsory space between columns that aren't meant
     # to have one.
-    flags_squished_df = _pd.DataFrame(
-        flags_df["Clock_Event"] + flags_df["Clock_Pred"] + "  " + flags_df["Maneuver"] + flags_df["Orbit_Pred"]
-    )
-    flags_squished_df.columns = ["FLAGS_MERGED"]  # Give it a meaningful name (not needed for output)
 
-    # If we have STD information transform it to the output format (integer exponents) and add to dataframe
+    # Types are set to str here due to occaisional concat errors, where one of these flags is interpreted as an int.
+    flags_merged_series = _pd.Series(
+        # Concatenate all flags so arbitrary spaces don't get added later in rendering
+        flags_df["Clock_Event"].astype(str)
+        + flags_df["Clock_Pred"].astype(str)
+        + "  "  # Two blanks (unused), as per spec. Should align with columns 77,78
+        + flags_df["Maneuver"].astype(str)
+        + flags_df["Orbit_Pred"].astype(str),
+        # Cast the whole thing to a string for output (disabled as this seems to do nothing?)
+        # dtype=_np.dtype("str"),
+    )
+
+    # If we have STD information transform it to the output format (integer exponents) and add to DataFrame
     if "STD" in sp3_df:
-        # In future we should pull this information from the header on read and store it in the dataframe attributes
+        # In future we should pull this information from the header on read and store it in the DataFrame attributes
         # For now we just hardcode the most common values that are used (and the ones hardcoded in the header output)
         pos_base = 1.25
         clk_base = 1.025
@@ -602,18 +1500,21 @@ def gen_sp3_content(
         def pos_log(x):
             return _np.minimum(  # Cap value at 99
                 _np.nan_to_num(  # If there is data, use the following formula. Else return NODATA value.
-                    _np.rint(_np.log(x) / _np.log(pos_base)), nan=SP3_POS_STD_NODATA  # Rounded to nearest int
+                    _np.rint(_np.log(x) / _np.log(pos_base)),
+                    nan=SP3_POS_STD_NODATA_NUMERIC_INTERNAL,  # Rounded to nearest int
                 ),
                 99,
             ).astype(int)
 
         def clk_log(x):
+            # Replace NaNs with SP3 clk_log nodata value (-1000). Round values and cap them at 999.
             return _np.minimum(
-                _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA), 999  # Cap at 999
+                _np.nan_to_num(_np.rint(_np.log(x) / _np.log(clk_base)), nan=SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL),
+                999,  # Cap at 999
             ).astype(int)
 
         std_df = sp3_df["STD"]
-        #  Remove attribute data from this shallow copy of the Dataframe.
+        #  Remove attribute data from this shallow copy of the DataFrame.
         #  This works around an apparent bug in Pandas, due to the fact calling == on two Series produces a list
         #  of element-wise comparisons, rather than a single boolean value. This list seems to break Pandas
         #  concat() when it is invoked within transform() and tries to check if attributes match between columns
@@ -622,13 +1523,14 @@ def gen_sp3_content(
         std_df = std_df.transform({"X": pos_log, "Y": pos_log, "Z": pos_log, "CLK": clk_log})
         std_df = std_df.rename(columns=lambda x: "STD_" + x)
         out_df = _pd.concat([out_df, std_df], axis="columns")
-        out_df["FLAGS_MERGED"] = flags_squished_df  # Re-inject the pre-concatenated flags column.
+        out_df["FLAGS_MERGED"] = flags_merged_series  # Re-inject the pre-concatenated flags column.
 
     def prn_formatter(x):
         return f"P{x}"
 
-    # TODO NOTE
-    # This is technically incorrect but convenient. The SP3 standard doesn't include a space between the X, Y, Z, and
+    # NOTE This has been updated to full 14.6f format. The following description has been left for background and
+    # reference while testing the change.
+    # (Previously!) technically incorrect but convenient. SP3 standard doesn't include a space between the X, Y, Z, and
     # CLK values but pandas .to_string() put a space between every field. In practice most entries have spaces between
     # the X, Y, Z, and CLK values because the values are small enough that a 14.6f format specification gets padded
     # with spaces. So for now we will use a 13.6f specification and a space between entries, which will be equivalent
@@ -636,16 +1538,17 @@ def gen_sp3_content(
     # Longer term we should maybe reimplement this again, maybe just processing groups line by line to format them?
 
     def pos_formatter(x):
-        if isinstance(x, str):  # Presume an inf/NaN value, already formatted as nodata string. Pass through.
-            return x  # Expected value "      0.000000"
-        return format(x, "13.6f")  # Numeric value, format as usual
+        # NaN values handled in df.style.format(), using na_rep; this formatter should not be invoked for them.
+        if x in [_np.inf, -_np.inf]:  # Treat infinite values as nodata
+            return SP3_POS_NODATA_STRING
+        return format(x, "14.6f")  # Numeric value, format as usual
 
     def clk_formatter(x):
-        # If this value (nominally a numpy float64) is actually a string, moreover containing the mandated part of the
-        # clock nodata value (per the SP3 spec), we deduce nodata formatting has already been done, and return as is.
-        if isinstance(x, str) and x.strip(" ").startswith("999999."):  # TODO performance: could do just type check
-            return x
-        return format(x, "13.6f")  # Not infinite or NaN: proceed with normal formatting
+        # NaN is handled by passing a na_rep value to df.style.format() before writing out with to_string().
+        # So we just handle Infinity and normal numeric formatting.
+        if x in [_np.inf, -_np.inf]:
+            return SP3_CLOCK_NODATA_STRING
+        return format(x, "14.6f")  # Not infinite or NaN: proceed with normal formatting
 
     # NOTE: the following formatters are fine, as the nodata value is actually a *numeric value*,
     # so DataFrame.to_string() will invoke them for those values.
@@ -654,27 +1557,32 @@ def gen_sp3_content(
     # only representation.
     def pos_std_formatter(x):
         # We use -100 as our integer NaN/"missing" marker
-        if x <= SP3_POS_STD_NODATA:
-            return "  "
+        # NOTE: this could be NaN, except for the logic in the function that calculates this value.
+        if x <= SP3_POS_STD_NODATA_NUMERIC_INTERNAL:
+            return SP3_POS_STD_NODATA_STRING
         return format(x, "2d")
 
     def clk_std_formatter(x):
         # We use -1000 as our integer NaN/"missing" marker
-        if x <= SP3_CLOCK_STD_NODATA:
-            return "   "
+        if x <= SP3_CLOCK_STD_NODATA_NUMERIC_INTERNAL:
+            return SP3_CLOCK_STD_NODATA_STRING
         return format(x, "3d")
 
-    formatters = {
-        "PRN": prn_formatter,
-        "X": pos_formatter,  # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
-        "Y": pos_formatter,
-        "Z": pos_formatter,
-        "CLK": clk_formatter,  # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
-        "STD_X": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
-        "STD_Y": pos_std_formatter,
-        "STD_Z": pos_std_formatter,
-        "STD_CLK": clk_std_formatter,  # ditto above
-    }
+    formatters: Mapping[str, Callable] = dict(
+        {
+            "PRN": prn_formatter,
+            "X": pos_formatter,  # pos_formatter() can't handle nodata (Inf / NaN). Handled prior.
+            "Y": pos_formatter,
+            "Z": pos_formatter,
+            "CLK": clk_formatter,  # Can't handle CLK nodata (Inf or NaN). Handled prior to invoking DataFrame.to_string()
+            "STD_X": pos_std_formatter,  # Nodata is represented as an integer, so can be handled here.
+            "STD_Y": pos_std_formatter,
+            "STD_Z": pos_std_formatter,
+            "STD_CLK": clk_std_formatter,  # ditto above
+        }
+    )
+
+    # TODO maybe we want to set axis=0 in this groupby() (based on a previous experiment, not sure)
     for epoch, epoch_vals in out_df.reset_index("PRN").groupby(level="J2000"):
         # Format and write out the epoch in the SP3 format
         epoch_datetime = _gn_datetime.j2000_to_pydatetime(epoch)
@@ -686,53 +1594,50 @@ def gen_sp3_content(
         out_buf.write("\n")
 
         # Format this epoch's values in the SP3 format and write to buffer
+        # Notes:
+        # - DataFrame.to_string() doesn't call formatters on NaN values (nor presumably does DataFrame.Styler.format())
+        # - Mixing datatypes in a column is disallowed in Pandas >=3.
+        # - We consider +/-Infinity, and NaN to be nodata values, along with some column specific nodata values.
+        # Given all this, the following approach is taken:
+        # - Custom formatters are updated to render +/-Infninty values as the SP3 nodata value for that column.
+        # - Chained calls to DataFrame.style.format() are used to set the column's formatter, and string nodata value.
 
-        # First, we fill NaN and infinity values with the standardised nodata value for each column.
-        # NOTE: DataFrame.to_string() as called below, takes formatter functions per column. It does not, however
-        # invoke them on NaN values!! As such, trying to handle NaNs in the formatter is a fool's errand.
-        # Instead, we do it here, and get the formatters to recognise and skip over the already processed nodata values
-
-        # POS nodata formatting
-        # Fill +/- infinity values with SP3 nodata value for POS columns
-        epoch_vals["X"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Y"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Z"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_POS_NODATA_STRING, inplace=True)
-        # Now do the same for NaNs
-        epoch_vals["X"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Y"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        epoch_vals["Z"].fillna(value=SP3_POS_NODATA_STRING, inplace=True)
-        # NOTE: we could use replace() for all this, though fillna() might be faster in some
-        # cases: https://stackoverflow.com/a/76225227
-        # replace() will also handle other types of nodata constants: https://stackoverflow.com/a/54738894
-
-        # CLK nodata formatting
-        # Throw both +/- infinity, and NaN values to the SP3 clock nodata value.
-        # See https://stackoverflow.com/a/17478495
-        epoch_vals["CLK"].replace(to_replace=[_np.inf, -_np.inf], value=SP3_CLOCK_NODATA_STRING, inplace=True)
-        epoch_vals["CLK"].fillna(value=SP3_CLOCK_NODATA_STRING, inplace=True)
-
-        # Now invoke DataFrame to_string() to write out the values, leveraging our formatting functions for the
-        # relevant columns.
-        # NOTE: NaN and infinity values do NOT invoke the formatter, though you can put a string in a primarily numeric
-        # column, so we format the nodata values ahead of time, above.
-        # NOTE: you CAN'T mix datatypes as described above, in Pandas 3 and above, so this approach will need to be
-        # updated to use chained calls to format().
-        epoch_vals.to_string(
-            buf=out_buf,
-            index=False,
-            header=False,
-            formatters=formatters,
+        epoch_vals_styler = (
+            epoch_vals.style.hide(axis="columns", names=False)  # Get rid of column labels
+            .hide(axis="index", names=False)  # Get rid of index labels (i.e. j2000 times)
+            # Format columns, specify how NaN values should be represented (NaNs are NOT passed to formatters)
+            .format(subset=["PRN"], formatter=prn_formatter)
+            .format(subset=["X"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["Y"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["Z"], na_rep=SP3_POS_NODATA_STRING, formatter=pos_formatter)
+            .format(subset=["CLK"], na_rep=SP3_CLOCK_NODATA_STRING, formatter=clk_formatter)
+            # STD columns don't need NODATA handling: an internal integer nodata value is used by the formatter
+            .format(subset=["STD_X"], formatter=pos_std_formatter)
+            .format(subset=["STD_Y"], formatter=pos_std_formatter)
+            .format(subset=["STD_Z"], formatter=pos_std_formatter)
+            .format(subset=["STD_CLK"], formatter=clk_std_formatter)
+            # NOTE: Passing formatters to the formatter argument throws typing errors, but is valid, as
+            # per https://pandas.pydata.org/docs/reference/api/pandas.io.formats.style.Styler.format.html
+            # But we won't use it anyway, because the more verbose option above allows us to set na_rep as well,
+            # and lay it all out in one place.
+            # .format(formatter=formatters)
         )
-        out_buf.write("\n")
-    if buf is None:
+
+        # NOTE: styler.to_string()'s delimiter="": no space between columns!
+        # TODO to use this though, we need to update the formatters to make the columns appropirately wide.
+        # This has been switched for the 13.6f formatters (to 14.6f), but I'm not positive whether other updates
+        # will be needed - e.g. to flags columns, STD columns, etc.
+        out_buf.write(epoch_vals_styler.to_string(delimiter=""))  # styler.to_string() adds a trailing newline
+
+    if in_buf is None:  # No buffer to write to, was passed in. Return a string.
         return out_buf.getvalue()
     return None
 
 
 def write_sp3(sp3_df: _pd.DataFrame, path: str) -> None:
-    """sp3 writer, dataframe to sp3 file
+    """Takes a DataFrame representation of SP3 data, formats and writes it out as an SP3 file at the given path.
 
-    :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
+    :param _pd.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param str path: The path to write the SP3 file to.
     """
     content = gen_sp3_header(sp3_df) + gen_sp3_content(sp3_df) + "EOF"
@@ -744,7 +1649,7 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     """Merges attributes of a list of sp3 dataframes into a single set of attributes.
 
     :param List[pd.DataFrame] df_list: The list of sp3 dataframes.
-    :return pd.Series: The merged attributes.
+    :return _pd.Series: The merged attributes.
     """
     df = _pd.concat(list(map(lambda obj: obj.attrs["HEADER"], df_list)), axis=1)
     mask_mixed = ~_gn_aux.unique_cols(df.loc["HEAD"])
@@ -758,17 +1663,32 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
     ac_str = "".join([pv[:2] for pv in sorted(set(heads[7]))])[
         :4
     ]  # Use all 4 chars assigned in spec - combine 2 char from each
+
+    # The following values (at the time of writing) align to: VERSION, PV_FLAG, DATETIME, N_EPOCHS, DATA_USED,
+    # COORD_SYS, ORB_TYPE, AC, FILE_TYPE, TIME_SYS (index 9), SV_COUNT_STATED (index 10)
     # Assign values when mixed:
-    values_if_mixed = _np.asarray([version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX"])
+    values_if_mixed = _np.asarray(
+        [version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX", None]
+    )
     head = df[0].loc["HEAD"].values
     head[mask_mixed] = values_if_mixed[mask_mixed]
     # total_num_epochs needs to be assigned manually - length can be the same but have different epochs in each file
-    # Determine number of epochs combined dataframe will contain) - N_EPOCHS in heads[3]:
+    # Determine number of epochs combined DataFrame will contain) - N_EPOCHS in heads[3]:
     first_set_of_epochs = set(df_list[0].index.get_level_values("J2000"))
     total_num_epochs = len(first_set_of_epochs.union(*[set(df.index.get_level_values("J2000")) for df in df_list[1:]]))
     head[3] = str(total_num_epochs)
-    sv_info = df.loc["SV_INFO"].max(axis=1).values.astype(int)
-    return _pd.Series(_np.concatenate([head, sv_info]), index=df.index)
+
+    # Combine the *SV & SV accuracy code* part of the header, from across all input DataFrames.
+    # This gives us an NDArray containing the union of all SV names.
+    # For the accuracy codes part of it (axis 1), we take the max (i.e worst) accuracy seen for each SV, across all
+    # the input DataFrames (i.e. lowest common denominator of accuracies for each SV).
+    sv_info_unioned_worst_accuracy = df.loc["SV_INFO"].max(axis=1).values.astype(int)
+
+    # Use the number of SVs in the union of all SV headers, as the new *stated* number of SVs (which we store in our
+    # internal representation of the SP3 header (in DataFrame metadata), as sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED)
+    head[10] = sv_info_unioned_worst_accuracy.shape[0]
+
+    return _pd.Series(_np.concatenate([head, sv_info_unioned_worst_accuracy]), index=df.index)
 
 
 def sp3merge(
@@ -781,8 +1701,7 @@ def sp3merge(
     :param List[str] sp3paths: The list of paths to the sp3 files.
     :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
-
-    :return pd.DataFrame: The merged sp3 DataFrame.
+    :return _pd.DataFrame: The merged SP3 DataFrame.
     """
     sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
     # Create a new attrs dictionary to be used for the output DataFrame
@@ -798,54 +1717,182 @@ def sp3merge(
     return merged_sp3
 
 
-def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame) -> tuple[_pd.DataFrame, list]:
+def hlm_trans(pt1: _np.ndarray, pt2: _np.ndarray) -> tuple[_np.ndarray, list]:
     """
-     Rotates sp3_b into sp3_a.
+    Rotates a set of points pt1 into pt2.
 
-     :param DataFrame a: The sp3_a DataFrame.
-     :param DataFrame b : The sp3_b DataFrame.
-
-    :returntuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    :param _np.ndarray pt1: The first set of points.
+    :param _np.ndarray pt2: The second set of points.
+    :return tuple[_np.ndarray, list]: A tuple containing the output array and the HLM array with applied computed parameters and residuals.
     """
-    hlm = _gn_transform.get_helmert7(pt1=a.EST[["X", "Y", "Z"]].values, pt2=b.EST[["X", "Y", "Z"]].values)
-    b.iloc[:, :3] = _gn_transform.transform7(xyz_in=b.EST[["X", "Y", "Z"]].values, hlm_params=hlm[0])
+    hlm = _gn_transform.get_helmert7(pt1, pt2)
+    xyz_out = _gn_transform.transform7(xyz_in=pt2, hlm_params=hlm[0])
+    return xyz_out, hlm
+
+
+def sp3_hlm_trans(a: _pd.DataFrame, b: _pd.DataFrame, epochwise: bool = False) -> tuple[_pd.DataFrame, list]:
+    """
+    Rotates sp3_b into sp3_a.
+
+    :param DataFrame a: The sp3_a DataFrame.
+    :param DataFrame b : The sp3_b DataFrame.
+    :param bool epochwise: Epochwise HLM transformation.
+    :return tuple[pandas.DataFrame, list]: A tuple containing the updated sp3_b DataFrame and the HLM array with applied computed parameters and residuals.
+    """
+    hlm = []
+    if epochwise:
+        for epoch in b.index.get_level_values("J2000").unique():
+            b.loc[epoch, [("EST", "X"), ("EST", "Y"), ("EST", "Z")]], hlm_epoch = hlm_trans(
+                a.loc[epoch].EST[["X", "Y", "Z"]].values, b.loc[epoch].EST[["X", "Y", "Z"]].values
+            )
+            hlm.append(hlm_epoch)
+    else:
+        b.iloc[:, :3], hlm = hlm_trans(a.EST[["X", "Y", "Z"]].values, b.EST[["X", "Y", "Z"]].values)
+
+    b.attrs["HEADER"].HEAD.ORB_TYPE = "HLM"  # Update b's header to reflect Helmert transformation has been applied
     return b, hlm
+
+
+def transform_sp3(src_sp3: str, dest_sp3: str, transform_fn, *args, **kwargs):
+    """
+    Apply a transformation to an sp3 file, by reading the file from the given path, applying the supplied
+    transformation function and args, and writing out a new file to the path given.
+
+    :param str src_sp3: Path of the source SP3 file to read in.
+    :param str dest_sp3: Path to write out the new SP3 file to.
+    :param callable transform_fn: The transformation function to apply to the SP3 data once loaded. *args
+        and **kwargs following, are passed to this function.
+    """
+    logger.info(f"Reading file: " + str(src_sp3))
+    sp3_df = read_sp3(src_sp3)
+    transformed_df = transform_fn(sp3_df, *args, **kwargs)
+    write_sp3(transformed_df, dest_sp3)
+
+
+def trim_df(
+    sp3_df: _pd.DataFrame,
+    trim_start: timedelta = timedelta(),
+    trim_end: timedelta = timedelta(),
+    keep_first_delta_amount: Optional[timedelta] = None,
+):
+    """
+    Trim data from the start and end of an sp3 DataFrame
+
+    :param _pd.DataFrame sp3_df: The input SP3 DataFrame.
+    :param timedelta trim_start: Amount of time to trim off the start of the DataFrame.
+    :param timedelta trim_end: Amount of time to trim off the end of the DataFrame.
+    :param Optional[timedelta] keep_first_delta_amount: If supplied, trim the DataFrame to this length. Not
+        compatible with trim_start and trim_end.
+    :return _pd.DataFrame: DataFrame trimmed to the requested time range, or requested initial amount
+    """
+    time_axis = sp3_df.index.get_level_values(0)
+    # Work out the new time range that we care about
+    first_time = min(time_axis)
+    first_keep_time = first_time + trim_start.total_seconds()
+    last_time = max(time_axis)
+    last_keep_time = last_time - trim_end.total_seconds()
+
+    # Operating in mode of trimming from start, to start + x amount of time in. As opposed to trimming a delta from each end.
+    if keep_first_delta_amount is not None:
+        first_keep_time = first_time
+        last_keep_time = first_time + keep_first_delta_amount.total_seconds()
+        if trim_start.total_seconds() != 0 or trim_end.total_seconds() != 0:
+            raise ValueError("keep_first_delta_amount option is not compatible with start/end time options")
+
+    # Slice to the subset that we actually care about
+    trimmed_df = sp3_df.loc[first_keep_time:last_keep_time]
+    trimmed_df.index = trimmed_df.index.remove_unused_levels()
+    return trimmed_df
+
+
+def trim_to_first_n_epochs(
+    sp3_df: _pd.DataFrame,
+    epoch_count: int,
+    sp3_filename: Optional[str] = None,
+    sp3_sample_rate: Optional[timedelta] = None,
+) -> _pd.DataFrame:
+    """
+    Utility function to trim an SP3 DataFrame to the first n epochs, given either the filename, or sample rate
+
+    :param _pd.DataFrame sp3_df: The input SP3 DataFrame.
+    :param int epoch_count: Trim to this many epochs from start of SP3 data (i.e. first n epochs).
+    :param Optional[str] sp3_filename: Name of SP3 file, just used to derive sample_rate.
+    :param Optional[timedelta] sp3_sample_rate: Sample rate of the SP3 data. Alternatively this can be
+        derived from a filename.
+    :return _pd.DataFrame: DataFrame trimmed to the requested number of epochs.
+    """
+    sample_rate = sp3_sample_rate
+    if sample_rate is None:
+        if sp3_filename is None or len(sp3_filename) == 0:
+            raise ValueError("Either sp3_sample_rate or sp3_filename must be provided")
+        sample_rate = filenames.convert_nominal_span(
+            filenames.determine_properties_from_filename(sp3_filename)["sampling_rate"]
+        )
+
+    time_offset_from_start: timedelta = sample_rate * (epoch_count - 1)
+    return trim_df(sp3_df, keep_first_delta_amount=time_offset_from_start)
 
 
 # TODO: move to gn_diffaux.py (and other associated functions as well)?
 def diff_sp3_rac(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,
+    ref_frame: Literal["ECF", "ECI"] = "ECF",
     hlm_mode: Literal[None, "ECF", "ECI"] = None,
+    epochwise_hlm: bool = False,
     use_cubic_spline: bool = True,
+    use_offline_sat_removal: bool = False,
 ) -> _pd.DataFrame:
     """
     Computes the difference between the two sp3 files in the radial, along-track and cross-track coordinates.
 
-    :param DataFrame sp3_baseline: The baseline sp3 DataFrame.
-    :param DataFrame sp3_test: The test sp3 DataFrame.
-    :param string hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
-    :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation.
-    :return: The DataFrame containing the difference in RAC coordinates.
+    :param _pd.DataFrame sp3_baseline: The baseline sp3 DataFrame.
+    :param _pd.DataFrame sp3_test: The test sp3 DataFrame.
+    :param str hlm_mode: The mode for HLM transformation. Can be None, "ECF", or "ECI".
+    :param bool use_cubic_spline: Flag indicating whether to use cubic spline for velocity computation. Caution: cubic
+           spline interpolation does not tolerate NaN / nodata values. Consider enabling use_offline_sat_removal if
+           using cubic spline, or alternatively use poly interpolation by setting use_cubic_spline to False.
+    :param bool use_offline_sat_removal: Flag indicating whether to remove satellites which are offline / have some
+           nodata position values. Caution: ensure you turn this on if using cubic spline interpolation with data
+           which may have holes in it (nodata).
+    :return _pd.DataFrame: The DataFrame containing the difference in RAC coordinates.
     """
+    ref_frames = ["ECF", "ECI"]
+    if ref_frame not in ref_frames:
+        raise ValueError(f"Invalid ref_frame. Expected one of: {ref_frames}")
+
     hlm_modes = [None, "ECF", "ECI"]
     if hlm_mode not in hlm_modes:
         raise ValueError(f"Invalid hlm_mode. Expected one of: {hlm_modes}")
 
-    # Drop any duplicates in the index
-    sp3_baseline = sp3_baseline[~sp3_baseline.index.duplicated(keep="first")]
-    sp3_test = sp3_test[~sp3_test.index.duplicated(keep="first")]
+    sp3_baseline = clean_sp3_orb(sp3_baseline, use_offline_sat_removal)
+    sp3_test = clean_sp3_orb(sp3_test, use_offline_sat_removal)
+
+    if use_cubic_spline and not use_offline_sat_removal:
+        logger.warning(
+            "Caution: use_cubic_spline is enabled, but use_offline_sat_removal is not. If there are any nodata "
+            "position values, the cubic interpolator will crash!"
+        )
+
     # Ensure the test file is time-ordered so when we align the resulting dataframes will be time-ordered
     sp3_baseline = sp3_baseline.sort_index(axis="index", level="J2000")
     sp3_baseline, sp3_test = sp3_baseline.align(sp3_test, join="inner", axis=0)
 
+    # TODO Eugene: improve following code
     hlm = None  # init hlm var
     if hlm_mode == "ECF":
-        sp3_test, hlm = sp3_hlm_trans(sp3_baseline, sp3_test)
-    sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline)
-    sp3_test_eci = _gn_transform.ecef2eci(sp3_test)
-    if hlm_mode == "ECI":
-        sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci)
+        sp3_baseline_ecf = _gn_transform.eci2ecef(sp3_baseline) if ref_frame == "ECI" else sp3_baseline
+        sp3_test_ecf = _gn_transform.eci2ecef(sp3_test) if ref_frame == "ECI" else sp3_test
+        sp3_test_ecf, hlm = sp3_hlm_trans(sp3_baseline_ecf, sp3_test_ecf, epochwise_hlm)
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline_ecf)
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test_ecf)
+    elif hlm_mode == "ECI":
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline) if ref_frame == "ECF" else sp3_baseline
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test) if ref_frame == "ECF" else sp3_test
+        sp3_test_eci, hlm = sp3_hlm_trans(sp3_baseline_eci, sp3_test_eci, epochwise_hlm)
+    else:
+        sp3_baseline_eci = _gn_transform.ecef2eci(sp3_baseline) if ref_frame == "ECF" else sp3_baseline
+        sp3_test_eci = _gn_transform.ecef2eci(sp3_test) if ref_frame == "ECF" else sp3_test
 
     diff_eci = sp3_test_eci - sp3_baseline_eci
 
@@ -856,7 +1903,9 @@ def diff_sp3_rac(
     nd_rac = diff_eci.values[:, _np.newaxis] @ _gn_transform.eci2rac_rot(sp3_baseline_eci_vel)
     df_rac = _pd.DataFrame(
         nd_rac.reshape(-1, 3),
-        index=sp3_baseline.index,
+        index=sp3_baseline.index,  # Note that if the test and baseline have different SVs, this index will refer to
+        # data which is missing in the 'test' DataFrame (and so is likely to be missing in
+        # the diff too).
         columns=[["EST_RAC"] * 3, ["Radial", "Along-track", "Cross-track"]],
     )
 

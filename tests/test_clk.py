@@ -1,8 +1,5 @@
 from pyfakefs.fake_filesystem_unittest import TestCase
 
-import numpy as np
-import pandas as pd
-
 import gnssanalysis.gn_io.clk as clk
 import gnssanalysis.gn_diffaux as gn_diffaux
 
@@ -17,8 +14,10 @@ from test_datasets.clk_test_data import (
 class TestClk(TestCase):
     def setUp(self):
         self.setUpPyfakefs()
+        self.fs.reset()
 
     def test_clk_read(self):
+        self.fs.reset()
         file_paths = ["/fake/dir/file0.clk", "/fake/dir/file1.clk"]
         self.fs.create_file(file_paths[0], contents=input_data_igs)
         self.fs.create_file(file_paths[1], contents=input_data_gfz)
@@ -36,6 +35,7 @@ class TestClk(TestCase):
         self.assertEqual(clk_df_gfz["EST"].iloc[-1], -0.000610553573006, msg="Check last datapoint is correct")
 
     def test_compare_clk(self):
+        self.fs.reset()  # Reset pyfakefs to delete any files which may have persisted from a previous test
         file_paths = ["/fake/dir/file0.clk", "/fake/dir/file1.clk"]
         self.fs.create_file(file_paths[0], contents=input_data_igs)
         self.fs.create_file(file_paths[1], contents=input_data_gfz)

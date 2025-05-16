@@ -2,10 +2,61 @@ import logging as _logging
 import os as _os
 import sys as _sys
 import pathlib as _pathlib
+from time import perf_counter
 
 import click as _click
 
 from typing import List, Union
+
+from gnssanalysis.enum_meta_properties import EnumMetaProperties
+
+
+class StrictMode(metaclass=EnumMetaProperties):
+    name: str
+    long_name: str
+
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
+
+
+class STRICT_OFF(StrictMode):
+    """
+    Strict mode: off
+    """
+
+    name = "OFF"
+    long_name = "Strict mode: off"
+
+
+class STRICT_WARN(StrictMode):
+    """
+    Strict mode: warn
+    """
+
+    name = "WARN"
+    long_name = "Strict mode: warn"
+
+
+class STRICT_RAISE(StrictMode):
+    """
+    Strict mode: raise
+    """
+
+    name = "RAISE"
+    long_name = "Strict mode: raise"
+
+
+class StrictModes(metaclass=EnumMetaProperties):
+    """
+    Defines all strict mode settings
+    """
+
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
+
+    STRICT_OFF = STRICT_OFF  # Strict mode off
+    STRICT_WARN = STRICT_WARN  # Strict mode warn
+    STRICT_RAISE = STRICT_RAISE  # Strict mode warn
 
 
 def diffutil_verify_input(input):
@@ -24,6 +75,7 @@ def diffutil_verify_input(input):
 
 def diffutil_verify_status(status, passthrough):
     if status:
+        # TODO type of 'status' and 'passthrough' here is a bit unclear, so it's hard to make the checks more explicit
         if not passthrough:
             _logging.error(msg=f":diffutil failed. Calling sys.exit\n")
             _sys.exit(status)
@@ -466,7 +518,7 @@ def log2snx(logglob, rnxglob, outfile, frame_snx, frame_dis, frame_psd, datetime
     from .gn_io import igslog
 
     if isinstance(rnxglob, list):
-        if (len(rnxglob) == 1) & (
+        if (len(rnxglob) == 1) and (
             rnxglob[0].find("*") != -1
         ):  # it's rnx_glob expression (may be better to check if star is present)
             rnxglob = rnxglob[0]
@@ -657,6 +709,7 @@ def orbq(
         satellite_data = conv_to_m(rms_df).to_json(orient=json_format, index=index)
         constellation_data = conv_to_m(rms_df.attrs["summary"]).to_json(orient=json_format, index=index)
 
+    # TODO work out the types of these, in order to make these checks more explicit
     if satellite:
         output_data.append(satellite_data)
     if constellation:
@@ -813,6 +866,8 @@ def clkq(
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux, gn_const
 
+    # TODO work out the types of these parameters and apply more robust equality checks
+
     logger = configure_logging(verbose=verbose, output_logger=True)
 
     clk_a, clk_b = gn_io.clk.read_clk(input_clk_paths[0]), gn_io.clk.read_clk(input_clk_paths[1])
@@ -871,3 +926,63 @@ def clkq(
             out_file.writelines(output_str)
     else:
         print(output_str)
+
+
+def trim_line_ends(content: str) -> str:
+    """
+    Utility to strip trailing whitespace from all lines given.
+    This is useful as for example, the SP3 spec doesn't stipulate whether lines should have trailing whitespace or not,
+    and implementations vary.
+
+    :param str content: input string to strip
+    :return str: string with trailing (only, not leading) whitespace removed from each line
+    """
+    return "\n".join([line.rstrip() for line in content.split("\n")])
+
+
+class ContextTimer:
+    """
+    Utility for measuring function execution time (e.g. for manually profiling which unit tests are taking
+    excessive time).
+    Call this as a context manager, e.g. (following are default values, apart from name)
+    with ContextTimer(print_time=True, name="func name", flag_if_over_sec=1.0, skip_if_under_sec=0.01) as timer:
+        some_function_to_time()
+    Based on https://stackoverflow.com/a/69156219
+    """
+
+    def __init__(self, **kwargs):
+        if kwargs is not None:
+            if "print_time" in kwargs:
+                self.print_time = bool(kwargs["print_time"])
+            else:
+                self.print_time = True
+
+            if "name" in kwargs:
+                self.name = str(kwargs["name"])
+            else:
+                self.name = None
+
+            if "flag_if_over_sec" in kwargs:
+                self.flag_if_over_sec = float(kwargs["flag_if_over_sec"])
+            else:
+                self.flag_if_over_sec = 1.0
+
+            if "skip_if_under_sec" in kwargs:
+                self.skip_if_under_sec = float(kwargs["skip_if_under_sec"])
+            else:
+                self.skip_if_under_sec = 0.01
+
+    def __enter__(self):
+        self.start = perf_counter()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.time = perf_counter() - self.start
+        if self.skip_if_under_sec and self.time < self.skip_if_under_sec:  # Do skip?
+            return
+        do_flag = self.flag_if_over_sec and self.time > self.flag_if_over_sec
+        self.readout = (
+            f"{'SLOW!! ' if do_flag else ''}{self.time:.3f} sec elapsed{f' for {self.name}' if self.name else ''}"
+        )
+        if self.print_time:
+            print(self.readout)
