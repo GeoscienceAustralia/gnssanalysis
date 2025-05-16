@@ -54,7 +54,9 @@ def get_frame_of_day(
     elif isinstance(itrf_path_or_df, str):
         output = _gn_io.sinex._get_snx_vector_gzchunks(filename=itrf_path_or_df, block_name="SOLUTION/ESTIMATE")
         if output is None:
-            raise Exception(f"Output from _get_snx_vector_gzchunks() was None! Filepath: {itrf_path_or_df}")
+            raise Exception(
+                f"Failed to extract SOLUTION/ESTIMATE from Sinex. Check that file was valid: {itrf_path_or_df}"
+            )
     else:
         raise ValueError(f"itrf_path_or_df must be a pandas DataFrame or str, got: {type(itrf_path_or_df)}")
 
