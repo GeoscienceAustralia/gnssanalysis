@@ -346,8 +346,10 @@ class TestSP3(unittest.TestCase):
         )
 
         # There should be duplicates of each sat in the first epoch
+        # Note: syntax of loc here uses a tuple describing levels within the row MultiIndex, then column MultiIndex,
+        # i.e. (row, row), (column, column).
         self.assertTrue(
-            np.array_equal(sp3_df.loc[774619200, "G01"]["EST"]["X"].values, [4510.358405, 4510.358405]),
+            np.array_equal(sp3_df.loc[(774619200, "G01"), ("EST", "X")].values, [4510.358405, 4510.358405]),
             "Expect dupe in first epoch",
         )
 
@@ -369,14 +371,10 @@ class TestSP3(unittest.TestCase):
 
         # Now check with offline sat removal enabled too
         sp3_df_with_offline_removal = sp3.clean_sp3_orb(sp3_df, True)
+        # Check that we still seem to have one epoch with no dupe sats, and now with the offline sat removed
         self.assertTrue(
             np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
-            "With offline sat removal off, expect offline sat to be gone",
-        )
-        # Check that we still seen to have one epoch with no dupe sats
-        self.assertTrue(
-            np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
-            "After cleaning there should be no dupe PRNs",
+            "After cleaning there should be no dupe PRNs (and with offline removal, offline sat should be gone)",
         )
 
     def test_gen_sp3_fundamentals(self):
