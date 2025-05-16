@@ -1,6 +1,7 @@
 """frame of day generation module"""
+
 import logging
-from typing import Union as _Union
+from typing import Union
 
 import numpy as _np
 import pandas as _pd
@@ -16,7 +17,7 @@ def _get_core_list(core_list_path):
     # need to check if solution numbers are consistent with discontinuities selection
     core_df = _pd.read_csv(
         core_list_path,
-        delim_whitespace=True,
+        sep="\\s+",  # delim_whitespace is deprecated
         skiprows=4,
         comment="-",
         usecols=[0, 1, 2, 3],
@@ -27,14 +28,14 @@ def _get_core_list(core_list_path):
 
 def get_frame_of_day(
     date_or_j2000,
-    itrf_path_or_df: _Union[_pd.DataFrame, str],
-    discon_path_or_df: _Union[_pd.DataFrame, str],
-    psd_path_or_df: _Union[None, _pd.DataFrame, str] = None,
-    list_path_or_df: _Union[None, _pd.DataFrame, str, _np.ndarray] = None,
+    itrf_path_or_df: Union[_pd.DataFrame, str],
+    discon_path_or_df: Union[_pd.DataFrame, str],
+    psd_path_or_df: Union[None, _pd.DataFrame, str] = None,
+    list_path_or_df: Union[None, _pd.DataFrame, str, _np.ndarray] = None,
 ):
     """Main function to propagate frame into datetime of interest"""
 
-    if isinstance(date_or_j2000, (int, _np.int64)):
+    if isinstance(date_or_j2000, (int, _np.int64)):  # TODO check: np.int64 is meant to be a class not a type
         date_J2000 = date_or_j2000
     else:
         date_J2000 = _gn_datetime.datetime2j2000(_np.datetime64(date_or_j2000))
@@ -52,6 +53,8 @@ def get_frame_of_day(
         output = itrf_path_or_df
     elif isinstance(itrf_path_or_df, str):
         output = _gn_io.sinex._get_snx_vector_gzchunks(filename=itrf_path_or_df, block_name="SOLUTION/ESTIMATE")
+        if output is None:
+            raise Exception(f"Output from _get_snx_vector_gzchunks() was None! Filepath: {itrf_path_or_df}")
     else:
         raise ValueError(f"itrf_path_or_df must be a pandas DataFrame or str, got: {type(itrf_path_or_df)}")
 
@@ -83,7 +86,7 @@ def get_frame_of_day(
         elif isinstance(list_path_or_df, str):
             core_df = _get_core_list(list_path_or_df)
             core_list = core_df.CODE.values
-        elif isinstance(list_path_or_df, _np.ndarray) or isinstance(list_path_or_df, list):
+        elif isinstance(list_path_or_df, (_np.ndarray, list)):
             core_list = list_path_or_df
         else:
             raise ValueError(

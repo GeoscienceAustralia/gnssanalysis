@@ -6,7 +6,7 @@ import os as _os
 import re as _re
 import zlib as _zlib
 from io import BytesIO as _BytesIO
-from typing import Any as _Any
+from typing import Any as _Any, Union
 from typing import Dict as _Dict
 from typing import Iterable as _Iterable
 from typing import List as _List
@@ -27,18 +27,22 @@ _RE_STATISTICS = _re.compile(r"^[ ]([A-Z (-]+[A-Z)])[ ]+([\d+\.]+)", _re.MULTILI
 def _get_snx_header(path_or_bytes):
     # Helper for error logging
     def file_desc(pb) -> str:
-        return "Source file: unknown (passed as bytes)" if isinstance(path_or_bytes, bytes) else "Source file: "+str(path_or_bytes)
-    
+        return (
+            "Source file: unknown (passed as bytes)"
+            if isinstance(path_or_bytes, bytes)
+            else "Source file: " + str(path_or_bytes)
+        )
+
     # read line that starts with %=SNX and parse it into dict
     snx_bytes = _gn_io.common.path2bytes(path_or_bytes)
     header_begin = snx_bytes.find(b"%=SNX")
-    if (header_begin == -1):
+    if header_begin == -1:
         raise ValueError("Sinex header missing!", file_desc(path_or_bytes))
     header_end = snx_bytes.find(b"\n", header_begin)
     if header_end == -1:
         raise ValueError("Sinex header found but wasn't newline terminated (end unclear)", file_desc(path_or_bytes))
     snx_hline = snx_bytes[header_begin:header_end].decode()
-    if len(snx_hline) == 0: # Raise an inteligible error if the Sinex header is effectively empty.
+    if len(snx_hline) == 0:  # Raise an inteligible error if the Sinex header is effectively empty.
         raise ValueError(f"Sinex header found, but empty!", file_desc(path_or_bytes))
     dates = _gn_datetime.yydoysec2datetime([snx_hline[15:27], snx_hline[32:44], snx_hline[45:57]]).tolist()
     return {
@@ -91,7 +95,7 @@ def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _
             header_line,
             _re.VERBOSE,
         )
-        if match:
+        if match is not None:
             header_dict = match.groupdict()
             header_dict["creation_time"] = _gn_datetime.snx_time_to_pydatetime(header_dict["creation_time"])
             header_dict["start_epoch"] = _gn_datetime.snx_time_to_pydatetime(header_dict["start_epoch"])
@@ -319,11 +323,11 @@ def snx_soln_int_to_str(soln: _pd.Series, nan_as_dash=True) -> _pd.Series:
     return soln_str
 
 
-def _get_valid_stypes(stypes):
+def _get_valid_stypes(stypes: Union[list[str], set[str]]) -> _List[str]:
     """Returns only stypes in allowed list
     Fastest if stypes size is small"""
     allowed_stypes = ["EST", "APR", "NEQ"]
-    stypes = set(stypes) if not isinstance(stypes, set) else stypes
+    stypes = set(stypes) if not isinstance(stypes, set) else stypes  # Convert to set if not one.
     ok_stypes = sorted(stypes.intersection(allowed_stypes), key=allowed_stypes.index)  # need EST to always be first
     if len(ok_stypes) != len(stypes):
         not_ok_stypes = stypes.difference(allowed_stypes)
@@ -432,7 +436,7 @@ def get_variance_factor(path_or_bytes):
             return wsqsum / (float(stat_dict["NUMBER OF OBSERVATIONS"]) - float(stat_dict["NUMBER OF UNKNOWNS"]))
 
 
-def _get_snx_matrix(path_or_bytes, stypes=("APR", "EST"), verbose=True, snx_header = {}):
+def _get_snx_matrix(path_or_bytes, stypes=("APR", "EST"), verbose=True, snx_header={}):
     """
     stypes = "APR","EST","NEQ"
     APRIORI, ESTIMATE, NORMAL_EQUATION
@@ -449,7 +453,7 @@ def _get_snx_matrix(path_or_bytes, stypes=("APR", "EST"), verbose=True, snx_head
 
     if snx_header == {}:
         snx_header = _get_snx_header(snx_bytes)
-    n_elements = snx_header['n_estimates']
+    n_elements = snx_header["n_estimates"]
 
     extracted = _snx_extract(snx_bytes=snx_bytes, stypes=stypes, obj_type="MATRIX", verbose=verbose)
     if extracted is not None:
@@ -457,7 +461,7 @@ def _get_snx_matrix(path_or_bytes, stypes=("APR", "EST"), verbose=True, snx_head
     else:
         return None  # not found
 
-    matrix_raw = _pd.read_csv(snx_buffer, delim_whitespace=True, dtype={0: _np.int16, 1: _np.int16})
+    matrix_raw = _pd.read_csv(snx_buffer, sep="\\s+", dtype={0: _np.int16, 1: _np.int16})
     # can be 4 and 5 columns; only 2 first int16
 
     output = []
@@ -504,20 +508,20 @@ def snxdf2xyzdf(snx_df: _pd.DataFrame, unstack: bool = True, keep_all_soln: _Uni
 
     if unstack:
         # Unstack can technically return a Series but we know it won't in this case and so skip type checking
-        out_df: _pd.DataFrame = out_df.unstack(0) # type: ignore
+        out_df: _pd.DataFrame = out_df.unstack(0)  # type: ignore
         out_df.attrs = snx_df.attrs  # unstacking drops all attrs so we copy over from input
     return out_df
 
 
 def _get_snx_vector(
     path_or_bytes: _Union[str, bytes],
-    stypes: tuple = ("EST", "APR"),
+    stypes: Union[set[str], list[str]] = set(["EST", "APR"]),
     format: str = "long",
     keep_all_soln: _Union[bool, None] = None,
     verbose: bool = True,
     recenter_epochs: bool = False,
     snx_header: dict = {},
-) -> _pd.DataFrame:
+) -> Union[_pd.DataFrame, None]:
     """Main function of reading vector data from sinex file. Doesn't support sinex files from EMR AC as APRIORI and ESTIMATE indices are not in sync (APRIORI params might not even exist in he ESTIMATE block). While will parse the file, the alignment of EST and APR values might be wrong. No easy solution was found for the issue thus unsupported for now. TODO parse header and add a warning if EMR agency
 
     Args:
@@ -533,25 +537,37 @@ def _get_snx_vector(
         NotImplementedError: for the unknown format option
 
     Returns:
-        _pd.DataFrame: a dataframe of sine vector block/blocks
+        _pd.DataFrame: a dataframe of sine vector block/blocks, or None if Sinex extraction fails
     """
 
     path = None
     if isinstance(path_or_bytes, str):
         path = path_or_bytes
         snx_bytes = _gn_io.common.path2bytes(path)
+    # Very weird code path, should be removed if possible
     elif isinstance(path_or_bytes, list):
+        _logging.error(
+            f"path_or_bytes was a list! Using legacy code path. Please update this! Input values: {path_or_bytes}"
+        )
         path, stypes, format, verbose = path_or_bytes
         snx_bytes = _gn_io.common.path2bytes(path)
-    else:
+    elif isinstance(path_or_bytes, bytes):
         snx_bytes = path_or_bytes
+    else:
+        raise ValueError(f"Unexpected type for path_or_bytes: {type(path_or_bytes)}. Value: {path_or_bytes}")
 
     if snx_header == {}:
-        snx_header = _get_snx_header(snx_bytes) # Should potentially be inside a more general function but in this case we only need to give this function header dict as input
-    if snx_header['ac_data_prov'] == 'EMR':
-        _logging.warning("Indices are likely inconsistent between ESTIMATE and APRIORI in the EMR AC files hence files might be parsed incorrectly")
+        snx_header = _get_snx_header(
+            snx_bytes
+        )  # Should potentially be inside a more general function but in this case we only need to give this function header dict as input
+    if snx_header["ac_data_prov"] == "EMR":
+        _logging.warning(
+            "Indices are likely inconsistent between ESTIMATE and APRIORI in the EMR AC files hence files might be parsed incorrectly"
+        )
 
+    _logging.info(f"Passing stypes through SType validator: {stypes}. Input path if available: {path}")
     stypes = _get_valid_stypes(stypes)  # EST is always first as APR may have skips
+    _logging.info(f"STypes after validator: {stypes}. Input path if available: {path}")
 
     extracted = _snx_extract(snx_bytes=snx_bytes, stypes=stypes, obj_type="VECTOR", verbose=verbose)
     if extracted is None:
@@ -598,12 +614,12 @@ def _get_snx_vector(
 
     if vector_raw.PT.hasnans:
         _logging.warning("Missing values in Sinex PT (point) column. Will default to 'A'")
-        
+
     # Merge CODE and PT columns, filling missing values in PT column with 'A'. Reasoning:
     # - PT (point) column specifies the mount point identifier on a given monument(? receiver / station).
     # - Points are named starting with 'A'. If no point is specified, we assume this monument(?) only has a single
     #   point, so we default its identifier to 'A'.
-    vector_raw["CODE_PT"] = vector_raw.CODE.values + "_" + vector_raw.PT.fillna('A').values
+    vector_raw["CODE_PT"] = vector_raw.CODE.values + "_" + vector_raw.PT.fillna("A").values
     vector_raw.drop(["CODE", "PT"], axis="columns", inplace=True)
     vector_raw.REF_EPOCH = _gn_datetime.yydoysec2datetime(vector_raw.REF_EPOCH, recenter=recenter_epochs, as_j2000=True)
     vector_raw.SOLN = snx_soln_str_to_int(vector_raw.SOLN)
@@ -652,7 +668,9 @@ def _matrix_raw2square(matrix_raw, stypes_form, n_elements=None):
 
 def _unc_snx_neq(path_or_bytes):
     snx_header = _get_snx_header(path_or_bytes=path_or_bytes)
-    vector = _get_snx_vector(path_or_bytes=path_or_bytes, stypes=("APR", "EST", "NEQ"), snx_header=snx_header, verbose=False)
+    vector = _get_snx_vector(
+        path_or_bytes=path_or_bytes, stypes=("APR", "EST", "NEQ"), snx_header=snx_header, verbose=False
+    )
     matrix = _get_snx_matrix(path_or_bytes=path_or_bytes, stypes=["NEQ"], snx_header=snx_header, verbose=False)
 
     assert matrix is not None
@@ -667,9 +685,7 @@ def _unc_snx_neq(path_or_bytes):
 def _unc_snx_cova(path_or_bytes):
     snx_header = _get_snx_header(path_or_bytes=path_or_bytes)
     vector = _get_snx_vector(path_or_bytes=path_or_bytes, stypes=("APR", "EST"), snx_header=snx_header, verbose=False)
-    matrix = _get_snx_matrix(
-        path_or_bytes=path_or_bytes, stypes=("APR", "EST"), snx_header=snx_header, verbose=False
-    )
+    matrix = _get_snx_matrix(path_or_bytes=path_or_bytes, stypes=("APR", "EST"), snx_header=snx_header, verbose=False)
     assert matrix is not None
     aprm = matrix[0][0]
     estm = matrix[0][1]
@@ -722,7 +738,7 @@ def _read_snx_solution(path_or_bytes, recenter_epochs=False):
 #     # return _pd.concat(data, axis=0).pivot(index=['CODE','TYPE'],columns='REF_EPOCH').T
 
 
-def _get_snx_vector_gzchunks(filename, block_name="SOLUTION/ESTIMATE", size_lookback=100, format="raw"):
+def _get_snx_vector_gzchunks(filename: str, block_name="SOLUTION/ESTIMATE", size_lookback=100, format="raw"):
     """extract block from a large gzipped sinex file e.g. ITRF2014 sinex"""
     block_open = False
     block_bytes = b""
@@ -755,7 +771,7 @@ def _get_snx_vector_gzchunks(filename, block_name="SOLUTION/ESTIMATE", size_look
                     stop = True
             i += 1
 
-    return _get_snx_vector(path_or_bytes=block_bytes, stypes=["EST"], format=format)
+    return _get_snx_vector(path_or_bytes=block_bytes, stypes=set(["EST"]), format=format)
 
 
 def _get_snx_id(path):
@@ -837,7 +853,7 @@ def llh2snxdms(llh):
     ll_stack = _pd.concat([llh_degminsec_df.LON, llh_degminsec_df.LAT], axis=0)
     ll_stack = ll_stack.D.str.rjust(4).values + ll_stack.M.str.rjust(3).values + ll_stack.S.str.rjust(5).values
     buf = ll_stack[:n_rows] + ll_stack[n_rows:] + llh_degminsec_df.HEI.str.rjust(8).values
-
+    # The following is a Numpy OR operator (not a standard Python bitwise OR):
     buf[(height > 8000) | (height < -2000)] = " 000 00 00.0  00 00 00.0   000.0"  # | zero_mask
     return buf
 

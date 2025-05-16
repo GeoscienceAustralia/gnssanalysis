@@ -1,4 +1,5 @@
 """TRACE file parser. Note the separate functions for values and residuals"""
+
 import logging as _logging
 import os as _os
 import re as _re
@@ -45,10 +46,10 @@ def _read_trace_states(path_or_bytes, throw_if_nans=False):
 
     if states is None:
         return None
-    
+
     if throw_if_nans:
         _gn_aux.throw_if_nans(states)
-    
+
     df = _pd.read_csv(
         _BytesIO(states),
         delimiter="\t",
@@ -88,7 +89,7 @@ def _read_trace_residuals(path_or_bytes, it_max_only=True, throw_if_nans=False):
 
     if residuals is None:
         return None
-    
+
     if throw_if_nans:
         _gn_aux.throw_if_nans(residuals)
 
@@ -167,12 +168,12 @@ def _find_trace(output_path: str) -> tuple:
 #     LC_bytes = b''.join(trace_LC_list)
 #     LC_bytes = LC_bytes.replace(b'=',b'') #getting rif of '='
 
-#     df_LC = _pd.read_csv(_BytesIO(LC_bytes),delim_whitespace=True,header=None,usecols=[1,2,4,6,8,9,10,11,12,13]).astype(
+#     df_LC = _pd.read_csv(_BytesIO(LC_bytes),sep="\\s+",header=None,usecols=[1,2,4,6,8,9,10,11,12,13]).astype(
 #         {
 #             1: _np.int16, 2:_np.int32, 4: '<U3',
 #             6: '<U1', 8: '<U4',
-#             9: _np.float_, 10: '<U4', 11: _np.float_,
-#             12: '<U4', 13: _np.float_
+#             9: _np.float64, 10: '<U4', 11: _np.float64,
+#             12: '<U4', 13: _np.float64
 #         })
 
 #     df_LC.columns = ['W','S','PRN','LP',8,9,10,11,12,13]

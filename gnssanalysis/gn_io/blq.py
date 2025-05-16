@@ -28,7 +28,7 @@ def read_blq(path, as_complex=True):
     sites = blq_file_read[:, 0].astype("<U4")
     constituents = ["M2", "S2", "N2", "K2", "K1", "O1", "P1", "Q1", "MF", "MM", "SSA"]
 
-    blq_df = _pd.read_csv(_BytesIO(b"\n".join(blq_file_read[:, 1:].reshape((-1)))), delim_whitespace=True, header=None)
+    blq_df = _pd.read_csv(_BytesIO(b"\n".join(blq_file_read[:, 1:].reshape((-1)))), sep="\\s+", header=None)
     if as_complex:
         # convert extracted A and P to complex phasors X + jY so the comparison of several blq files could be done
         b = blq_df.values.reshape(-1, 11 * 3)

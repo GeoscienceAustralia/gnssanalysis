@@ -349,7 +349,7 @@ def nominal_span_string(span_seconds: float) -> str:
     # That is, if a span is longer than a day, then we will ignore any deviation from an
     # integer day that is smaller than an hour. But a time of 2 days, 3 hours and 30
     # minutes will be reported as 27 hours.
-    # If this would result in more than 99 periods, we return the 00U invalid code instead.
+    # If this would result in a value above 99 in the determined unit, we return the 00U invalid code instead.
     # We ignore months, because they're a little weird and not overly helpful.
     if span_seconds >= sec_in_year:
         if (span_seconds % sec_in_year) < gn_const.SEC_IN_WEEK:
@@ -407,21 +407,20 @@ def convert_nominal_span(nominal_span: str) -> datetime.timedelta:
     """
     span = int(nominal_span[0:2])
     unit = nominal_span[2].upper()
-    if unit == "S":
-        return datetime.timedelta(seconds=span)
-    elif unit == "M":
-        return datetime.timedelta(minutes=span)
-    elif unit == "H":
-        return datetime.timedelta(hours=span)
-    elif unit == "D":
-        return datetime.timedelta(days=span)
-    elif unit == "W":
-        return datetime.timedelta(weeks=span)
-    elif unit == "L":
-        return datetime.timedelta(days=span * 28)
-    elif unit == "Y":
-        return datetime.timedelta(days=span * 365)
-    else:
+    unit_to_timedelta_args = {
+        "S": {"seconds": 1},
+        "M": {"minutes": 1},
+        "H": {"hours": 1},
+        "D": {"days": 1},
+        "W": {"weeks": 1},
+        "L": {"days": 28},
+        "Y": {"days": 365},
+    }
+    try:
+        timedelta_args = unit_to_timedelta_args[unit]
+        return datetime.timedelta(**{k: v * span for k, v in timedelta_args.items()})
+    except KeyError:
+        logging.warning("Time unit '%s' not understood", unit)
         return datetime.timedelta()
 
 
@@ -591,10 +590,10 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         if "SOLUTION/EPOCHS" in snx_blocks:
             with open(file_path, mode="rb") as f:
                 blk = gn_io.sinex._snx_extract_blk(f.read(), "SOLUTION/EPOCHS")
-            if blk:
+            if blk is not None:
                 soln_df = pd.read_csv(
                     io.BytesIO(blk[0]),
-                    delim_whitespace=True,
+                    sep="\\s+",  # delim_whitespace is deprecated
                     comment="*",
                     names=["CODE", "PT", "SOLN", "T", "START_EPOCH", "END_EPOCH", "MEAN_EPOCH"],
                     converters={
@@ -726,7 +725,7 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
         basename,
         re.VERBOSE,
     )
-    if long_match:
+    if long_match is not None:
         return {
             "analysis_center": long_match["analysis_center"].upper(),
             "content_type": long_match["content_type"].upper(),
@@ -748,6 +747,8 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
             "project": long_match["project"],
         }
     else:
+        # TODO we could add support for raising an exception in this case, if a long filename was expected. This
+        # could include use of StrictMode
         logging.captureWarnings(True)  # Probably unnecessary, but for safety's sake...
         warnings.warn(
             "(Via warnings system) Extracting long filename properties (via regex) failed. "

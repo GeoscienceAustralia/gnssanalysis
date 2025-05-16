@@ -1,6 +1,7 @@
 boto3
 click
 hatanaka
+jinja2
 matplotlib
 numpy
 pandas

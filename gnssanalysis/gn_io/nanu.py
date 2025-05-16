@@ -53,7 +53,7 @@ def read_nanu(path_or_bytes: _Union[str, bytes]) -> dict:
     :param _Union[str, bytes] path_or_bytes: path to nanu file or a bytes object
     :return dict: nanu values with parameter names as keys
     """
-    nanu_bytes = _gn_io.common.path2bytes(path=path_or_bytes)
+    nanu_bytes = _gn_io.common.path2bytes(path_or_bytes)
     output_dict = {}
     output_dict["FILEPATH"] = path_or_bytes  # TODO change to pathlib
     output_dict["NANU ID"] = nanu_path_to_id(path_or_bytes)
@@ -131,14 +131,13 @@ def get_bad_sv_from_nanu_df(
     nd.fill(_np.timedelta64("nat"))
     nd[na_time_mask] = hhmm[:, 0].astype("timedelta64[h]") + hhmm[:, 1].astype("timedelta64[m]")
 
-    dt_df = _pd.concat([df.drop(labels=columns_date + columns_time, axis=1), dates + nd], axis=1)
+    dt_df = _pd.concat([df.drop(labels=columns_date, axis=1), dates], axis=1)
 
     events_already_started = (
-        (dt_df["START CALENDAR DATE"] < (up_to_epoch_datetime64 + offset_days))
+        (dt_df["START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
         | (dt_df["UNUSABLE START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
         | (dt_df["LAUNCH START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
     )
-
     dt_valid_df = dt_df[events_already_started]
 
     prns_last_nanu_to_date = dt_valid_df.PRN.astype(float).drop_duplicates(keep="last").index
@@ -148,7 +147,7 @@ def get_bad_sv_from_nanu_df(
     # Filter maneuver related NANU messages down to those with an end date in the future, or no end date at all:
     last_selected = all_the_last_msgs[
         (
-            (all_the_last_msgs["STOP CALENDAR DATE"] > up_to_epoch_datetime64)
+            (all_the_last_msgs["STOP CALENDAR DATE"] >= up_to_epoch_datetime64)
             | all_the_last_msgs["STOP CALENDAR DATE"].isna()
         )
         & (all_the_last_msgs["NANU TYPE"] != "USABINIT")

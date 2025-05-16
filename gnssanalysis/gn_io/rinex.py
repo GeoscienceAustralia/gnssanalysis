@@ -19,12 +19,16 @@ def _read_rnx(rnx_path):
     Assumes that rinex had been previously Hatanaka decompressed"""
     rnx_content = _gn_io.common.path2bytes(str(rnx_path))
     header_bytes, header_marker, data_bytes = rnx_content.partition(b"END OF HEADER\n")
-    if not data_bytes:
+    if len(data_bytes) == 0:
         _logging.warning(f"Failed to find end of header in RINEX {rnx_path}, file may be non-compliant.")
         data_bytes = header_bytes
 
     signal_header_marker = b"SYS / # / OBS TYPES"
-    signal_lines = (line.removesuffix(signal_header_marker).decode() for line in header_bytes.splitlines() if line.endswith(signal_header_marker))
+    signal_lines = (
+        line.removesuffix(signal_header_marker).decode()
+        for line in header_bytes.splitlines()
+        if line.endswith(signal_header_marker)
+    )
     constellation_signals = {}
     constellation_code = ""
     for line in signal_lines:
@@ -32,7 +36,7 @@ def _read_rnx(rnx_path):
             constellation_code, signal_count, *signal_identifiers = line.split()
             constellation_signals[constellation_code] = (int(signal_count), signal_identifiers)
         else:
-            if not constellation_code:
+            if len(constellation_code) == 0:
                 _logging.warning(f"Found signal line in header without preceding constellation code: {line}")
             else:
                 constellation_signals.get(constellation_code, (0, []))[1].extend(line.split())
@@ -42,8 +46,10 @@ def _read_rnx(rnx_path):
         identifier_count = len(signal_identifiers)
         maximum_columns = max(maximum_columns, identifier_count)
         if signal_count != identifier_count:
-            _logging.warning(f"Disagreement in signal count for constellation {code}, reported {signal_count} signals"
-                             f", found {identifier_count}: {signal_identifiers}")
+            _logging.warning(
+                f"Disagreement in signal count for constellation {code}, reported {signal_count} signals"
+                f", found {identifier_count}: {signal_identifiers}"
+            )
             constellation_signals[code][0] = identifier_count
 
     data_blocks = _np.asarray(_RE_RNX.findall(string=data_bytes))
@@ -51,7 +57,9 @@ def _read_rnx(rnx_path):
     data_record_blocks = data_blocks[:, 1]
     record_counts = _np.char.count(data_record_blocks, b"\n")
 
-    dates_as_datetimes = _pd.to_datetime(_pd.Series(dates).str.slice(1, 20).values.astype(str), format=r"%Y %m %d %H %M %S")
+    dates_as_datetimes = _pd.to_datetime(
+        _pd.Series(dates).str.slice(1, 20).values.astype(str), format=r"%Y %m %d %H %M %S"
+    )
     datetime_index = _np.repeat(_gn_datetime.datetime2j2000(dates_as_datetimes), repeats=record_counts)
 
     data_records = _pd.Series(_np.concatenate(_np.char.splitlines(data_record_blocks)))

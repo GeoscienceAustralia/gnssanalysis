@@ -1,4 +1,5 @@
 """RINEX CLK file parsing function"""
+
 import logging as _logging
 import re as _re
 from io import BytesIO as _BytesIO
@@ -21,7 +22,7 @@ def read_clk(clk_path):
 
     data = content[data_b:]
     data_line = _RE_LINE.search(data)
-    assert data_line is not None
+    assert data_line is not None, "CLK data not parsable - file could be empty"
 
     len_line = len(data_line.groups()[0])  # need to get a line and check the length
 
@@ -33,7 +34,7 @@ def read_clk(clk_path):
 
     clk_df = _pd.read_csv(
         _BytesIO(data),
-        delim_whitespace=True,
+        sep="\\s+",  # delim_whitespace is deprecated
         header=None,
         usecols=clk_cols,
         names=clk_names,  # type:ignore
@@ -45,9 +46,9 @@ def read_clk(clk_path):
             "D": _np.uint16,
             "h": _np.int32,
             "m": _np.int32,
-            "s": _np.float_,
-            "EST": _np.float_,
-            "STD": _np.float_,
+            "s": _np.float64,
+            "EST": _np.float64,
+            "STD": _np.float64,
         },
         na_values=["NAN", "-NAN"],
     )
@@ -69,11 +70,22 @@ def read_clk(clk_path):
     return clk_df
 
 
-def get_AS_entries(clk_df: _pd.DataFrame) -> _pd.Series:
-    """fastest method to grab a specific category!, same as clk_df.EST.loc['AS'] but >6 times faster"""
-    AS_cat_code = clk_df.index.levels[0].categories.get_loc("AS")
-    mask = clk_df.index.codes[0] == AS_cat_code
-    return _pd.Series(data=clk_df.values[:, 0][mask], index=clk_df.index.droplevel(0)[mask])
+def get_sv_clocks(clk_df: _pd.DataFrame) -> _pd.Series:
+    """Retrieve satellite clocks from a CLK or SP3 dataframe
+
+    :param _pd.DataFrame clk_df: CLK or SP3 dataframe where to retreive satellite clocks from
+    :raises IndexError: Raise error if the dataframe is not indexed correctly
+    :return _pd.Series: Retrieved satellite clocks
+    """
+    if clk_df.index.names == ['A', 'J2000', 'CODE']:
+        # fastest method to grab a specific category!, same as clk_df.EST.loc['AS'] but >6 times faster
+        AS_cat_code = clk_df.index.levels[0].categories.get_loc("AS")
+        mask = clk_df.index.codes[0] == AS_cat_code
+        return _pd.Series(data=clk_df.values[:, 0][mask], index=clk_df.index.droplevel(0)[mask])
+    elif clk_df.index.names == ['J2000', 'PRN']:
+        return _pd.Series(data=clk_df[("EST", "CLK")].values, index=clk_df.index)
+    else:
+        raise IndexError("Incorrect index names of dataframe")
 
 
 def rm_epoch_gnss_bias(clk_df_unst: _pd.DataFrame):

@@ -1,6 +1,23 @@
 # Central record of SP3 test data sets to be shared across unit tests
 
-# dataset is part of the IGS benchmark (modified to include non null data on clock)
+# Header version checks
+fake_header_version_a = b"""#aV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+fake_header_version_b = b"""#bV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+fake_header_version_c = b"""#cV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+fake_header_version_d = b"""#dV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+fake_header_version_e = b"""#eV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
+"""
+
+# first dataset is part of the IGS benchmark (modified to include non null data on clock)
 sp3_test_data_igs_benchmark_null_clock = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
 ## 1422 345600.00000000   900.00000000 54202 0.0000000000000
 +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
@@ -38,9 +55,82 @@ PG01  -1218.171155 -14755.013599  22252.168480 999999.999999
 VG01  26855.435366  -6704.236117  -3062.394499 999999.999999
 PG02  11149.555664  21314.099837  11331.977499 123456.999999
 VG02 -12578.915944  -7977.396362  26581.116225 999999.999999
-EOF"""
+EOF
+"""
 
-# second dataset a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3
+# Based on SP3c.txt example 2. SP3d is PDF formatted so alignment is hard to preserve. #TODO check this is actually right
+# https://files.igs.org/pub/data/format/sp3c.txt
+# Truncated and manually modified to reflect:
+#   Epochs: 1
+#   SVs: 5
+sp3c_example2_data = b"""#cV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 HLM  IGS
+## 1126 259200.00000000   900.00000000 52129 0.0000000000000
++    5   G01G02G03G04G05  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         7  8  7  8  6  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c G  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* ULTRA ORBIT COMBINATION FROM WEIGHTED AVERAGE OF:
+/* cou esu gfu jpu siu usu
+/* REFERENCED TO cou CLOCK AND TO WEIGHTED MEAN POLE:
+/* CLK ANT Z-OFFSET (M): II/IIA 1.023; IIR 0.000
+*  2001  8  8  0  0  0.00000000
+PG01 -11044.805800 -10475.672350  21929.418200    189.163300 18 18 18 219
+EP    55   55   55     222  1234567 -1234567  5999999      -30       21 -1230000
+VG01  20298.880364 -18462.044804   1381.387685     -4.534317 14 14 14 191
+EV    22   22   22     111  1234567  1234567  1234567  1234567  1234567  1234567
+PG02 -12593.593500  10170.327650 -20354.534400    -55.976000 18 18 18 219     M
+EP    55   55   55     222  1234567 -1234567  5999999      -30       21 -1230000
+VG02  -9481.923808 -25832.652567  -7277.160056      8.801258 14 14 14 191
+EV    22   22   22     111  1234567  1234567  1234567  1234567  1234567  1234567
+PG03   9335.606450 -21952.990750 -11624.350150     54.756700 18 18 18 219
+EP    55   55   55     222  1234567 -1234567  5999999      -30       21 -1230000
+VG03  12497.392894  -8482.260298  26230.348459      5.620682 14 14 14 191
+EV    22   22   22     111  1234567  1234567  1234567  1234567  1234567  1234567
+PG04 -16148.976900   8606.630600  19407.845050    617.997800 18 18 18 219
+EP    55   55   55     222  1234567 -1234567  5999999      -30       21 -1230000
+VG04 -22859.768469  -8524.538983 -15063.229095     -3.292980 14 14 14 191
+EV    22   22   22     111  1234567  1234567  1234567  1234567  1234567  1234567
+PG05  13454.631450  20956.333700   9376.994100    308.956400 18 18 18 219
+EP    55   55   55     222  1234567 -1234567  5999999      -30       21 -1230000
+VG05    392.255680  12367.086937 -27955.768747    -13.600595 14 14 14 191
+EV    22   22   22     111  1234567  1234567  1234567  1234567  1234567  1234567
+EOF
+"""
+
+
+# Expected content output for gnssanalysis gen_sp3_content() when reading in then writing
+# out sp3_test_data_igs_benchmark_null_clock:
+expected_sp3_output_igs_benchmark_null_clock = b"""*  2007  4 12  0  0  0.00000000
+PG01  -6114.801556 -13827.040252  22049.171610 999999.999999
+VG01  27184.457428  -3548.055474   5304.058806 999999.999999
+PG02  12947.223282  22448.220655   6215.570741 999999.999999
+VG02  -7473.756152  -4355.288568  29939.333728 999999.999999
+*  2007  4 12  0 15  0.00000000
+PG01  -3659.032812 -14219.662913  22339.175481 123456.999999
+VG01  27295.435569  -5170.061971   1131.227754 999999.999999
+PG02  12163.580358  21962.803659   8849.429007 999999.999999
+VG02  -9967.334764  -6367.969150  28506.683280 999999.999999
+*  2007  4 12  0 30  0.00000000
+PG01  -1218.171155 -14755.013599  22252.168480 999999.999999
+VG01  26855.435366  -6704.236117  -3062.394499 999999.999999
+PG02  11149.555664  21314.099837  11331.977499 123456.999999
+VG02 -12578.915944  -7977.396362  26581.116225 999999.999999
+"""
+# NOTE 'EOF' is added in write_sp3() so we don't expect it here
+
+# second dataset is a truncated version of file COD0OPSFIN_20242010000_01D_05M_ORB.SP3
 sp3_test_data_truncated_cod_final = b"""#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
 ## 2323 432000.00000000   300.00000000 60510 0.0000000000000
 +   34   G01G02G03G04G05G06G07G08G09G10G11G12G13G14G15G16G17
@@ -136,3 +226,305 @@ PR01 -11838.908273  14235.469200 -17540.792598     91.816562
 PR02   5096.267067   9515.396007 -23066.803522    -23.760149
 EOF
 """
+
+# Highly truncated version of COD0OPSFIN_20242010000_01D_05M_ORB.SP3
+# Modify for:
+# SVs: 3
+# Period: 10M (so new filename to test should be: COD0OPSFIN_20242010000_10M_05M_ORB.SP3)
+sp3_test_data_short_cod_final = b"""#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
+## 2323 432000.00000000   300.00000000 60510 0.0000000000000
++    3   G01G02G03  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10  4  4  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* Center for Orbit Determination in Europe (CODE)                              
+/* Final GNSS orbits and clocks for year-day 2024-2010                          
+/* Middle day of a 3-day long-arc GRE solution                                  
+/* Product reference - DOI 10.48350/197025                                      
+/* PCV:IGS20      OL/AL:FES2014b NONE     YN ORB:CoN CLK:CoN                    
+*  2024  7 19  0  0  0.00000000
+PG01   4510.358405 -23377.282442 -11792.723580    239.322216
+PG02 -19585.529427  -8704.823858  16358.028672   -396.375750
+PG03 -17580.234088   4691.573463  19141.243267    463.949579
+*  2024  7 19  0  5  0.00000000
+PG01   4796.934856 -23696.377197 -10979.751610    239.319708
+PG02 -19881.646388  -9206.366139  15702.571850   -396.373498
+PG03 -17231.990585   4028.826042  19602.838740    463.954491
+EOF
+"""
+
+# Deliberately incorrect version with overlong comment line
+# This line is too long due to spaces alone. If it is later concluded that this is ok, this test will need updating.
+sp3_test_data_short_cod_final_overlong_comment_line = b"""#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
+## 2323 432000.00000000   300.00000000 60510 0.0000000000000
++    3   G01G02G03  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10  4  4  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* Center for Orbit Determination in Europe (CODE)                              
+/* Final GNSS orbits and clocks for year-day 2024-2010                          
+/* Middle day of a 3-day long-arc GRE solution                                  
+/* Product reference - DOI 10.48350/197025   TOO MANY SPACES (line len: 101)                        
+/* PCV:IGS20      OL/AL:FES2014b NONE     YN ORB:CoN CLK:CoN                    
+*  2024  7 19  0  0  0.00000000
+PG01   4510.358405 -23377.282442 -11792.723580    239.322216
+PG02 -19585.529427  -8704.823858  16358.028672   -396.375750
+PG03 -17580.234088   4691.573463  19141.243267    463.949579
+*  2024  7 19  0  5  0.00000000
+PG01   4796.934856 -23696.377197 -10979.751610    239.319708
+PG02 -19881.646388  -9206.366139  15702.571850   -396.373498
+PG03 -17231.990585   4028.826042  19602.838740    463.954491
+EOF
+"""
+
+# Separate header and content versions of the above.
+# For testing gen_sp3_header():
+# NOTE: CODE (EU) appears to output their 'data used' value with right padding 'd+D  ' rather than left padding '  d+D'.
+# Left pad seems to be suggested for 'data used' by SP3d spec, though rules for this column in general seem less strict.
+# Therefore for the purpose of testing our header generator, this example has been *modified* to left pad 'data used'.
+sp3_test_data_short_cod_final_header = """#dP2024  7 19  0  0  0.00000000       2   d+D IGS20 FIT AIUB
+## 2323 432000.00000000   300.00000000 60510 0.0000000000000
++    3   G01G02G03  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10  4  4  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* Center for Orbit Determination in Europe (CODE)                              
+/* Final GNSS orbits and clocks for year-day 2024-2010                          
+/* Middle day of a 3-day long-arc GRE solution                                  
+/* Product reference - DOI 10.48350/197025                                      
+/* PCV:IGS20      OL/AL:FES2014b NONE     YN ORB:CoN CLK:CoN                    
+"""
+
+# For testing gen_sp3_content()
+sp3_test_data_short_cod_final_content = """*  2024  7 19  0  0  0.00000000
+PG01   4510.358405 -23377.282442 -11792.723580    239.322216
+PG02 -19585.529427  -8704.823858  16358.028672   -396.375750
+PG03 -17580.234088   4691.573463  19141.243267    463.949579
+*  2024  7 19  0  5  0.00000000
+PG01   4796.934856 -23696.377197 -10979.751610    239.319708
+PG02 -19881.646388  -9206.366139  15702.571850   -396.373498
+PG03 -17231.990585   4028.826042  19602.838740    463.954491
+"""
+
+
+# Deliberately broken versions of the above full file.
+
+# Issue: Inconsistent number of SVs (first epoch correct, then adds one)
+# Use filename: COD0OPSFIN_20242010000_10M_05M_ORB.SP3
+# SVs: 3 (but variable!)
+# Period: 10M
+sp3_test_data_cod_broken_variable_svs = b"""#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
+## 2323 432000.00000000   300.00000000 60510 0.0000000000000
++    3   G01G02G03  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10  4  4  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* Center for Orbit Determination in Europe (CODE)                              
+/* Final GNSS orbits and clocks for year-day 2024-2010                          
+/* Middle day of a 3-day long-arc GRE solution                                  
+/* Product reference - DOI 10.48350/197025                                      
+/* PCV:IGS20      OL/AL:FES2014b NONE     YN ORB:CoN CLK:CoN                    
+*  2024  7 19  0  0  0.00000000
+PG01   4510.358405 -23377.282442 -11792.723580    239.322216
+PG02 -19585.529427  -8704.823858  16358.028672   -396.375750
+PG03 -17580.234088   4691.573463  19141.243267    463.949579
+*  2024  7 19  0  5  0.00000000
+PG01   4796.934856 -23696.377197 -10979.751610    239.319708
+PG02 -19881.646388  -9206.366139  15702.571850   -396.373498
+PG03 -17231.990585   4028.826042  19602.838740    463.954491
+PG04 -26611.194412  -1022.842880    595.880633    406.568667
+EOF
+"""
+
+
+# Issue: Wrong number of SVs in content
+# Use filename: COD0OPSFIN_20242010000_10M_05M_ORB.SP3
+# SVs: 3 by header, but 2 in content
+# Period: 10M
+sp3_test_data_cod_broken_missing_sv_in_content = b"""#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
+## 2323 432000.00000000   300.00000000 60510 0.0000000000000
++    3   G01G02G03  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10  4  4  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* Center for Orbit Determination in Europe (CODE)                              
+/* Final GNSS orbits and clocks for year-day 2024-2010                          
+/* Middle day of a 3-day long-arc GRE solution                                  
+/* Product reference - DOI 10.48350/197025                                      
+/* PCV:IGS20      OL/AL:FES2014b NONE     YN ORB:CoN CLK:CoN                    
+*  2024  7 19  0  0  0.00000000
+PG01   4510.358405 -23377.282442 -11792.723580    239.322216
+PG02 -19585.529427  -8704.823858  16358.028672   -396.375750
+*  2024  7 19  0  5  0.00000000
+PG01   4796.934856 -23696.377197 -10979.751610    239.319708
+PG02 -19881.646388  -9206.366139  15702.571850   -396.373498
+EOF
+"""
+
+
+# Issue: Wrong number of epochs (content disagrees)
+# Use filename: COD0OPSFIN_20242010000_10M_05M_ORB.SP3
+# SVs: 2
+# Sample Rate: 5M (by header and filename)
+# Period: 10M (by header and filename, not by content)
+sp3_test_data_cod_broken_missing_sv_in_content = b"""#dP2024  7 19  0  0  0.00000000       2 d+D   IGS20 FIT AIUB
+## 2323 432000.00000000   300.00000000 60510 0.0000000000000
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10  4  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* Center for Orbit Determination in Europe (CODE)                              
+/* Final GNSS orbits and clocks for year-day 2024-2010                          
+/* Middle day of a 3-day long-arc GRE solution                                  
+/* Product reference - DOI 10.48350/197025                                      
+/* PCV:IGS20      OL/AL:FES2014b NONE     YN ORB:CoN CLK:CoN                    
+*  2024  7 19  0  0  0.00000000
+PG01   4510.358405 -23377.282442 -11792.723580    239.322216
+PG02 -19585.529427  -8704.823858  16358.028672   -396.375750
+EOF
+"""
+
+# Issue: Wrong number of epochs (header disagrees)
+# Use filename: COD0OPSFIN_20242010000_10M_05M_ORB.SP3
+# SVs: 2
+# Sample Rate: 5M (by header and filename)
+# Period: 10M (by filename and content: 2 epochs, not by header: 1 epoch)
+sp3_test_data_cod_broken_missing_sv_in_content = b"""#dP2024  7 19  0  0  0.00000000       1 d+D   IGS20 FIT AIUB
+## 2323 432000.00000000   300.00000000 60510 0.0000000000000
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
++          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++        10  4  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/* Center for Orbit Determination in Europe (CODE)                              
+/* Final GNSS orbits and clocks for year-day 2024-2010                          
+/* Middle day of a 3-day long-arc GRE solution                                  
+/* Product reference - DOI 10.48350/197025                                      
+/* PCV:IGS20      OL/AL:FES2014b NONE     YN ORB:CoN CLK:CoN                    
+*  2024  7 19  0  0  0.00000000
+PG01   4510.358405 -23377.282442 -11792.723580    239.322216
+PG02 -19585.529427  -8704.823858  16358.028672   -396.375750
+*  2024  7 19  0  5  0.00000000
+PG01   4796.934856 -23696.377197 -10979.751610    239.319708
+PG02 -19881.646388  -9206.366139  15702.571850   -396.373498
+EOF
+"""
+
+# Mismatched epoch count vs filename tests detailed in main test_sp3.py file
+
+
+# Original filename IGS0DEMULT_20243181800_02D_05M_ORB.SP3
+# Modified using utility script, header manually updated to match.
+sp3_test_data_partially_offline_sat = b"""#dP2024 11 13 18  0  0.0000000        3 ORBIT IGS20 HLM  IGS
+## 2340 324000.00000000   300.00000000 60627 0.7500000000000
++    3   G02G03G19  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+++         4  4  3  0  0  0  0  0  0  0  0  0  0  0  0  0  0
+%c M  cc GPS ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%c cc cc ccc ccc cccc cccc cccc cccc ccccc ccccc ccccc ccccc
+%f  1.2500000  1.025000000  0.00000000000  0.000000000000000
+%f  0.0000000  0.000000000  0.00000000000  0.000000000000000
+%i    0    0    0    0      0      0      0      0         0
+%i    0    0    0    0      0      0      0      0         0
+/*
+/*  NOTE: This is a highly modified file for testing only.
+/*  It was originally derived from an IGS product, but
+/*  should not be taken as authoritative.
+*  2024 11 13 18  0  0.00000000
+PG02 -22358.852114 -13824.987069  -4481.658280   -315.353433  8  9 10           
+PG03 -12211.683721 -14412.444793  18550.880326    598.854905  9  9  9           
+PG19 -16358.034086  16602.996553  12179.863169    562.338315  8 10  8           
+*  2024 11 13 18  5  0.00000000
+PG02 -22143.724430 -13804.799870  -5406.496217   -315.350875  3  9  9           
+PG03 -12184.752097 -15116.241903  18008.487790    598.858009  8  8 10           
+PG19      0.000000      0.000000      0.000000 999999.999999                    
+*  2024 11 13 18 10  0.00000000
+PG02 -21896.123567 -13775.172104  -6321.083787   -315.348317  5  9  9           
+PG03 -12170.453519 -15798.978021  17431.310591    598.861113  8  8 10           
+PG19      0.000000      0.000000      0.000000 999999.999999                    
+EOF
+"""
+
+# TODO add some test data that actually has flags!! And write tests for those.

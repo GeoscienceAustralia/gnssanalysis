@@ -31,15 +31,15 @@ def read_ionex(path_or_bytes):
     data = _gn_io.common.path2bytes(path_or_bytes)
     end_of_head = data.find(b"END OF HEADER")
     if end_of_head == -1:
-        raise ValueError ('IONEX header missing')
+        raise ValueError("IONEX header missing")
     end_of_head += 13
 
     head = data[:end_of_head]
     data = data[end_of_head:]
 
     maps_heads = find_all(data, b"START", window=[9, 60])  # type + epoch info
-    if not maps_heads:
-        raise ValueError ('IONEX maps not found')
+    if len(maps_heads) == 0:
+        raise ValueError("IONEX maps not found")
     maps_heads_arr = _np.asarray(b"".join(maps_heads).split()).reshape(len(maps_heads), -1)
     # return maps_heads
     datetime = _gn_datetime.strdatetime2datetime(maps_heads_arr[:, 2:], as_j2000=True)

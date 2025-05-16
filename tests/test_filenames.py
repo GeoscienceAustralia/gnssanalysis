@@ -29,6 +29,7 @@ class TestPropsFromNameAndContent(TestCase):
         # TODO extend to run over multiple filetypes here
         # file_names = ["/fake/dir/file1.sp3", "/fake/dir/file1.clk", "/fake/dir/file1.orb", "/fake/dir/file1.rnx"]
 
+        self.fs.reset()
         # In the first instance we give no assistance to the filename determination function (leading to a warning).
         # In practice the known filename would be passed in, and the result is a combination of things inferred from
         # the filename and the file contents (as tested in the second case).
@@ -40,6 +41,7 @@ class TestPropsFromNameAndContent(TestCase):
         sp3_compliant_filename = Path(path_string_compliant)
 
         # Run
+        # TODO we don't test for this warning apart from with SP3 for now.
         with self.assertWarns(Warning):
             # Temporary, until we confirm warnings are appearing in standard logs. Then logging.warning() call can go.
             logging.disable(logging.WARNING)
@@ -100,6 +102,7 @@ class TestPropsFromNameAndContent(TestCase):
         """
         Test of the filename generation function that leverages determine_properties_from_contents()
         """
+        self.fs.reset()
         # Create fake file, and real path object pointing at it.
         fake_path_noncompliant = "/fake/dir/file2.sp3"
         fake_path_compliant = "/fake/dir/COD0OPSFIN_20242010000_01D_05M_ORB.sp3"
@@ -126,6 +129,7 @@ class TestPropsFromNameAndContent(TestCase):
         """
         Test of the filename vs contents discrepancy checker
         """
+        self.fs.reset()
         # Create fake file, and real path object pointing at it. But importantly in this case, use a real filename.
         fake_path_string = "/fake/dir/GAG0EXPULT_20240270000_02D_05M_ORB.SP3"
         self.fs.create_file(fake_path_string, contents=sp3_test_inconsistent_timerange)

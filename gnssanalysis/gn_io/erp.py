@@ -2,6 +2,7 @@ import datetime
 import math
 import os
 import pathlib
+
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections.abc import Callable, Iterable
 from typing import Callable, Iterable
@@ -201,7 +202,11 @@ def get_erp_unit_string(normalised_header: str, original_header: str) -> str:
         return "E-6as/d"
     elif normalised_header in ["UT1-UTC", "UT1R-UTC", "UT1-TAI", "UT1R-TAI", "UTsig", "UTRsig"]:
         return "E-7s"
-    elif normalised_header in ["LOD", "LODR", "LODsig", ]:
+    elif normalised_header in [
+        "LOD",
+        "LODR",
+        "LODsig",
+    ]:
         return "E-7s/d"
     elif normalised_header in ["Deps", "Depssig", "Dpsi", "Dpsisig"]:
         return "E-6"
@@ -255,7 +260,7 @@ def read_erp(
     data_of_interest = content[start_of_data:]  # data block
     erp_df = _pd.read_csv(
         _BytesIO(data_of_interest),
-        delim_whitespace=True,
+        sep="\\s+",  # delim_whitespace is deprecated
         names=headers,
         index_col=False,
     )
@@ -352,7 +357,7 @@ def write_erp_to_stream(erp_df: _pd.DataFrame, stream: TextIO, mjd_precision: in
     stream.write(" ".join(s.rjust(w) for (s, w) in zip(unit_strings, column_widths)))
     stream.write("\n")
     # Values
-    for (_, row) in value_strings_df.iterrows():
+    for _, row in value_strings_df.iterrows():
         stream.write(" ".join(s.rjust(w) for (s, w) in zip(row, column_widths)))
         stream.write("\n")
 

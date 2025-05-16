@@ -1,9 +1,12 @@
 """
 Functions to download files necessary for Ginan processing:
 sp3
-erp
 clk
+erp
 rnx (including transformation from crx to rnx)
+atx
+sat meta
+yaw
 """
 
 import concurrent as _concurrent
@@ -12,6 +15,7 @@ import datetime as _datetime
 from itertools import repeat as _repeat
 import logging
 import os as _os
+from copy import deepcopy as _deepcopy
 import random as _random
 import shutil
 import click as _click
@@ -24,7 +28,7 @@ import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Optional as _Optional, Union as _Union, Tuple as _Tuple
+from typing import Any, Generator, List, Literal, Optional, Tuple, Union
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError
 
@@ -33,11 +37,15 @@ import numpy as _np
 import pandas as _pd
 from boto3.s3.transfer import TransferConfig
 
-from .gn_datetime import GPSDate, dt2gpswk, gpswkD2dt
+from .gn_datetime import GPSDate, gps_week_day_to_datetime
+from .gn_utils import ensure_folders
 
 MB = 1024 * 1024
 
 CDDIS_FTP = "gdc.cddis.eosdis.nasa.gov"
+PRODUCT_BASE_URL = "https://peanpod.s3.ap-southeast-2.amazonaws.com/aux/products/"
+IGS_FILES_URL = "https://files.igs.org/pub/"
+BERN_URL = "http://ftp.aiub.unibe.ch/"
 
 # s3client = boto3.client('s3', region_name='eu-central-1')
 
@@ -116,7 +124,7 @@ def upload_with_chunksize_and_meta(
     # return transfer_callback.thread_info
 
 
-def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum") -> _Optional[str]:
+def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-amz-meta-md5checksum") -> Optional[str]:
     """requests md5checksum metadata over https (AWS S3 bucket)
     Returns None if file not found (404) or if md5checksum metadata key does not exist"""
     logging.info(f'requesting checksum for "{url}"')
@@ -142,7 +150,16 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
     return None
 
 
-def download_url(url: str, destfile: _Union[str, _os.PathLike], max_retries: int = 5) -> _Optional[_Path]:
+def download_url(
+    url: str, destfile: Union[str, _os.PathLike], max_retries: int = 5, raise_on_failure: bool = False
+) -> Optional[_Path]:
+    """
+    TODO finish docstring
+    :param bool raise_on_failure: Raise exceptions on errors, rather than returning None.
+    :raises Exception: On download failure. If original exception was an _HTTPError, raised Exception will wrap it.
+    :return Optional[_Path]: On success: local path to downloaded file. On errors: None, unless raise_on_failure is
+        set to True.
+    """
     logging.info(f'requesting "{url}"')
     for retry in range(1, max_retries + 1):
         try:
@@ -155,13 +172,19 @@ def download_url(url: str, destfile: _Union[str, _os.PathLike], max_retries: int
         except _HTTPError as err:
             logging.error(f" HTTP Error {err.code}: {err.reason}")
             if err.code == 404:
+                if raise_on_failure:
+                    raise Exception(f"Download failed for URL '{url}'", err)
                 return None  # File Not Found on the server so no point in retrying
             t_seconds = 2**retry
             logging.error(f"Retry No. {retry} in {t_seconds} seconds")
             _time.sleep(t_seconds)
             if retry >= max_retries:
                 logging.error(f"Maximum number of retries reached: {max_retries}. File not downloaded")
+                if raise_on_failure:
+                    raise Exception(f"Download failed for URL '{url}' after {max_retries} retries.", err)
                 return None
+    if raise_on_failure:
+        raise Exception(f"Fell out of download block for URL '{url}' after {max_retries} retries.")
     logging.error("Maximum retries exceeded in download_url with no clear outcome, returning None")
     return None
 
@@ -178,38 +201,6 @@ def gen_uncomp_filename(comp_filename: str) -> str:
         return comp_filename[:-4]
     else:
         return comp_filename
-
-
-def gen_prod_filename(dt, pref, suff, f_type, wkly_file=False, repro3=False):
-    """
-    Generate a product filename based on the inputs
-    """
-    gpswk, gpswkD = dt2gpswk(dt, both=True)
-
-    if repro3:
-        if f_type == "erp":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_01D_{f_type.upper()}.{f_type.upper()}.gz'
-        elif f_type == "clk":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_30S_{f_type.upper()}.{f_type.upper()}.gz'
-        elif f_type == "bia":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_01D_OSB.{f_type.upper()}.gz'
-        elif f_type == "sp3":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_05M_ORB.{f_type.upper()}.gz'
-        elif f_type == "snx":
-            f = f'{pref.upper()}0R03FIN_{dt.year}{dt.strftime("%j")}0000_01D_01D_SOL.{f_type.upper()}.gz'
-        elif f_type == "rnx":
-            f = f'BRDC00{pref.upper()}_R_{dt.year}{dt.strftime("%j")}0000_01D_MN.rnx.gz'
-    elif (pref == "igs") & (f_type == "snx") & wkly_file:
-        f = f"{pref}{str(dt.year)[2:]}P{gpswk}.{f_type}.Z"
-    elif (pref == "igs") & (f_type == "snx"):
-        f = f"{pref}{str(dt.year)[2:]}P{gpswkD}.{f_type}.Z"
-    elif f_type == "rnx":
-        f = f'BRDC00{pref.upper()}_R_{dt.year}{dt.strftime("%j")}0000_01D_MN.rnx.gz'
-    elif wkly_file:
-        f = f"{pref}{gpswk}{suff}.{f_type}.Z"
-    else:
-        f = f"{pref}{gpswkD}{suff}.{f_type}.Z"
-    return f, gpswk
 
 
 def generate_uncompressed_filename(filename: str) -> str:
@@ -286,6 +277,58 @@ def generate_nominal_span(start_epoch: _datetime.datetime, end_epoch: _datetime.
     return f"{span:02}{unit}"
 
 
+def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: str) -> str:
+    """
+    IGS files following the long filename convention require a content specifier
+    Given the file extension, generate the content specifier
+
+    :param str file_ext: 3-char file extention of the file (e.g. SP3, SNX, ERP, etc)
+    :param str analysis_center: 3-char string identifier for Analysis Center
+    :param str solution_type: 3-char string identifier for Solution Type of file
+    :return str: 3-char string identifier for Sampling Rate of the file (e.g. 15M)
+    """
+    file_ext = file_ext.upper()
+    sampling_rates = {
+        "ERP": {
+            ("COD"): {"FIN": "12H", "RAP": "01D", "ERP": "01D"},
+            (): "01D",
+        },
+        "BIA": "01D",
+        "SP3": {
+            ("COD", "GFZ", "GRG", "IAC", "JAX", "MIT", "WUM"): "05M",
+            ("ESA", "IGS"): {"FIN": "05M", "RAP": "15M", None: "15M"},
+            (): "15M",
+        },
+        "CLK": {
+            ("EMR", "MIT", "SHA", "USN"): "05M",
+            ("ESA", "GFZ", "GRG", "IGS"): {"FIN": "30S", "RAP": "05M", None: "30S"},  # DZ: IGS FIN has 30S CLK
+            (): "30S",
+        },
+        "OBX": {"GRG": "05M", None: "30S"},
+        "TRO": {"JPL": "30S", None: "01H"},
+        "SNX": "01D",
+    }
+    if file_ext in sampling_rates:
+        file_rates = sampling_rates[file_ext]
+        if isinstance(file_rates, dict):
+            center_rates_found = False
+            for key in file_rates:
+                if analysis_center in key:
+                    center_rates = file_rates.get(key, file_rates.get(()))
+                    center_rates_found = True
+                    break
+            if not center_rates_found:
+                return file_rates.get(())
+            if isinstance(center_rates, dict):
+                return center_rates.get(solution_type, center_rates.get(None))
+            else:
+                return center_rates
+        else:
+            return file_rates
+    else:
+        return "01D"
+
+
 def generate_long_filename(
     analysis_center: str,  # AAA
     content_type: str,  # CNT
@@ -308,7 +351,7 @@ def generate_long_filename(
     :param _datetime.timedelta timespan: Timespan of data in file (Start to End epoch), defaults to None
     :param str solution_type: 3-char string identifier for Solution Type of file, defaults to ""
     :param str sampling_rate: 3-char string identifier for Sampling Rate of the file, defaults to "15M"
-    :param str version: 3-char string identifier for Version of the file
+    :param str version: 1-char string identifier for Version of the file
     :param str project: 3-char string identifier for Project Type of the file
     :return str: The IGS long filename given all inputs
     """
@@ -348,7 +391,7 @@ def generate_product_filename(
     version: str = "0",
     project: str = "OPS",
     content_type: str = None,
-) -> _Tuple[str, GPSDate, _datetime.datetime]:
+) -> Tuple[str, GPSDate, _datetime.datetime]:
     """Given a reference datetime and extention of file, generate the IGS filename and GPSDate obj for use in download
 
     :param _datetime.datetime reference_start: Datetime of the start period of interest
@@ -392,20 +435,25 @@ def generate_product_filename(
             product_filename = f"igs{gps_date.yr[2:]}P{gps_date.gpswk}.snx.Z"
         else:
             hour = f"{reference_start.hour:02}"
-            product_filename = f"igu{gps_date.gpswkD}_{hour}.{file_ext}.Z"
+            prefix = "igs" if solution_type == "FIN" else "igr" if solution_type == "RAP" else "igu"
+            product_filename = (
+                f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z"
+                if solution_type == "ULT"
+                else f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
+            )
     return product_filename, gps_date, reference_start
 
 
 def check_whether_to_download(
     filename: str, download_dir: _Path, if_file_present: str = "prompt_user"
-) -> _Union[_Path, None]:
+) -> Union[_Path, None]:
     """Determine whether to download given file (filename) to the desired location (download_dir) based on whether it is
     already present and what action to take if it is (if_file_present)
 
     :param str filename: Filename of the downloaded file
-    :param _Path download_dir: Path obj to download directory
-    :param str if_file_present: How to handle files that are already present ["replace","dont_replace","prompt_user"], defaults to "prompt_user"
-    :return _Union[_Path, None]: Path obj to the downloaded file if file should be downloaded, otherwise returns None
+    :param _Path download_dir: Where to download files (local directory)
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :return _Path or None: The pathlib.Path of the downloaded file if file should be downloaded, otherwise returns None
     """
     # Flag to determine whether to download:
     download = None
@@ -452,22 +500,23 @@ def attempt_ftps_download(
     filename: str,
     type_of_file: _Optional[str] = None,
     if_file_present: str = "prompt_user",
-) -> _Path | None:
+) -> Union[_Path, None]:
     """Attempt download of file (filename) given the ftps client object (ftps) to chosen location (download_dir)
 
-    :param _Path download_dir: Path obj to download directory
+    :param _Path download_dir: Where to download files (local directory)
     :param _ftplib.FTP_TLS ftps: FTP_TLS client pointed at download source
     :param str filename: Filename to assign for the downloaded file
     :param str type_of_file: How to label the file for STDOUT messages, defaults to None
-    :param str if_file_present: How to handle files that are already present ["replace","dont_replace","prompt_user"], defaults to "prompt_user"
-    :return _Path: Path obj to the downloaded file, or None if it was already present and not re-downloaded.
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, or None if the download was skipped
+        (based on if_file_present).
     """
     ""
     logging.info(f"Attempting FTPS Download of {type_of_file} file - {filename} to {download_dir}")
     download_filepath = check_whether_to_download(
         filename=filename, download_dir=download_dir, if_file_present=if_file_present
     )
-    if download_filepath:
+    if download_filepath is not None:
         logging.debug(f"Downloading {filename}")
         with open(download_filepath, "wb") as local_file:
             ftps.retrbinary(f"RETR {filename}", local_file.write)
@@ -476,27 +525,33 @@ def attempt_ftps_download(
 
 
 def attempt_url_download(
-    download_dir: _Path, url: str, filename: str = None, type_of_file: str = None, if_file_present: str = "prompt_user"
-) -> _Path:
+    download_dir: _Path,
+    url: str,
+    filename: Optional[str] = None,
+    type_of_file: Optional[str] = None,
+    if_file_present: str = "prompt_user",
+    raise_on_failure: bool = False,
+) -> Optional[_Path]:
     """Attempt download of file given URL (url) to chosen location (download_dir)
 
-    :param Path download_dir: Path obj to download directory
+    :param _Path download_dir: Where to download files (local directory)
     :param str url: URL to download
-    :param str filename: Filename to assign for the downloaded file, defaults to None
-    :param str type_of_file: How to label the file for STDOUT messages, defaults to None
-    :param str if_file_present: How to handle files that are already present ["replace","dont_replace","prompt_user"], defaults to "prompt_user"
-    :return Path: Path obj to the downloaded file
+    :param Optional[str] filename: Filename to assign for the downloaded file, defaults to None
+    :param Optional[str] type_of_file: How to label the file for STDOUT messages, defaults to None
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    TODO docstring for this param
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
     """
-    # If the filename is not provided, use the filename from the URL
-    if not filename:
+    # If the download_filename is not provided, use the filename from the URL
+    if filename is None or len(filename) == 0:
         filename = url[url.rfind("/") + 1 :]
     logging.info(f"Attempting URL Download of {type_of_file} file - {filename} to {download_dir}")
     # Use the check_whether_to_download function to determine whether to download the file
     download_filepath = check_whether_to_download(
         filename=filename, download_dir=download_dir, if_file_present=if_file_present
     )
-    if download_filepath:
-        download_url(url, download_filepath)
+    if download_filepath is not None:
+        download_filepath = download_url(url, download_filepath, raise_on_failure=raise_on_failure)
     return download_filepath
 
 
@@ -551,7 +606,7 @@ def check_file_present(comp_filename: str, dwndir: str) -> bool:
     return present
 
 
-def decompress_file(input_filepath: _Path, delete_after_decompression: bool = False) -> _Path:
+def decompress_file(input_filepath: _Path, delete_after_decompression: bool = False) -> Optional[_Path]:
     """
     Given the file path to a compressed file, decompress it in-place
     Assumption is that filename of final file is the stem of the compressed filename for .gz files
@@ -606,7 +661,7 @@ def decompress_file(input_filepath: _Path, delete_after_decompression: bool = Fa
         return output_file
 
 
-def check_n_download_url(url, dwndir, filename=False):
+def check_n_download_url(url: str, dwndir, filename: Union[str, None] = None):
     """
     Download single file given URL to download from.
     Optionally provide filename if different from url name
@@ -614,7 +669,7 @@ def check_n_download_url(url, dwndir, filename=False):
     if dwndir[-1] != "/":
         dwndir += "/"
 
-    if not filename:
+    if filename is None:
         filename = url[url.rfind("/") + 1 :]
 
     if not check_file_present(filename, dwndir):
@@ -656,7 +711,7 @@ def connect_cddis(verbose=False):
     if verbose:
         logging.info("\nConnecting to CDDIS server...")
 
-    ftps = _FTP_TLS("gdc.cddis.eosdis.nasa.gov")
+    ftps = _FTP_TLS(CDDIS_FTP)
     ftps.login()
     ftps.prot_p()
 
@@ -667,7 +722,7 @@ def connect_cddis(verbose=False):
 
 
 @_contextmanager
-def ftp_tls(url: str, **kwargs) -> None:
+def ftp_tls(url: str, **kwargs) -> Generator[Any, Any, Any]:
     """Opens a connect to specified ftp server over tls.
 
     :param: url: Remote ftp url
@@ -680,108 +735,6 @@ def ftp_tls(url: str, **kwargs) -> None:
         ftps.quit()
 
 
-@_contextmanager
-def ftp_tls_cddis(connection: _FTP_TLS = None, **kwargs) -> None:
-    """Establish an ftp tls connection to CDDIS. Opens a new connection if one does not already exist.
-
-    :param connection: Active connection which is passed through to allow reuse
-    """
-    if connection is None:
-        with ftp_tls(CDDIS_FTP, **kwargs) as ftps:
-            yield ftps
-    else:
-        yield connection
-
-
-def select_mr_file(mr_files, f_typ, ac):
-    """
-    Given a list of most recent files, find files matching type and AC of interest
-    """
-    if ac == "any":
-        search_str = f".{f_typ}.Z"
-        mr_typ_files = [f for f in mr_files if f.endswith(search_str)]
-    else:
-        search_str_end = f".{f_typ}.Z"
-        search_str_sta = f"{ac}"
-        mr_typ_files = [f for f in mr_files if ((f.startswith(search_str_sta)) & (f.endswith(search_str_end)))]
-
-    return mr_typ_files
-
-
-def find_mr_file(dt, f_typ, ac, ftps):
-    """Given connection to the ftps server, find the most recent file of type f_typ and analysis centre ac"""
-    c_gpswk = dt2gpswk(dt)
-
-    ftps.cwd(f"gnss/products/{c_gpswk}")
-    mr_files = ftps.nlst()
-    mr_typ_files = select_mr_file(mr_files, f_typ, ac)
-
-    if mr_typ_files == []:
-        while mr_typ_files == []:
-            logging.info(f"GPS Week {c_gpswk} too recent")
-            logging.info(f"No {ac} {f_typ} files found in GPS week {c_gpswk}")
-            logging.info(f"Moving to GPS week {int(c_gpswk) - 1}")
-            c_gpswk = str(int(c_gpswk) - 1)
-            ftps.cwd(f"../{c_gpswk}")
-            mr_files = ftps.nlst()
-            mr_typ_files = select_mr_file(mr_files, f_typ, ac)
-    mr_file = mr_typ_files[-1]
-    return mr_file, ftps, c_gpswk
-
-
-def download_most_recent(
-    dest, f_type, ftps=None, ac="any", dwn_src="cddis", f_dict_out=False, gpswkD_out=False, ftps_out=False
-):
-    """
-    Download the most recent version of a product file
-    """
-    # File types should be converted to lists if not already a list
-    if isinstance(f_type, list):
-        f_types = f_type
-    else:
-        f_types = [f_type]
-
-    # Create directory if doesn't exist:
-    if not _Path(dest).is_dir():
-        _Path(dest).mkdir(parents=True)
-
-    # Create list to hold filenames that will be downloaded:
-    if f_dict_out:
-        f_dict = {f_typ: [] for f_typ in f_types}
-    if gpswkD_out:
-        gpswk_dict = {f_typ + "_gpswkD": [] for f_typ in f_types}
-    # Connect to ftps if not already:
-    if not ftps:
-        # Connect to chosen server
-        if dwn_src == "cddis":
-            ftps = connect_cddis()
-
-            for f_typ in f_types:
-                logging.info(f"\nSearching for most recent {ac} {f_typ}...\n")
-
-                dt = (_np.datetime64("today") - 1).astype(_datetime.datetime)
-                mr_file, ftps, c_gpswk = find_mr_file(dt, f_typ, ac, ftps)
-                check_n_download(mr_file, dwndir=dest, ftps=ftps, uncomp=True)
-                ftps.cwd(f"/")
-                if f_dict_out:
-                    f_uncomp = gen_uncomp_filename(mr_file)
-                    if f_uncomp not in f_dict[f_typ]:
-                        f_dict[f_typ].append(f_uncomp)
-                c_gpswkD = mr_file[3:8]
-                if gpswkD_out:
-                    gpswk_dict[f_typ + "_gpswkD"].append(c_gpswkD)
-
-            ret_vars = []
-            if f_dict_out:
-                ret_vars.append(f_dict)
-            if gpswkD_out:
-                ret_vars.append(gpswk_dict)
-            if ftps_out:
-                ret_vars.append(ftps)
-
-            return ret_vars
-
-
 def download_file_from_cddis(
     filename: str,
     ftp_folder: str,
@@ -789,24 +742,25 @@ def download_file_from_cddis(
     max_retries: int = 3,
     decompress: bool = True,
     if_file_present: str = "prompt_user",
-    note_filetype: _Optional[str] = None,
-) -> _Path | None:
-    """Downloads a single file from the cddis ftp server.
+    note_filetype: Optional[str] = None,
+) -> Union[_Path, None]:
+    """Downloads a single file from the CDDIS ftp server
 
-    :param filename: Name of the file to download
-    :ftp_folder: Folder where the file is stored on the remote
-    :output_folder: Folder to store the output file
-    :ftps: Optional active connection object which is reused
-    :max_retries: Number of retries before raising error
-    :uncomp: If true, uncompress files on download
-    :return Path | None: Path of the file if it was successfully downloaded. For download failures, or if the file
-        already existed and if_file_present policy said not to re-download it, the return is None.
+    :param str filename: Name of the file to download
+    :param str ftp_folder: Folder where the file is stored on the remote server
+    :param _Path output_folder: Local folder to store the output file
+    :param int max_retries: Number of retries before raising error, defaults to 3
+    :param bool decompress: If true, decompresses files on download, defaults to True
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :param str note_filetype: How to label the file for STDOUT messages, defaults to None
+    :raises e: Raise any error that is run into by ftplib
+    :return _Path or None: The pathlib.Path of the downloaded file (or decompressed output of it). Returns None if the
+        file already existed and was skipped, or if the download failed.
     """
-    with ftp_tls("gdc.cddis.eosdis.nasa.gov") as ftps:
+    with ftp_tls(CDDIS_FTP) as ftps:
         ftps.cwd(ftp_folder)
         retries = 0
-        download_done = False
-        while not download_done and retries <= max_retries:
+        while retries <= max_retries:
             try:
                 download_filepath = attempt_ftps_download(
                     download_dir=output_folder,
@@ -815,17 +769,20 @@ def download_file_from_cddis(
                     type_of_file=note_filetype,
                     if_file_present=if_file_present,
                 )
-                if decompress and download_filepath:
-                    download_filepath = decompress_file(
-                        input_filepath=download_filepath, delete_after_decompression=True
-                    )
-                download_done = True
-                if download_filepath:
-                    logging.info(f"Downloaded {download_filepath.name}")
+                if download_filepath is None:  # File already existed and was skipped
+                    return None
+                # File was downloaded
+                logging.info(f"Downloaded {download_filepath.name}")
+                if decompress:  # Does it need unpacking?
+                    # Decompress, and return the path of the resultant file
+                    logging.info(f"Decompressing downloaded file {download_filepath.name}")
+                    return decompress_file(input_filepath=download_filepath, delete_after_decompression=True)
+                # File doesn't need unpacking, return downloaded path
+                return download_filepath
             except _ftplib.all_errors as e:
                 retries += 1
                 if retries > max_retries:
-                    logging.info(f"Failed to download {filename} and reached maximum retry count ({max_retries}).")
+                    logging.error(f"Failed to download {filename} and reached maximum retry count ({max_retries}).", e)
                     if (output_folder / filename).is_file():
                         (output_folder / filename).unlink()
                     raise e
@@ -833,7 +790,10 @@ def download_file_from_cddis(
                 logging.debug(f"Received an error ({e}) while try to download {filename}, retrying({retries}).")
                 # Add some backoff time (exponential random as it appears to be contention based?)
                 _time.sleep(_random.uniform(0.0, 2.0**retries))
-    return download_filepath
+
+    # Fell out of loop and context manager without returning a result or raising an exception.
+    # Shouldn't be possible, raise exception if it somehow happens.
+    raise Exception("Failed to download file or raise exception. Some logic is broken.")
 
 
 def download_multiple_files_from_cddis(files: list[str], ftp_folder: str, output_folder: _Path) -> None:
@@ -848,325 +808,413 @@ def download_multiple_files_from_cddis(files: list[str], ftp_folder: str, output
         list(executor.map(download_file_from_cddis, files, _repeat(ftp_folder), _repeat(output_folder)))
 
 
-# TODO: Deprecate? Only supports legacy filenames
-def download_prod(
-    dates,
-    dest,
-    ac="igs",
-    suff="",
-    f_type="sp3",
-    dwn_src="cddis",
-    ftps=False,
-    f_dict=False,
-    wkly_file=False,
-    repro3=False,
-):
+def download_product_from_cddis(
+    download_dir: _Path,
+    start_epoch: _datetime.datetime,
+    end_epoch: _datetime.datetime,
+    file_ext: str,
+    limit: int = None,
+    long_filename: Optional[bool] = None,
+    analysis_center: str = "IGS",
+    solution_type: str = "ULT",
+    sampling_rate: str = "15M",
+    version: str = "0",
+    project_type: str = "OPS",
+    timespan: _datetime.timedelta = _datetime.timedelta(days=2),
+    if_file_present: str = "prompt_user",
+) -> List[_Path]:
+    """Download the file/s from CDDIS based on start and end epoch, to the download directory (download_dir)
+
+    :param _Path download_dir: Where to download files (local directory)
+    :param _datetime start_epoch: Start date/time of files to find and download
+    :param _datetime end_epoch: End date/time of files to find and download
+    :param str file_ext: Extension of files to download (e.g. SP3, CLK, ERP, etc)
+    :param int limit: Variable to limit the number of files downloaded, defaults to None
+    :param bool long_filename: Search for IGS long filename, if None use start_epoch to determine, defaults to None
+    :param str analysis_center: Which analysis center's files to download (e.g. COD, GFZ, WHU, etc), defaults to "IGS"
+    :param str solution_type: Which solution type to download (e.g. ULT, RAP, FIN), defaults to "ULT"
+    :param str sampling_rate: Sampling rate of file to download, defaults to "15M"
+    :param str project_type: Project type of file to download (e.g. ), defaults to "OPS"
+    :param _datetime.timedelta timespan: Timespan of the file/s to download, defaults to _datetime.timedelta(days=2)
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
+    :return List[_Path]: Return list of paths of downloaded files
     """
-    Function used to get the product file/s from download server of choice, default: CDDIS
+    # Download the correct IGS FIN ERP files
+    if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
+        # From start_epoch provided, calculate GPS week, rewind to *beginning of that week*, and use that date.
+        # We do this because the weekly files are released/dated as Sunday of each GPS week.
+        start_epoch_as_gps_date = GPSDate(start_epoch)
+        # Get GPS week number *without* DayOfWeek suffix (therefore start of the GPS Week), then convert back to datetime
+        start_epoch = gps_week_day_to_datetime(f"{start_epoch_as_gps_date.gpswk}")
+        timespan = _datetime.timedelta(days=7)
 
-    Input:
-    dest - destination (str)
-    ac - Analysis Center / product of choice (e.g. igs, igr, cod, jpl, gfz, default = igs)
-    suff - optional suffix added to file name (e.g. _0 or _06 for ultra-rapid products)
-    f_type - file type to download (e.g. clk, cls, erp, sp3, sum, default = sp3)
-    dwn_src - Download Source (e.g. cddis, ga)
-    ftps - Optionally input active ftps connection object
-    wkly_file - optionally grab the weekly file rather than the daily
-    repro3 - option to download the REPRO3 version of the file
+    logging.info("Attempting CDDIS Product download/s")
+    logging.info(f"Start Epoch - {start_epoch}")
+    logging.info(f"End Epoch - {end_epoch}")
+    if long_filename == None:
+        long_filename = long_filename_cddis_cutoff(start_epoch)
 
-    """
+    reference_start = _deepcopy(start_epoch)
+    product_filename, gps_date, reference_start = generate_product_filename(
+        reference_start,
+        file_ext,
+        long_filename=long_filename,
+        analysis_center=analysis_center,
+        timespan=timespan,
+        solution_type=solution_type,
+        sampling_rate=sampling_rate,
+        version=version,
+        project=project_type,
+    )
+    logging.debug(
+        f"Generated filename: {product_filename}, with GPS Date: {gps_date.gpswkD} and reference: {reference_start}"
+    )
 
-    # Convert input to list of datetime dates (if not already)
-    if (type(dates) == list) & (type(dates[0]) == _datetime.date):
-        dt_list = dates
-    else:
-        dt_list = dates_type_convert(dates)
+    ensure_folders([download_dir])
+    download_filepaths = []
+    with ftp_tls(CDDIS_FTP) as ftps:
+        try:
+            ftps.cwd(f"gnss/products/{gps_date.gpswk}")
+        except _ftplib.all_errors as e:
+            logging.warning(f"{reference_start} too recent")
+            logging.warning(f"ftp_lib error: {e}")
+            product_filename, gps_date, reference_start = generate_product_filename(
+                reference_start,
+                file_ext,
+                shift=-6,
+                long_filename=long_filename,
+                analysis_center=analysis_center,
+                timespan=timespan,
+                solution_type=solution_type,
+                sampling_rate=sampling_rate,
+                version=version,
+                project=project_type,
+            )
+            ftps.cwd(f"gnss/products/{gps_date.gpswk}")
 
-    # File types should be converted to lists also, if not already so
-    if isinstance(f_type, list):
-        f_types = f_type
-    else:
-        f_types = [f_type]
+            all_files = ftps.nlst()
+            if not (product_filename in all_files):
+                logging.warning(f"{product_filename} not in gnss/products/{gps_date.gpswk} - too recent")
+                raise FileNotFoundError
 
-    # Create directory if doesn't exist:
-    if not _Path(dest).is_dir():
-        _Path(dest).mkdir(parents=True)
-
-    # Create list to hold filenames that will be downloaded:
-    if f_dict:
-        f_dict = {f_typ: [] for f_typ in f_types}
-
-    # Connect to ftps if not already:
-    if not ftps:
-        # Connect to chosen server
-        if dwn_src == "cddis":
-            logging.info("\nGathering product files...")
-            ftps = connect_cddis(verbose=True)
-            p_gpswk = 0
-    else:
-        p_gpswk = 0
-
-    for dt in dt_list:
-        for f_typ in f_types:
-            if dwn_src == "cddis":
-                if repro3:
-                    f, gpswk = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ, repro3=True)
-                elif (ac == "igs") and (f_typ == "erp"):
-                    f, gpswk = gen_prod_filename(dt, pref=ac, suff="7", f_type=f_typ, wkly_file=True)
-                elif f_typ == "snx":
-                    mr_file, ftps, gpswk = find_mr_file(dt, f_typ, ac, ftps)
-                    f = mr_file
-                elif wkly_file:
-                    f, gpswk = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ, wkly_file=True)
-                else:
-                    f, gpswk = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ)
-
-                if not check_file_present(comp_filename=f, dwndir=dest):
-                    # gpswk = dt2gpswk(dt)
-                    if gpswk != p_gpswk:
-                        ftps.cwd("/")
-                        ftps.cwd(f"gnss/products/{gpswk}")
-                        if repro3:
-                            ftps.cwd(f"repro3")
-
-                    if f_typ == "rnx":
-                        ftps.cwd("/")
-                        ftps.cwd(f"gnss/data/daily/{dt.year}/brdc")
-                        success = check_n_download(
-                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
-                        )
-                        ftps.cwd("/")
-                        ftps.cwd(f"gnss/products/{gpswk}")
-                    else:
-                        success = check_n_download(
-                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
-                        )
-                    p_gpswk = gpswk
-                else:
-                    success = True
-                if f_dict and success:
-                    f_uncomp = gen_uncomp_filename(f)
-                    if f_uncomp not in f_dict[f_typ]:
-                        f_dict[f_typ].append(f_uncomp)
-
+        # reference_start will be changed in the first run through while loop below
+        reference_start -= _datetime.timedelta(hours=24)
+        count = 0
+        remain = end_epoch - reference_start
+        while remain.total_seconds() > timespan.total_seconds():
+            if count == limit:
+                remain = _datetime.timedelta(days=0)
             else:
-                for dt in dt_list:
-                    for f_typ in f_types:
-                        f = gen_prod_filename(dt, pref=ac, suff=suff, f_type=f_typ)
-                        success = check_n_download(
-                            f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
+                product_filename, gps_date, reference_start = generate_product_filename(
+                    reference_start,
+                    file_ext,
+                    shift=24,  # Shift at the start of the loop - speeds up total download time
+                    long_filename=long_filename,
+                    analysis_center=analysis_center,
+                    timespan=timespan,
+                    solution_type=solution_type,
+                    sampling_rate=sampling_rate,
+                    version=version,
+                    project=project_type,
+                )
+                download_filepath = check_whether_to_download(
+                    filename=product_filename, download_dir=download_dir, if_file_present=if_file_present
+                )
+                if download_filepath is not None:
+                    logging.info(f"Downloading {product_filename} from CDDIS")
+                    download_filepaths.append(
+                        download_file_from_cddis(
+                            filename=product_filename,
+                            ftp_folder=f"gnss/products/{gps_date.gpswk}",
+                            output_folder=download_dir,
+                            if_file_present=if_file_present,
+                            note_filetype=file_ext,
                         )
-                        if f_dict and success:
-                            f_uncomp = gen_uncomp_filename(f)
-                            if f_uncomp not in f_dict[f_typ]:
-                                f_dict[f_typ].append(f_uncomp)
-    if f_dict:
-        return f_dict
+                    )
+                count += 1
+                remain = end_epoch - reference_start
+
+    return download_filepaths
 
 
-def download_pea_prods(
-    dest,
-    most_recent=True,
-    dates=None,
-    ac="igs",
-    out_dict=False,
-    trop_vmf3=False,
-    brd_typ="igs",
-    snx_typ="igs",
-    clk_sel="clk",
-    repro3=False,
-):
+def download_iau2000_variant(
+    download_dir: _Path,
+    iau2000_file_variant: Literal["standard", "daily"],
+    if_file_present: str = "prompt_user",
+) -> Union[_Path, None]:
     """
-    Download necessary pea product files for date/s provided
-    """
-    if dest[-1] != "/":
-        dest += "/"
+    Downloads IAU2000 file based on the variant requested ("daily" or "standard" file).
+    Added in approximately version 0.0.58
 
-    if most_recent:
-        snx_vars_out = download_most_recent(
-            dest=dest, f_type="snx", ac=snx_typ, dwn_src="cddis", f_dict_out=True, gpswkD_out=True, ftps_out=True
+    :param _Path download_dir: Where to download file (local directory).
+    :param Literal["standard", "daily"] iau2000_file_variant: name of file variant to download. Specifies whether to
+        download the recent "daily" file, or the historical "standard" file.
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :raises Exception: On download failures. In some cases the underlying exception will be wrapped in the one raised.
+    :return Union[_Path, None]: _Path to the downloaded file, or None if not downloaded (based on if_file_present
+        setting).
+    """
+    ensure_folders([download_dir])
+    filetype = "EOP IAU2000"
+
+    if iau2000_file_variant == "daily":
+        # Daily (recent) file spanning the last three months. Updated daily (as the name suggests).
+        url_dir = "daily/"
+        iau2000_filename = "finals2000A.daily"
+        download_filename = "finals.daily.iau2000.txt"
+        # logging.info("Attempting Download of finals2000A.daily file")
+    elif iau2000_file_variant == "standard":
+        # Standard (historic) IAU2000 file dating back to 1992:
+        url_dir = "standard/"
+        iau2000_filename = "finals2000A.data"
+        download_filename = "finals.data.iau2000.txt"
+        # logging.info("Attempting Download of finals2000A.data file")
+    else:
+        raise ValueError(f"Unrecognised IAU2000 file variant requested: {iau2000_file_variant}")
+
+    # Can we skip this download, based on existing file and value of if_file_present?
+    if not check_whether_to_download(
+        filename=download_filename, download_dir=download_dir, if_file_present=if_file_present
+    ):
+        return None  # No output path for this variant given we didn't download it.
+
+    # Default source IERS, then fall back to CDDIS (based on Eugene's comment)
+    try:
+        logging.info("Downloading IAU2000 file from IERS")
+        # We set raise_on_failure, so a return of None indicates the file did not need downloading (bit redundant).
+        return attempt_url_download(
+            download_dir=download_dir,
+            url="https://datacenter.iers.org/products/eop/rapid/" + url_dir + iau2000_filename,
+            filename=download_filename,
+            type_of_file=filetype,
+            if_file_present=if_file_present,
+            raise_on_failure=True,
         )
-        f_dict, gpswkD_out, ftps = snx_vars_out
+    except Exception as ex:
+        logging.error("Failed to download IAU2000 file from IERS.", ex)
+        try:
+            logging.info("Downloading IAU2000 file from CDDIS")
+            download_filepath_or_none = download_file_from_cddis(
+                filename=iau2000_filename,
+                ftp_folder="products/iers/",
+                output_folder=download_dir,
+                decompress=False,
+                if_file_present=if_file_present,
+                note_filetype=filetype,
+                # Already raises on failure by default
+            )
+            if download_filepath_or_none is None:  # File already existed and was not re-downloaded.
+                return None
+            # Download succeeded. Rename to standard filename, and return the path
+            return download_filepath_or_none.rename(download_dir / download_filename)
+        except Exception as ex:
+            logging.error("Failed to download IAU2000 file from CDDIS.", ex)
 
-        clk_vars_out = download_most_recent(
-            dest=dest, f_type=clk_sel, ac=ac, dwn_src="cddis", f_dict_out=True, gpswkD_out=True, ftps_out=True
+
+def get_iau2000_file_variants_for_dates(
+    start_epoch: Union[_datetime.datetime, None] = None,
+    end_epoch: Union[_datetime.datetime, None] = None,
+    preferred_variant: Literal["standard", "daily"] = "daily",
+    legacy_mode: bool = False,  # TODO remove once wrapper function (download_iau2000_file()) is removed.
+) -> set[Literal["standard", "daily"]]:
+    """
+    Works out which variant(s) of IAU2000 files are needed, based on the given start and or end epoch. If no part of
+        the date range entered *necessitates* using a specific IAU2000 variant, the preferred_variant will be returned
+        as a tie-breaker (by default this is 'daily').
+    The returned variant(s) can be iterated over and passed to the download_iau2000_variant() function to fetch the
+    file(s).
+    Added in approximately version 0.0.58
+
+    Specifications for the file formats:
+    finals.data https://datacenter.iers.org/versionMetadata.php?filename=latestVersionMeta/10_FINALS.DATA_IAU2000_V2013_0110.txt
+    finals.daily https://datacenter.iers.org/versionMetadata.php?filename=latestVersionMeta/13_FINALS.DAILY_IAU2000_V2013_0113.txt
+
+    :param Union[_datetime.datetime, None] start_epoch: Start of date range. Optional if end_epoch is provided.
+    :param Union[_datetime.datetime, None] end_epoch: End of date range. Optional if start_epoch is provided.
+    :param set[Literal["standard", "daily"] preferred_variant: For date ranges that don't require us to use a specific
+        variant, which variant should we fall back on as a tie-breaker. Defaults to the 'daily' file.
+    :param bool legacy_mode: (Deprecated) for backwards compatibility only: limit to only the variant we definately
+        need, when we have an unbounded range (missing start or end epoch). By default this is not enabled. Can only be
+        used with a start_epoch OR end_epoch, not both.
+    :return set[Literal["standard", "daily"]]: Set of IAU2000 file variant names needed for your date / date range
+    :raises ValueError: If invalid combination of parameters is given. Note that a start and or end epoch *must* be
+        given. In legacy mode, only a start OR end epoch can be specified, and preferred_variant *must* be set
+        to 'standard'.
+    """
+    if not (start_epoch or end_epoch):
+        raise ValueError("start_epoch, end_epoch or both, must be provided")
+
+    # Validate legacy_mode related restrictions
+    if legacy_mode:
+        if preferred_variant != "standard":  # This is what has historically been used
+            raise ValueError("In legacy mode, preferred_variant must be set to 'standard'")
+        if (start_epoch is not None) and (end_epoch is not None):
+            raise ValueError("In legacy_mode, only a start_epoch OR end_epoch can be specified (not both)")
+
+    needed_variants: set[Literal["standard", "daily"]] = set()
+    now = _datetime.datetime.now()
+
+    date_24_hours_ago = now - _datetime.timedelta(days=1)
+
+    # Dates can't be within the last 24 hours, or in the future
+    if (start_epoch is not None and start_epoch > date_24_hours_ago) or (
+        end_epoch is not None and end_epoch > date_24_hours_ago
+    ):
+        raise ValueError(
+            "All dates provided must be 24h old or older. We can't assume data newer than a day old will be present"
         )
-        f_dict_update, gpswkD_out, ftps = clk_vars_out
-        f_dict.update(f_dict_update)
-        gpswkD = gpswkD_out["clk_gpswkD"][0]
 
-        if most_recent == True:
-            num = 1
-        else:
-            num = most_recent
+    date_89_days_ago = now - _datetime.timedelta(days=89)
+    date_8_days_ago = now - _datetime.timedelta(days=8)
 
-        dt0 = gpswkD2dt(gpswkD)
-        dtn = dt0 - _datetime.timedelta(days=num - 1)
+    # Notes on file variant choice logic:
+    # If the time range overlaps with less than a week ago, you need the daily file (the historical one won't have
+    # new enough data).
+    # Otherwise, the historical file will be more complete.
 
-        if dtn == dt0:
-            dt_list = [dt0]
-        else:
-            dates = _pd.date_range(start=str(dtn), end=str(dt0), freq="1D")
-            dates = list(dates)
-            dates.reverse()
-            dt_list = sorted(dates_type_convert(dates))
-    else:
-        dt_list = sorted(dates_type_convert(dates))
+    # Fundamentally:
+    # If your timerange includes dates as recent as last week, you need the daily file.
+    # If your timerange includes dates older than three months ago, you need the standard (historic) file.
+    # Note that you may need both.
 
-    dest_pth = _Path(dest)
-    # Output dict for the files that are downloaded
-    if not out_dict:
-        out_dict = {"dates": dt_list, "atxfiles": ["igs14.atx"], "blqfiles": ["OLOAD_GO.BLQ"]}
+    # If start or end epoch within (>=) the date 8 days ago, standard file may not have the data yet, use daily
+    if (start_epoch is not None and start_epoch >= date_8_days_ago) or (
+        end_epoch is not None and end_epoch >= date_8_days_ago
+    ):
+        needed_variants.add("daily")
+    # If start or end epoch older (<) the date three months ago, daily file won't have data, use standard file
+    if (start_epoch is not None and start_epoch <= date_89_days_ago) or (
+        end_epoch is not None and end_epoch <= date_89_days_ago
+    ):
+        needed_variants.add("standard")
 
-    # Get the ATX file if not present already:
-    if not (dest_pth / "igs14.atx").is_file():
-        if not dest_pth.is_dir():
-            dest_pth.mkdir(parents=True)
-        url = "https://files.igs.org/pub/station/general/igs14.atx"
-        check_n_download_url(url, dwndir=dest)
+    # Default to preferred variant if provided dates weren't within a range that *required* use of one file or the other
+    if len(needed_variants) == 0:
+        needed_variants.add(preferred_variant)
 
-    # Get the BLQ file if not present already:
-    if not (dest_pth / "OLOAD_GO.BLQ").is_file():
-        url = "https://peanpod.s3-ap-southeast-2.amazonaws.com/pea/examples/EX03/products/OLOAD_GO.BLQ"
-        check_n_download_url(url, dwndir=dest)
+    # Is there ambiguity in the date range (start or end not specified)?
 
-    # For the troposphere, have two options: gpt2 or vmf3. If flag is set to True, download 6-hourly trop files:
-    if trop_vmf3:
-        # If directory for the Tropospheric model files doesn't exist, create it:
-        if not (dest_pth / "grid5").is_dir():
-            (dest_pth / "grid5").mkdir(parents=True)
-        for dt in dt_list:
-            year = dt.strftime("%Y")
-            # Create urls to the four 6-hourly files associated with the tropospheric model
-            begin_url = f"https://vmf.geo.tuwien.ac.at/trop_products/GRID/5x5/VMF3/VMF3_OP/{year}/"
-            f_begin = "VMF3_" + dt.strftime("%Y%m%d") + ".H"
-            urls = [begin_url + f_begin + en for en in ["00", "06", "12", "18"]]
-            urls.append(begin_url + "VMF3_" + (dt + _datetime.timedelta(days=1)).strftime("%Y%m%d") + ".H00")
-            # Run through model files, downloading if they are not in directory
-            for url in urls:
-                if not (dest_pth / f"grid5/{url[-17:]}").is_file():
-                    check_n_download_url(url, dwndir=str(dest_pth / "grid5"))
-    else:
-        # Otherwise, check for GPT2 model file or download if necessary:
-        if not (dest_pth / "gpt_25.grd").is_file():
-            url = "https://peanpod.s3-ap-southeast-2.amazonaws.com/pea/examples/EX03/products/gpt_25.grd"
-            check_n_download_url(url, dwndir=dest)
+    # In legacy mode, don't proceed to consider this ambiguity. This should result in a single variant only, as we
+    # have already enforced that only a start OR end epoch is used in legacy mode.
+    if legacy_mode:
+        return needed_variants
 
-    if repro3:
-        snx_typ = ac
-    standards = ["sp3", "erp", clk_sel]
-    ac_typ_dict = {ac_sel: [] for ac_sel in [ac, brd_typ, snx_typ]}
-    for typ in standards:
-        ac_typ_dict[ac].append(typ)
-    ac_typ_dict[brd_typ].append("rnx")
+    # Start of range was unspecified, we have to assume it may be older than 3 months
+    if start_epoch is None:
+        needed_variants.add("standard")
 
-    if not most_recent:
-        f_dict = {}
-        ac_typ_dict[snx_typ].append("snx")
+    # End of range was unspecified, we have to assume it may be newer than a week
+    if end_epoch is None:
+        needed_variants.add("daily")
 
-    # Download product files of each type from CDDIS for the given dates:
-    for ac in ac_typ_dict:
-        if most_recent:
-            f_dict_update = download_prod(
-                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True, ftps=ftps
-            )
-        elif repro3:
-            f_dict_update = download_prod(
-                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True, repro3=True
-            )
-        else:
-            f_dict_update = download_prod(
-                dates=dt_list, dest=dest, ac=ac, f_type=ac_typ_dict[ac], dwn_src="cddis", f_dict=True
-            )
-        f_dict.update(f_dict_update)
-
-    f_types = []
-    for el in list(ac_typ_dict.values()):
-        for typ in el:
-            f_types.append(typ)
-    if most_recent:
-        f_types.append("snx")
-
-    # Prepare the output dictionary based on the downloaded files:
-    for f_type in f_types:
-        if f_type == "rnx":
-            out_dict[f"navfiles"] = sorted(f_dict[f_type])
-        out_dict[f"{f_type}files"] = sorted(f_dict[f_type])
-
-    return out_dict
+    return needed_variants
 
 
-def download_rinex3(dates, stations, dest, dwn_src="cddis", ftps=False, f_dict=False):
+# TODO DEPRECATED
+def download_iau2000_file(
+    download_dir: _Path,
+    start_epoch: _datetime.datetime,
+    if_file_present: str = "prompt_user",
+) -> Union[_Path, None]:
     """
-    Function used to get the RINEX3 observation file from download server of choice, default: CDDIS
+    Compatibility wrapper around new functions
+    DEPRECATED since approximately version 0.0.58
     """
-    if dest[-1] != "/":
-        dest += "/"
-    # Convert input to list of datetime dates (if not already)
-    dt_list = dates_type_convert(dates)
+    # Run variant picker with legacy configuration options
+    variants = get_iau2000_file_variants_for_dates(
+        start_epoch=start_epoch, legacy_mode=True, preferred_variant="standard"
+    )
+    if len(variants) != 1:
+        raise NotImplementedError(
+            "Legacy wrapper for IAU2000 file download failed. Exactly one file variant should be returned based on "
+            f"a single date ({start_epoch})."
+        )
+    variant = variants.pop()
+    download_iau2000_variant(download_dir=download_dir, iau2000_file_variant=variant, if_file_present=if_file_present)
 
-    if isinstance(stations, str):
-        stations = [stations]
 
-    # Create directory if doesn't exist:
-    if not _Path(dest).is_dir():
-        _Path(dest).mkdir(parents=True)
+def download_atx(
+    download_dir: _Path, reference_frame: str = "IGS20", if_file_present: str = "prompt_user"
+) -> Union[_Path, None]:
+    """Download the ATX file necessary for running the PEA provided the download directory (download_dir)
 
-    if f_dict:
-        f_dict = {"rnxfiles": []}
+    :param _Path download_dir: Where to download files (local directory)
+    :param str reference_frame: Coordinate reference frame file to download, defaults to "IGS20"
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :raises ValueError: If an invalid option is given for reference_frame variable
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
+    """
+    reference_frame_to_filename = {"IGS20": "igs20.atx", "IGb14": "igs14.atx"}
+    try:
+        atx_filename = reference_frame_to_filename[reference_frame]
+    except KeyError:
+        raise ValueError("Invalid value passed for reference_frame var. Must be either 'IGS20' or 'IGb14'")
 
-    # Connect to ftps if not already:
-    if not ftps:
-        # Connect to chosen server
-        if dwn_src == "cddis":
-            logging.info("\nGathering RINEX files...")
-            ftps = connect_cddis(verbose=True)
-            p_date = 0
+    ensure_folders([download_dir])
 
-            for dt in dt_list:
-                for station in stations:
-                    f_pref = f"{station}_R_"
-                    f_suff_crx = f"0000_01D_30S_MO.crx.gz"
-                    f = f_pref + dt.strftime("%Y%j") + f_suff_crx
+    url_igs = IGS_FILES_URL + f"station/general/{atx_filename}"
+    url_bern = BERN_URL + "BSWUSER54/REF/I20.ATX"
 
-                    if not check_file_present(comp_filename=f, dwndir=dest):
-                        if p_date == dt:
-                            try:
-                                success = check_n_download(
-                                    f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
-                                )
-                            except:
-                                logging.error(f"Download of {f} failed - file not found")
-                                success = False
-                        else:
-                            ftps.cwd("/")
-                            ftps.cwd(f"gnss/data/daily{dt.strftime('/%Y/%j/%yd/')}")
-                            try:
-                                success = check_n_download(
-                                    f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True
-                                )
-                            except:
-                                logging.error(f"Download of {f} failed - file not found")
-                                success = False
-                            p_date = dt
-                    else:
-                        success = True
-                    if f_dict and success:
-                        f_dict["rnxfiles"].append(gen_uncomp_filename(f))
-    else:
-        for dt in dt_list:
-            for station in stations:
-                f_pref = f"{station}_R_"
-                f_suff_crx = f"0000_01D_30S_MO.crx.gz"
-                f = f_pref + dt.strftime("%Y%j") + f_suff_crx
-                if not check_file_present(comp_filename=f, dwndir=dest):
-                    success = check_n_download(f, dwndir=dest, ftps=ftps, uncomp=True, remove_crx=True, no_check=True)
-                else:
-                    success = True
-                if f_dict and success:
-                    f_dict["rnxfiles"].append(gen_uncomp_filename(f))
-    if f_dict:
-        return f_dict
+    try:
+        download_filepath = attempt_url_download(
+            download_dir=download_dir,
+            url=url_igs,
+            filename=atx_filename,
+            type_of_file="ATX",
+            if_file_present=if_file_present,
+        )
+    except:
+        download_filepath = attempt_url_download(
+            download_dir=download_dir,
+            url=url_bern,
+            filename=atx_filename,
+            type_of_file="ATX",
+            if_file_present=if_file_present,
+        )
+    return download_filepath
+
+
+def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = "prompt_user") -> Union[_Path, None]:
+    """Download the most recent IGS satellite metadata file
+
+    :param _Path download_dir: Where to download files (local directory)
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :return _Path or None: The pathlib.Path of the downloaded file if successful, otherwise returns None
+    """
+    ensure_folders([download_dir])
+    download_filepath = attempt_url_download(
+        download_dir=download_dir,
+        url=IGS_FILES_URL + "station/general/igs_satellite_metadata.snx",
+        filename="igs_satellite_metadata.snx",
+        type_of_file="IGS satellite metadata",
+        if_file_present=if_file_present,
+    )
+    return download_filepath
+
+
+def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> List[_Path]:
+    """Download yaw rate / bias files needed to for Ginan's PEA
+
+    :param _Path download_dir: Where to download files (local directory)
+    :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :return List[_Path]: Return list paths of downloaded files
+    """
+    ensure_folders([download_dir])
+    download_filepaths = []
+    files = ["bds_yaw_modes.snx.gz", "qzss_yaw_modes.snx.gz", "sat_yaw_bias_rate.snx.gz"]
+    for filename in files:
+        download_filepath = attempt_url_download(
+            download_dir=download_dir,
+            url=PRODUCT_BASE_URL + "tables/" + filename,
+            filename=filename,
+            type_of_file="Yaw Model SNX",
+            if_file_present=if_file_present,
+        )
+        if download_filepath is not None:
+            download_filepaths.append(decompress_file(download_filepath, delete_after_decompression=True))
+
+    return download_filepaths
 
 
 def get_vars_from_file(path):
