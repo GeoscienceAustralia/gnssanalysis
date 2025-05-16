@@ -58,7 +58,7 @@ VG02 -12578.915944  -7977.396362  26581.116225 999999.999999
 EOF
 """
 
-# Based on SP3c.txt example 2. SP3d is PDF formatted so alignment is hard to preserve.
+# Based on SP3c.txt example 2. SP3d is PDF formatted so alignment is hard to preserve. #TODO check this is actually right
 # https://files.igs.org/pub/data/format/sp3c.txt
 # Truncated and manually modified to reflect:
 #   Epochs: 1
