@@ -1133,35 +1133,30 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
 
 def clean_sp3_orb(sp3_df: _pd.DataFrame, use_offline_sat_removal: bool) -> _pd.DataFrame:
     """
-    Clean SP3 orbit data in order to remove duplicates, leading and ending, and/or any satellites with nodata values
-    elsewhere in the DataFrame.
+    Clean SP3 orbit data: remove duplicates, remove leading or trailing rows of NA values, optionally remove satellites
+    with *any* missing position values.
 
     :param _pd.DataFrame sp3_df: The input SP3 DataFrame.
     :param bool use_offline_sat_removal: Flag indicating whether to remove satellites which are offline / have some
            nodata position values.
-    :return _pd.Series: A pandas Series containing the parsed information from the SP3 header.
+    :return _pd.DataFrame: A cleaned version of the SP3 DataFrame
     """
-    sp3_df = sp3_df.filter(items=[("EST", "X"), ("EST", "Y"), ("EST", "Z")])
+    # Trim DataFrame to position estimate columns
+    sp3_df_updated: _pd.DataFrame = sp3_df.filter(items=[("EST", "X"), ("EST", "Y"), ("EST", "Z")])
 
     # Drop any duplicates in the index
-    sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
+    sp3_df_updated = sp3_df_updated[~sp3_df_updated.index.duplicated(keep="first")]
 
     # Trim the leading and ending epochs that are empty (i.e. all values are NaN) to avoid dropping all data
-    valid_rows = sp3_df.dropna(how="all")
+    valid_rows = sp3_df_updated.dropna(how="all")
     first_valid_epoch = valid_rows.index[0][0]
     last_valid_epoch = valid_rows.index[-1][0]
-    sp3_df = sp3_df.loc[first_valid_epoch:last_valid_epoch]
-    sp3_df_cleaned = sp3_df
+    sp3_df_updated = sp3_df_updated.loc[first_valid_epoch:last_valid_epoch]
 
-    # Drop any satellites (SVs) which are offline or partially offline.
-    # Note: this currently removes SVs with ANY nodata values for position, so a single glitch will remove
-    # the SV from the whole file.
-    # This step was added after velocity interpolation failures due to non-finite (NaN) values from offline SVs.
     if use_offline_sat_removal:
-        sp3_baseline = remove_offline_sats(sp3_baseline, df_friendly_name="baseline")
-        sp3_test = remove_offline_sats(sp3_test, df_friendly_name="test")
+        sp3_df_updated = remove_offline_sats(sp3_df_updated)
 
-    return sp3_df_cleaned
+    return sp3_df_updated
 
 
 def getVelSpline(sp3Df: _pd.DataFrame) -> _pd.DataFrame:

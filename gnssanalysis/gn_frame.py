@@ -35,7 +35,7 @@ def get_frame_of_day(
 ):
     """Main function to propagate frame into datetime of interest"""
 
-    if isinstance(date_or_j2000, (int, _np.int64)):
+    if isinstance(date_or_j2000, (int, _np.int64)):  # TODO check: np.int64 is meant to be a class not a type
         date_J2000 = date_or_j2000
     else:
         date_J2000 = _gn_datetime.datetime2j2000(_np.datetime64(date_or_j2000))
