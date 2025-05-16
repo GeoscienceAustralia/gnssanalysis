@@ -436,8 +436,11 @@ def generate_product_filename(
         else:
             hour = f"{reference_start.hour:02}"
             prefix = "igs" if solution_type == "FIN" else "igr" if solution_type == "RAP" else "igu"
-            product_filename = f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z" if solution_type == "ULT" else \
-                f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
+            product_filename = (
+                f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z"
+                if solution_type == "ULT"
+                else f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
+            )
     return product_filename, gps_date, reference_start
 
 
@@ -495,7 +498,7 @@ def attempt_ftps_download(
     download_dir: _Path,
     ftps: _ftplib.FTP_TLS,
     filename: str,
-    type_of_file: str = None,
+    type_of_file: Optional[str] = None,
     if_file_present: str = "prompt_user",
 ) -> Union[_Path, None]:
     """Attempt download of file (filename) given the ftps client object (ftps) to chosen location (download_dir)
@@ -739,7 +742,7 @@ def download_file_from_cddis(
     max_retries: int = 3,
     decompress: bool = True,
     if_file_present: str = "prompt_user",
-    note_filetype: str = None,
+    note_filetype: Optional[str] = None,
 ) -> Union[_Path, None]:
     """Downloads a single file from the CDDIS ftp server
 
@@ -752,7 +755,7 @@ def download_file_from_cddis(
     :param str note_filetype: How to label the file for STDOUT messages, defaults to None
     :raises e: Raise any error that is run into by ftplib
     :return _Path or None: The pathlib.Path of the downloaded file (or decompressed output of it). Returns None if the
-        file already existed and was skipped.
+        file already existed and was skipped, or if the download failed.
     """
     with ftp_tls(CDDIS_FTP) as ftps:
         ftps.cwd(ftp_folder)
@@ -793,7 +796,7 @@ def download_file_from_cddis(
     raise Exception("Failed to download file or raise exception. Some logic is broken.")
 
 
-def download_multiple_files_from_cddis(files: List[str], ftp_folder: str, output_folder: _Path) -> None:
+def download_multiple_files_from_cddis(files: list[str], ftp_folder: str, output_folder: _Path) -> None:
     """Downloads multiple files in a single folder from cddis in a thread pool.
 
     :param files: List of str filenames
