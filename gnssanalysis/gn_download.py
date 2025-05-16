@@ -498,7 +498,7 @@ def attempt_ftps_download(
     download_dir: _Path,
     ftps: _ftplib.FTP_TLS,
     filename: str,
-    type_of_file: _Optional[str] = None,
+    type_of_file: Optional[str] = None,
     if_file_present: str = "prompt_user",
 ) -> Union[_Path, None]:
     """Attempt download of file (filename) given the ftps client object (ftps) to chosen location (download_dir)
