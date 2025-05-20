@@ -35,7 +35,7 @@ def get_frame_of_day(
 ):
     """Main function to propagate frame into datetime of interest"""
 
-    if isinstance(date_or_j2000, (int, _np.int64)):
+    if isinstance(date_or_j2000, (int, _np.int64)):  # TODO check: np.int64 is meant to be a class not a type
         date_J2000 = date_or_j2000
     else:
         date_J2000 = _gn_datetime.datetime2j2000(_np.datetime64(date_or_j2000))
@@ -53,6 +53,8 @@ def get_frame_of_day(
         output = itrf_path_or_df
     elif isinstance(itrf_path_or_df, str):
         output = _gn_io.sinex._get_snx_vector_gzchunks(filename=itrf_path_or_df, block_name="SOLUTION/ESTIMATE")
+        if output is None:
+            raise Exception(f"Output from _get_snx_vector_gzchunks() was None! Filepath: {itrf_path_or_df}")
     else:
         raise ValueError(f"itrf_path_or_df must be a pandas DataFrame or str, got: {type(itrf_path_or_df)}")
 
@@ -84,7 +86,7 @@ def get_frame_of_day(
         elif isinstance(list_path_or_df, str):
             core_df = _get_core_list(list_path_or_df)
             core_list = core_df.CODE.values
-        elif isinstance(list_path_or_df, _np.ndarray) or isinstance(list_path_or_df, list):
+        elif isinstance(list_path_or_df, (_np.ndarray, list)):
             core_list = list_path_or_df
         else:
             raise ValueError(

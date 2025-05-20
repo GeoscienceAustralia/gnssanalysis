@@ -157,11 +157,11 @@ def determine_log_version(data: bytes) -> str:
     first_line_bytes = data.lstrip(b"\n").split(b"\n")[0]
 
     result_v1 = _REGEX_LOG_VERSION_1.search(first_line_bytes)
-    if result_v1:
+    if result_v1 is not None:
         return "v1.0"
 
     result_v2 = _REGEX_LOG_VERSION_2.search(first_line_bytes)
-    if result_v2:
+    if result_v2 is not None:
         return "v2.0"
 
     raise LogVersionError(f"File does not conform to any known IGS Site Log version. First line is: {first_line_bytes}")

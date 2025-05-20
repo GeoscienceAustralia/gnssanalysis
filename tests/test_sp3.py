@@ -9,7 +9,13 @@ import pandas as pd
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
 import gnssanalysis.gn_io.sp3 as sp3
 
+from gnssanalysis.gn_utils import STRICT_OFF, STRICT_RAISE, STRICT_WARN, trim_line_ends
 from test_datasets.sp3_test_data import (
+    fake_header_version_a,
+    fake_header_version_b,
+    fake_header_version_c,
+    fake_header_version_d,
+    fake_header_version_e,
     # first dataset is part of the IGS benchmark (modified to include non null data on clock):
     sp3_test_data_igs_benchmark_null_clock as input_data,
     # Expected content section we want gnssanalysis to write out
@@ -21,6 +27,12 @@ from test_datasets.sp3_test_data import (
     sp3_test_data_partially_offline_sat as offline_sat_test_data,
     # For header vs content validation tests:
     sp3_test_data_cod_broken_missing_sv_in_content,
+    # For testing generate_sp3_header() and generate_sp3_content()
+    sp3_test_data_short_cod_final,  # For use as input data
+    sp3_test_data_short_cod_final_content,  # For validating content output
+    sp3_test_data_short_cod_final_header,  # For validating header output
+    # For testing comment validation (overlong comment with nothing but extra SPACES in it)
+    sp3_test_data_short_cod_final_overlong_comment_line as sp3_with_overlong_comment,
 )
 
 
@@ -47,7 +59,38 @@ sample_header_svs = b"""#dP2024  1 27  0  0  0.0000000      289 ORBIT IGS14 FIT 
 """
 
 
-class TestSp3(unittest.TestCase):
+class TestSP3(unittest.TestCase):
+
+    def test_check_sp3_version(self):
+        # Check that SP3 version check works, and that the highest level of strict mode raises more exceptions
+
+        # Extremes
+        with self.assertRaises(ValueError):  # Version too old
+            sp3.check_sp3_version(fake_header_version_a)
+
+        with self.assertRaises(ValueError):  # Version too new
+            sp3.check_sp3_version(fake_header_version_e)
+
+        # Ambiguous cases
+        self.assertEqual(
+            sp3.check_sp3_version(fake_header_version_b),
+            False,
+            "SP3 version b should not be considered fully supported",
+        )
+        self.assertEqual(
+            sp3.check_sp3_version(fake_header_version_c),
+            False,
+            "SP3 version c should not be considered fully supported",
+        )
+        # Our best supported version should return True
+        self.assertEqual(
+            sp3.check_sp3_version(fake_header_version_d), True, "SP3 version d should be considered best supported"
+        )
+
+        # StrictModes.STRICT_RAISE should cause a *possibly* supported version to raise an exception.
+        with self.assertRaises(ValueError):
+            sp3.check_sp3_version(fake_header_version_c, strict_mode=STRICT_RAISE)
+
     @patch("builtins.open", new_callable=mock_open, read_data=input_data)
     def test_read_sp3_pOnly(self, mock_file):
         result = sp3.read_sp3("mock_path", pOnly=True)
@@ -153,6 +196,237 @@ class TestSp3(unittest.TestCase):
 
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
+
+    @staticmethod
+    def get_example_dataframe(template_name: str = "normal", include_simple_header: bool = True) -> pd.DataFrame:
+
+        dataframe_templates = {
+            # "normal": {  # TODO fill in
+            #     "data_vals": [],
+            #     "index_vals": [],
+            # },
+            "dupe_epoch_offline_sat_empty_epoch": {
+                "data_vals": [
+                    # Epoch 1 ---------------------------------
+                    #     EST, X         EST, Y         EST, Z
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [0.000000, 0.000000, 0.000000],  # ---------------- < G03 (offline)
+                    # Epoch 2 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [0.000000, 0.000000, 0.000000],  # ---------------- < G03 (offline)
+                    # Epoch 3 --------------------------------- Effectively missing epoch, to test trimming.
+                    [np.nan, np.nan, np.nan],
+                    [np.nan, np.nan, np.nan],
+                    [np.nan, np.nan, np.nan],
+                ],
+                "index_vals": [[774619200, 774619200, 774619201], ["G01", "G02", "G03"]],
+            },
+            "offline_sat_nan": {
+                "data_vals": [
+                    # Epoch 1 ---------------------------------
+                    #     EST, X         EST, Y         EST, Z
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [np.nan, np.nan, np.nan],  # ---------------- < G03 (offline)
+                    # Epoch 2 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [np.nan, np.nan, np.nan],  # ---------------- < G03 (offline)
+                    # Epoch 3 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],
+                    [4510.358405, -23377.282442, -11792.723580],
+                    [np.nan, np.nan, np.nan],
+                ],
+                "index_vals": [[774619200, 774619200, 774619201], ["G01", "G02", "G03"]],
+            },
+            "offline_sat_zero": {
+                "data_vals": [
+                    # Epoch 1 ---------------------------------
+                    #     EST, X         EST, Y         EST, Z
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [0.000000, 0.000000, 0.000000],  # ---------------- < G03 (offline)
+                    # Epoch 2 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G01
+                    [4510.358405, -23377.282442, -11792.723580],  # --- < G02
+                    [0.000000, 0.000000, 0.000000],  # ---------------- < G03 (offline)
+                    # Epoch 3 ---------------------------------
+                    [4510.358405, -23377.282442, -11792.723580],
+                    [4510.358405, -23377.282442, -11792.723580],
+                    [0.000000, 0.000000, 0.000000],
+                ],
+                "index_vals": [[774619200, 774619200, 774619201], ["G01", "G02", "G03"]],
+            },
+        }
+
+        if template_name not in dataframe_templates:
+            raise ValueError(f"Unsupported template name: {template_name}")
+
+        # Worked example for defining MultiIndex
+        # # Build a MultiIndex of J2000 then PRN values
+        # # ----------------------------- Epochs: ---------- | PRNs within each of those Epochs:
+        # # ------------------ Epoch 1 -- Epoch 2 -- Epoch 3 - PRN 1  PRN 2  PRN 3
+        # index_elements = [[774619200, 774619200, 774619201], ["G01", "G02", "G03"]]
+
+        # Define columns: top level 'EST' and nested under that, 'X', 'Y', 'Z'
+        frame_columns = [["EST", "EST", "EST"], ["X", "Y", "Z"]]
+
+        # Load template
+        template = dataframe_templates[template_name]
+        frame_data = template["data_vals"]
+        index_elements = template["index_vals"]
+
+        index_names = ["J2000", "PRN"]
+        multi_index = pd.MultiIndex.from_product(index_elements, names=index_names)
+
+        # Compose it all into a DataFrame
+        df = pd.DataFrame(frame_data, index=multi_index, columns=frame_columns)
+
+        if include_simple_header:
+            # Build SV table
+            head_svs = ["G01", "G02", "G03"]  # SV header entries
+            head_svs_std = [0, 0, 0]  # Accuracy codes for those SVs
+            sv_tbl = pd.Series(head_svs_std, index=head_svs)
+
+            # Build header
+            header_array = np.asarray(
+                [
+                    "d",
+                    "P",
+                    "Time TODO",
+                    "3",  # Num epochs
+                    "Data TODO",
+                    "coords TODO",
+                    "orb type TODO",
+                    "GAA",
+                    "SP3",  # Probably
+                    "Time sys TODO",
+                    "3",  # Stated SVs
+                ]
+            ).astype(str)
+            sp3_heading = pd.Series(
+                data=header_array,
+                index=[
+                    "VERSION",
+                    "PV_FLAG",
+                    "DATETIME",
+                    "N_EPOCHS",
+                    "DATA_USED",
+                    "COORD_SYS",
+                    "ORB_TYPE",
+                    "AC",
+                    "FILE_TYPE",
+                    "TIME_SYS",
+                    "SV_COUNT_STATED",
+                ],
+            )
+
+            # Merge SV table and header, and store as 'HEADER'
+            df.attrs["HEADER"] = pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
+        return df
+
+    def test_clean_sp3_orb(self):
+        """
+        Tests cleaning an SP3 DataFrame of duplicates, leading or trailing nodata values, and offline sats
+        """
+
+        # Create dataframe manually, as read function does deduplication itself. This also makes the test more self-contained
+        sp3_df = TestSP3.get_example_dataframe("dupe_epoch_offline_sat_empty_epoch")
+
+        self.assertTrue(
+            # Alterantively you can use all(array == array) to do an elementwise equality check
+            np.array_equal(sp3_df.index.get_level_values(0).unique(), [774619200, 774619201]),
+            "Sample data should have 2 unique epochs (one of which is empty)",
+        )
+        self.assertTrue(
+            np.array_equal(sp3_df.index.get_level_values(1).unique(), ["G01", "G02", "G03"]),
+            "Sample data should have 3 sats",
+        )
+
+        # There should be duplicates of each sat in the first epoch
+        # Note: syntax of loc here uses a tuple describing levels within the row MultiIndex, then column MultiIndex,
+        # i.e. (row, row), (column, column).
+        self.assertTrue(
+            np.array_equal(sp3_df.loc[(774619200, "G01"), ("EST", "X")].values, [4510.358405, 4510.358405]),
+            "Expect dupe in first epoch",
+        )
+
+        # Test cleaning function without offline sat removal
+        sp3_df_no_offline_removal = sp3.clean_sp3_orb(sp3_df, False)
+
+        self.assertTrue(
+            np.array_equal(sp3_df_no_offline_removal.index.get_level_values(0).unique(), [774619200]),
+            "After cleaning there should be a single unique epoch",
+        )
+
+        # This checks both (indirectly) that there is only one epoch (as the multi-index will repeat second level
+        # values, and the input doesn't change sats in successive epochs), and that those second level values
+        # aren't duplicated.
+        self.assertTrue(
+            np.array_equal(sp3_df_no_offline_removal.index.get_level_values(1), ["G01", "G02", "G03"]),
+            "After cleaning there should be no dupe PRNs. As offline sat removal is off, offline sat should remain",
+        )
+
+        # Now check with offline sat removal enabled too
+        sp3_df_with_offline_removal = sp3.clean_sp3_orb(sp3_df, True)
+        # Check that we still seem to have one epoch with no dupe sats, and now with the offline sat removed
+        self.assertTrue(
+            np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
+            "After cleaning there should be no dupe PRNs (and with offline removal, offline sat should be gone)",
+        )
+
+    def test_gen_sp3_fundamentals(self):
+        """
+        Tests that the SP3 header and content generation functions produce output that (apart from trailing
+        whitespace), match a known good value.
+        NOTE: leverages read_sp3() to pull in sample data, so is prone to errors in that function.
+        """
+
+        # Prep the baseline data to test against, including stripping each line of trailing whitespace.
+        baseline_header_lines = trim_line_ends(sp3_test_data_short_cod_final_header).splitlines()
+        baseline_content_lines = trim_line_ends(sp3_test_data_short_cod_final_content).splitlines()
+
+        # Note this is suboptimal from a testing standpoint, but for now is a lot easier than manually constructing
+        # the DataFrame.
+        sp3_df = sp3.read_sp3(bytes(sp3_test_data_short_cod_final))
+
+        generated_sp3_header = sp3.gen_sp3_header(sp3_df, output_comments=True)
+        generated_sp3_content = sp3.gen_sp3_content(sp3_df)
+
+        # As with the baseline data, prep the data under test, for comparison.
+        test_header_lines = trim_line_ends(generated_sp3_header).splitlines()
+        test_content_lines = trim_line_ends(generated_sp3_content).splitlines()
+
+        # TODO maybe we don't want to split the content, just the header
+
+        self.assertEqual(
+            len(baseline_header_lines),
+            len(test_header_lines),
+            "Baseline and test header should have same number of lines",
+        )
+        self.assertEqual(
+            len(baseline_content_lines),
+            len(test_content_lines),
+            "Baseline and test content should have same number of lines",
+        )
+
+        # As we know the two arrays are equal length, we can iterate as one
+        # Header first
+        for i in range(0, len(baseline_header_lines) - 1):
+            self.assertEqual(
+                baseline_header_lines[i],
+                test_header_lines[i],
+                f"Header line {i} didn't match",
+            )
+        # Same for content (maybe don't do this?)
+        for i in range(0, len(baseline_content_lines) - 1):
+            self.assertEqual(
+                baseline_content_lines[i],
+                test_content_lines[i],
+                f"Content line {i} didn't match",
+            )
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
     # These tests should include:
     # - Correct alignment of POS, CLK, STDPOS STDCLK, (not velocity yet), FLAGS
@@ -161,6 +435,427 @@ class TestSp3(unittest.TestCase):
     #   Probably should be covered elsewhere)
     # - Not including column names (can just test that output matches expected format)
     # - Not including any NaN value *anywhere*
+
+    def test_get_sp3_comments(self):
+        # Somewhat standalone test to check fetching of SP3 comments from a DataFrame
+        expected_comments = [
+            "/*   EUROPEAN SPACE OPERATIONS CENTRE - DARMSTADT, GERMANY",
+            "/* ---------------------------------------------------------",
+            "/*  SP3 FILE GENERATED BY NAPEOS BAHN TOOL  (DETERMINATION)",
+            "/* PCV:IGS14_2022 OL/AL:EOT11A   NONE     YN ORB:CoN CLK:CoN",
+        ]
+        sp3_df: pd.DataFrame = sp3.read_sp3(input_data)
+        self.assertEqual(sp3.get_sp3_comments(sp3_df), expected_comments, "SP3 comments read should match expectation")
+        self.assertEqual(sp3_df.attrs["COMMENTS"], expected_comments, "Manual read of SP3 comments should match")
+
+    def test_update_sp3_comments(self):
+        # Somewhat standalone test to check updating SP3 comments in a DataFrame
+        expected_comments = [
+            "/*   EUROPEAN SPACE OPERATIONS CENTRE - DARMSTADT, GERMANY",
+            "/* ---------------------------------------------------------",
+            "/*  SP3 FILE GENERATED BY NAPEOS BAHN TOOL  (DETERMINATION)",
+            "/* PCV:IGS14_2022 OL/AL:EOT11A   NONE     YN ORB:CoN CLK:CoN",
+        ]
+        # Initialise and check state
+        sp3_df: pd.DataFrame = sp3.read_sp3(input_data)  # Load DataFrame
+        # Read comments directly from DataFrame to check they are as expected
+        self.assertEqual(sp3_df.attrs["COMMENTS"], expected_comments, "SP3 initial comments read were not as expected")
+
+        # Introduce invalid but not overlong comment to check lead-in writing part of validation
+        sp3_df.attrs["COMMENTS"] = [
+            "malformed comment is missing lead-in",
+            "/*malformed comment is missing space",
+            "/* ",
+            "/* ",
+        ]
+        sp3.update_sp3_comments(sp3_df)
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"],
+            ["/* malformed comment is missing lead-in", "/* malformed comment is missing space", "/* ", "/* "],
+            "Lead in and spacing should be added to existing comments if missing",
+        )
+
+        # Introduce overlong comment to check exception handling part of validation
+        sp3_df.attrs["COMMENTS"] = [
+            "malformed comment is overlong malformed comment is overlong malformed comment is overlong",
+        ]
+        with self.assertRaises(ValueError):
+            sp3.update_sp3_comments(sp3_df, strict_mode=STRICT_RAISE)
+
+        self.assertTrue(
+            sp3_df.attrs["COMMENTS"][0].endswith(
+                "malformed comment is overlong malformed comment is overlong malformed comment is overlong"
+            ),
+            "First malformed comment should still be present, with or without lead-in added",
+        )
+        self.assertTrue(
+            len(sp3_df.attrs["COMMENTS"]) == 4,
+            "In addition to malformed comment there should be 3 padding comments",
+        )
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"][1],
+            "/* ",
+            "Padding comment expected on second line",
+        )
+
+        # Check deletion of all comments
+        sp3.update_sp3_comments(sp3_df, ammend=False)
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"],
+            ["/* ", "/* ", "/* ", "/* "],
+            "Should be no comments besides 4 padding ones, after running ammend with no input",
+        )
+
+        # Write initial comment lines
+        sp3.update_sp3_comments(sp3_df, comment_lines=["line 1", "line 2", "line 3", "line 4"], ammend=False)
+        self.assertEqual(sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4"])
+
+        # Write more lines
+        sp3.update_sp3_comments(sp3_df, comment_lines=["line 5", "line 6"], ammend=True)
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* line 5", "/* line 6"]
+        )
+
+        # Write more lines, free form
+        sp3.update_sp3_comments(sp3_df, comment_string="arbitrary length line", ammend=True)
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"],
+            ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* line 5", "/* line 6", "/* arbitrary length line"],
+        )
+
+        # Write more lines, both modes at once
+        sp3.update_sp3_comments(sp3_df, comment_lines=["line 8"], comment_string="some other comment", ammend=True)
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"],
+            [
+                "/* line 1",
+                "/* line 2",
+                "/* line 3",
+                "/* line 4",
+                "/* line 5",
+                "/* line 6",
+                "/* arbitrary length line",
+                "/* line 8",
+                "/* some other comment",
+            ],
+        )
+
+        sp3.update_sp3_comments(sp3_df, comment_lines=["new line"], comment_string="some new comment", ammend=False)
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"],
+            [
+                "/* new line",
+                "/* some new comment",
+                "/* ",
+                "/* ",
+            ],
+        )
+
+        sp3.update_sp3_comments(sp3_df, comment_string="some other new comment", ammend=False)
+        self.assertEqual(
+            sp3_df.attrs["COMMENTS"],
+            [
+                "/* some other new comment",
+                "/* ",
+                "/* ",
+                "/* ",
+            ],
+        )
+
+    def test_sp3_comment_validation_standalone(self):
+
+        # Other examples of valid and invalid lines we could use.
+
+        # valid_lines: list[str] = [
+        #     "/* line 1",
+        #     "/* line 2",
+        #     "/* line 3 is long          quite long in fact          but not quite 80 chars ",
+        #     "/* line 4 is long        quite long in fact exactly 80 chars just due to content",
+        #     "/* line 4 is long          quite long in fact exactly 80 chars including spaces ",
+        #     "/* line 5 has an embedded comment sequence /* ... should probably still be valid",
+        # ]
+
+        # invalid_lines_fixable: list[str] = [
+        #     "missing lead-in",
+        #     " /* lead-in has leading space",
+        #     "/*lead-in is missing trailing space",
+        #     " /*lead-in has leading space and no trailing space",
+        # ]
+
+        # invalid_lines_unfixable: list[str] = [
+        #     "/* line is overlong (81 chars) due to trailing spaces                            ",
+        #     "/* line is overlong (81 chars)                                  ...due to content",
+        # ]
+
+        # Insufficient number of lines should fail validation
+        self.assertFalse(sp3.validate_sp3_comment_lines(["/* Must have >= 4 comment lines!"], STRICT_OFF))
+        self.assertFalse(
+            sp3.validate_sp3_comment_lines(
+                [
+                    "/* Must have >= 4 comment lines!",
+                    "/* Must have >= 4 comment lines!",
+                    "/* Must have >= 4 comment lines!",
+                ],
+                STRICT_OFF,
+            )
+        )
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                [
+                    "/* Must have >= 4 comment lines!",
+                    "/* Must have >= 4 comment lines!",
+                    "/* Must have >= 4 comment lines!",
+                    "/* Ok we're good now",
+                ],
+                STRICT_OFF,
+            )
+        )
+
+        # We have a convenience flag to turn that one off, to make testing less cumbersome:
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                ["/* Must have >= 4 comment lines! ...Unless that check is turned off"],
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+            )
+        )
+
+        # # The bulk tests may be overkill.
+        # # Bulk test valid and invalid lines, with different settings
+        # for valid_line in valid_lines:
+        #     v_line = [valid_line]  # Ridiculously short variable name purely for layout here
+        #     self.assertTrue(validate_comment_lines(v_line, STRICT_OFF))
+        #     self.assertTrue(validate_comment_lines(v_line, STRICT_RAISE, skip_min_4_lines_test=True))
+        #     self.assertTrue(validate_comment_lines(v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=False))
+        #     self.assertTrue(validate_comment_lines(v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=True))
+        #     self.assertTrue(
+        #         validate_comment_lines(
+        #             v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=False, fail_on_fixed_issues=False
+        #         )
+        #     )
+        #     self.assertTrue(
+        #         validate_comment_lines(
+        #             v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=False, fail_on_fixed_issues=True
+        #         )
+        #     )
+        #     self.assertTrue(
+        #         validate_comment_lines(
+        #             v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=True, fail_on_fixed_issues=False
+        #         )
+        #     )
+        #     self.assertTrue(
+        #         validate_comment_lines(
+        #             v_line, STRICT_RAISE, skip_min_4_lines_test=True, attempt_fixes=True, fail_on_fixed_issues=True
+        #         )
+        #     )
+
+        # Uneventful cases
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(["/* this line is fine"], STRICT_RAISE, skip_min_4_lines_test=True)
+        )
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                ["/* line 1", "/* line 2"],
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+                attempt_fixes=False,
+                fail_on_fixed_issues=True,
+            )
+        )
+
+        # Turning off fail_on_fixed_issues should make no difference here.
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                ["/* line 1", "/* line 2"],
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+                attempt_fixes=False,
+                fail_on_fixed_issues=False,
+            )
+        )
+
+        # Strict mode shouldn't change how valid lines are handled
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                ["/* line 1", "/* line 2"],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                attempt_fixes=False,
+                fail_on_fixed_issues=False,
+            )
+        )
+
+        # With strictness off, invalid lines shouldn't raise exceptions, but should still fail validation
+        # Note that fail-on-fixed currently has no effect if attempt_fixes is off.
+        self.assertFalse(
+            sp3.validate_sp3_comment_lines(
+                ["this line has no lead-in"],
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+                attempt_fixes=False,
+                fail_on_fixed_issues=True,
+            ),
+            "Invalid comment line should fail validation but not raise exception as strict mode is off",
+        )
+
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(
+                ["this line has no lead-in"],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+            )
+
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(
+                ["/*this line has missing space after lead-in"],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+            )
+
+        # An extra leading space is quite bad. Fail in all cases for this
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(
+                [" /* this line has extra space before lead-in"],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                fail_on_fixed_issues=False,
+            )
+
+        # In fix mode, this issue should be addressed in place. Whether validation still fails depends on fail_on_fixed_issues
+        comment_lines = ["/*this line has missing space after lead-in"]
+        self.assertTrue(
+            sp3.validate_sp3_comment_lines(
+                comment_lines,
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                attempt_fixes=True,
+                fail_on_fixed_issues=False,
+            )
+        )
+        # And check the issue did get fixed in place
+        self.assertEqual(
+            comment_lines,
+            ["/* this line has missing space after lead-in"],
+            "Missing space should be addressed in place",
+        )
+
+        # With fail on fixed: fail validation because the input was wrong, even though we were able to remedy it.
+        comment_lines = ["/*this line has missing space after lead-in"]
+        self.assertFalse(
+            sp3.validate_sp3_comment_lines(
+                comment_lines,
+                STRICT_OFF,
+                skip_min_4_lines_test=True,
+                attempt_fixes=True,
+                fail_on_fixed_issues=True,
+            )
+        )
+        # Check it got fixed
+        self.assertEqual(
+            comment_lines,
+            ["/* this line has missing space after lead-in"],
+            "Missing space should be addressed in place",
+        )
+
+        # Same as above, but with strict mode: raise, that should be an exception.
+        comment_lines = ["/*this line has missing space after lead-in"]
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(
+                comment_lines,
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                attempt_fixes=True,
+                fail_on_fixed_issues=True,
+            )
+
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(  # 81 chars
+                ["/* this line is too long                                                         "],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+            )
+
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(  # 81 chars
+                ["/*this line is too long and missing space after lead in                          "],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+            )
+        with self.assertRaises(ValueError):
+            sp3.validate_sp3_comment_lines(  # 80 chars (valid but max), 81 after adding missing space (invalid)
+                ["/*this line *will* be too long after fixing the missing space after lead in     "],
+                STRICT_RAISE,
+                skip_min_4_lines_test=True,
+                attempt_fixes=True,
+            )
+
+    def test_sp3_comment_reflow(self):
+        # Test that string reflow utility correctly splits a string and converts it into SP3 comment lines.
+        comment_string_to_reflow = """SP3 comment reflow test. This should not break words if possible. \
+SP3 comment reflow test. This should not break words if possible. \
+SP3 comment reflow test. This should not break words if possible."""
+        reflowed_comment_lines = sp3.reflow_string_as_lines_for_comment_block(comment_string_to_reflow)
+        self.assertEqual(len(reflowed_comment_lines), 3)
+        self.assertEqual(
+            reflowed_comment_lines[0], "/* SP3 comment reflow test. This should not break words if possible. SP3"
+        )
+        self.assertEqual(
+            reflowed_comment_lines[1], "/* comment reflow test. This should not break words if possible. SP3 comment"
+        )
+        self.assertEqual(reflowed_comment_lines[2], "/* reflow test. This should not break words if possible.")
+
+    def test_sp3_comment_append_and_overwrite(self):
+        expected_initial_comments = [
+            "/*   EUROPEAN SPACE OPERATIONS CENTRE - DARMSTADT, GERMANY",
+            "/* ---------------------------------------------------------",
+            "/*  SP3 FILE GENERATED BY NAPEOS BAHN TOOL  (DETERMINATION)",
+            "/* PCV:IGS14_2022 OL/AL:EOT11A   NONE     YN ORB:CoN CLK:CoN",
+        ]
+
+        new_lines = ["SP3 test append line 1", "/* SP3 test append line 2", "/*SP3 test append line 3"]
+        new_freeform_string = """SP3 comment reflow test. This should not break words if possible. \
+SP3 comment reflow test. This should not break words if possible."""
+        # What we expect the above string to look like after reformatting:
+        expected_freeform_reformatted = [
+            "/* SP3 comment reflow test. This should not break words if possible. SP3",
+            "/* comment reflow test. This should not break words if possible.",
+        ]
+
+        # Load, check initial state
+        sp3_df = sp3.read_sp3(input_data)
+        initial_commments = sp3.get_sp3_comments(sp3_df)
+        self.assertEqual(expected_initial_comments, initial_commments, "Initial SP3 comments were not as expected")
+
+        ### Ammend test ###
+        # Add new lines and reflowed string, in append/ammend mode (ammend mode is on by default).
+        # Comment lead-in should be automatically applied if not present.
+        sp3.update_sp3_comments(sp3_df, new_lines, comment_string=new_freeform_string)
+
+        # Construct expected comment list
+        expected_append_comments = []
+        expected_append_comments.extend(expected_initial_comments)  # Initial comments (as we were in append mode)
+        expected_append_comments.extend(  # Line-by-line additions, lead-in corrected
+            ["/* SP3 test append line 1", "/* SP3 test append line 2", "/* SP3 test append line 3"]
+        )
+        expected_append_comments.extend(expected_freeform_reformatted)  # Freeform addition, reformatted
+
+        # Load back what we updated in place, to check it
+        appended_comments = sp3.get_sp3_comments(sp3_df)
+        self.assertEqual(expected_append_comments, appended_comments, "Comments were not as expected after appending")
+
+        ### Overwrite/replace test ###
+        sp3_df = sp3.read_sp3(input_data)
+        sp3.update_sp3_comments(sp3_df, comment_lines=new_lines, comment_string=new_freeform_string, ammend=False)
+
+        expected_replaced_comments = []
+        expected_replaced_comments.extend(
+            ["/* SP3 test append line 1", "/* SP3 test append line 2", "/* SP3 test append line 3"]
+        )
+        expected_replaced_comments.extend(expected_freeform_reformatted)
+
+        # Fetch and check actual result
+        replaced_comments = sp3.get_sp3_comments(sp3_df)
+        self.assertEqual(expected_replaced_comments, replaced_comments, "Comments were not as expected after replacing")
 
     def test_gen_sp3_content_velocity_exception_handling(self):
         """
@@ -221,6 +916,39 @@ class TestSp3(unittest.TestCase):
         r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r)
         self.assertIsNotNone(r2)
+
+    def test_sp3_offline_sat_removal_standalone(self):
+        """
+        Standalone test for remove_offline_sats() using manually constructed DataFrame to
+        avoid dependency on read_sp3()
+        """
+        sp3_df_nans = TestSP3.get_example_dataframe("offline_sat_nan")
+        sp3_df_zeros = TestSP3.get_example_dataframe("offline_sat_zero")
+
+        self.assertEqual(
+            sp3_df_zeros.index.get_level_values(1).unique().array.tolist(),
+            ["G01", "G02", "G03"],
+            "Should start with 3 SVs",
+        )
+        self.assertEqual(
+            sp3_df_nans.index.get_level_values(1).unique().array.tolist(),
+            ["G01", "G02", "G03"],
+            "Should start with 3 SVs",
+        )
+
+        sp3_df_zeros_removed = sp3.remove_offline_sats(sp3_df_zeros)
+        sp3_df_nans_removed = sp3.remove_offline_sats(sp3_df_nans)
+
+        self.assertEqual(
+            sp3_df_zeros_removed.index.get_level_values(1).unique().array.tolist(),
+            ["G01", "G02"],
+            "Should be two SVs after removing offline ones",
+        )
+        self.assertEqual(
+            sp3_df_nans_removed.index.get_level_values(1).unique().array.tolist(),
+            ["G01", "G02"],
+            "Should be two SVs after removing offline ones",
+        )
 
     @patch("builtins.open", new_callable=mock_open, read_data=offline_sat_test_data)
     def test_sp3_offline_sat_removal(self, mock_file):
@@ -363,6 +1091,10 @@ class TestSp3(unittest.TestCase):
             [784792800, 784793100],
             "Should be two epochs after trimming with keep_first_delta_amount parameter",
         )
+
+    # TODO add new test: test_merge_attrs, for attribute merge:
+    # Ensure merging attributes results in the expected intersections / max / min, depending on the attribute. E.g.
+    # total sats across all files, worst accuracy code for each sat across all files, etc.
 
 
 class TestSP3Utils(TestCase):
