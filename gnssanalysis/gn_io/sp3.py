@@ -1119,7 +1119,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
         if header_version in ("a", "b"):
             logger.warning(f"SP3 file is old version: '{header_version}', you may experience parsing issues")
         elif header_version in ("c", "d"):
-            logger.info(f"SP3 header states SP3 file version is: {header_array[0]}")
+            logger.debug(f"SP3 header states SP3 file version is: {header_array[0]}")
         else:
             logger.warning(
                 f"SP3 header is of an unknown version, or failed to parse! Version appears to be: '{header_version}'"
