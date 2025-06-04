@@ -43,22 +43,41 @@ class TestDateTime(unittest.TestCase):
         with self.assertRaises(TypeError):
             gn_datetime.gps_week_day_to_datetime(2173)  # Not a string!
 
+    def test_datetime_to_gps_week(self):
+
+        # Day of year 244. GPS week and weekday: 2173-3, Wednesday.
+        self.assertEqual(gn_datetime.datetime_to_gps_week(_datetime(year=2021, month=9, day=1)), "2173")
+
+        # With day of week:
+        self.assertEqual(
+            gn_datetime.datetime_to_gps_week(_datetime(year=2021, month=9, day=1), wkday_suff=True), "21733"
+        )
+
+        # Legacy version:
+        self.assertEqual(gn_datetime.dt2gpswk(_datetime(year=2021, month=9, day=1)), "2173")
+        self.assertEqual(gn_datetime.dt2gpswk(_datetime(year=2021, month=9, day=1), wkday_suff=True), "21733")
+        self.assertEqual(gn_datetime.dt2gpswk(_datetime(year=2021, month=9, day=1), both=True), ("2173", "21733"))
+
 
 class TestGPSDate(unittest.TestCase):
     def test_gpsdate(self):
-        date: gn_datetime.GPSDate = gn_datetime.GPSDate(np.datetime64("2021-08-31"))
-        self.assertEqual(int(date.yr), 2021)
-        self.assertEqual(int(date.dy), 243)
-        self.assertEqual(int(date.gpswk), 2173)
-        self.assertEqual(int(date.gpswkD[-1]), 2)
-        self.assertEqual(str(date), "2021-08-31")
+        gps_date: gn_datetime.GPSDate = gn_datetime.GPSDate(np.datetime64("2021-08-31"))
+        self.assertEqual(int(gps_date.yr), 2021)  # Deprecated
+        self.assertEqual(int(gps_date.year), 2021)
+        self.assertEqual(int(gps_date.dy), 243)  # Deprecated
+        self.assertEqual(int(gps_date.day_of_year), 243)
+        self.assertEqual(int(gps_date.gpswk), 2173)  # Deprecated
+        self.assertEqual(int(gps_date.gps_week), 2173)
+        self.assertEqual(int(gps_date.gpswkD[-1]), 2)  # Deprecated
+        self.assertEqual(int(gps_date.gps_week_and_day_of_week[-1]), 2)
+        self.assertEqual(str(gps_date), "2021-08-31")
 
-        date = date.next
-        self.assertEqual(int(date.yr), 2021)
-        self.assertEqual(int(date.dy), 244)
-        self.assertEqual(int(date.gpswk), 2173)
-        self.assertEqual(int(date.gpswkD[-1]), 3)
-        self.assertEqual(str(date), "2021-09-01")
+        gps_date = gps_date.next
+        self.assertEqual(int(gps_date.yr), 2021)
+        self.assertEqual(int(gps_date.dy), 244)
+        self.assertEqual(int(gps_date.gpswk), 2173)
+        self.assertEqual(int(gps_date.gpswkD[-1]), 3)
+        self.assertEqual(str(gps_date), "2021-09-01")
 
         yds = np.asarray(["00:000:00000"])
         yds_j2000 = gn_datetime.yydoysec2datetime(yds, recenter=False, as_j2000=True)
@@ -70,21 +89,30 @@ class TestGPSDate(unittest.TestCase):
 
         # Test as_datetime property
         # Expect 2021-09-01 as a python datetime, not a date or a Numpy datetime64
-        self.assertEqual(date.as_datetime, _datetime(year=2021, month=9, day=1))
-        self.assertTrue(isinstance(date.as_datetime, _datetime))
+        self.assertEqual(gps_date.as_datetime, _datetime(year=2021, month=9, day=1))
+        self.assertTrue(isinstance(gps_date.as_datetime, _datetime))
+
+        # Test as_date
+        self.assertEqual(gps_date.as_date, _date(year=2021, month=9, day=1))
+        self.assertTrue(isinstance(gps_date.as_date, _date))
+
+        # Check accessor works
+        self.assertEqual(gps_date.get_datetime64, np.datetime64("2021-09-01"))
+        # Check legacy version
+        self.assertEqual(gps_date.ts, np.datetime64("2021-09-01"))
 
         # Test construction from other types
-        date = gn_datetime.GPSDate(_datetime(year=2021, month=9, day=5))
-        self.assertEqual(date.dy, "248")
-        self.assertEqual(date.as_datetime, _datetime(year=2021, month=9, day=5))
+        gps_date = gn_datetime.GPSDate(_datetime(year=2021, month=9, day=5))
+        self.assertEqual(gps_date.day_of_year, "248")
+        self.assertEqual(gps_date.as_datetime, _datetime(year=2021, month=9, day=5))
 
-        date = gn_datetime.GPSDate(_date(year=2021, month=9, day=5))
-        self.assertEqual(date.dy, "248")
-        self.assertEqual(date.as_datetime, _datetime(year=2021, month=9, day=5))
+        gps_date = gn_datetime.GPSDate(_date(year=2021, month=9, day=5))
+        self.assertEqual(gps_date.day_of_year, "248")
+        self.assertEqual(gps_date.as_datetime, _datetime(year=2021, month=9, day=5))
 
-        date = gn_datetime.GPSDate("2021-09-05")
-        self.assertEqual(date.dy, "248")
-        self.assertEqual(date.as_datetime, _datetime(year=2021, month=9, day=5))
+        gps_date = gn_datetime.GPSDate("2021-09-05")
+        self.assertEqual(gps_date.day_of_year, "248")
+        self.assertEqual(gps_date.as_datetime, _datetime(year=2021, month=9, day=5))
 
         # And exceptions on trying to construct from incorrect types or date string formats
         with self.assertRaises(TypeError):
