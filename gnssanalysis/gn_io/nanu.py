@@ -145,7 +145,7 @@ def get_bad_sv_from_nanu_df(nanu_df: _pd.DataFrame, datetime: _Union[_np.datetim
     ]
 
     if last_selected.empty:
-        return None
+        return []
 
     _logging.info(msg="NANUs in affect are:\n" + "\n".join(last_selected.FILEPATH.to_list()))
 
