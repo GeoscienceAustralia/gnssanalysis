@@ -221,10 +221,10 @@ class TestSP3(unittest.TestCase):
 
     def test_read_sp3_misalignment_check(self):
         """
-        Test that misaligned columns raise an error
+        Test that misaligned columns raise an error (currently only in STRICT mode)
         """
         with self.assertRaises(ValueError) as read_exception:
-            sp3.read_sp3(sp3_test_data_misaligned_columns)
+            sp3.read_sp3(sp3_test_data_misaligned_columns, format_check_strictness=STRICT_RAISE)
             self.assertTrue("Misaligned data line" in read_exception.msg if (read_exception.msg is not None) else False)
 
     @staticmethod

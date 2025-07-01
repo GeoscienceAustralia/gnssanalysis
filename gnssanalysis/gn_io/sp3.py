@@ -523,6 +523,11 @@ def _process_sp3_block(
     :param    str data: The SP3 data block.
     :param    List[int] widths: The widths of the columns in the SP3 data block.
     :param    List[str] names: The names of the columns in the SP3 data block.
+    :param    type[StrictMode] strict_mode: (default: WARN) level of strictness with which to check for SP3d
+        format compliance. StrictModes.STRICT_RAISE will raise an exception if a format issue is detected (except
+        if ignore_short_data_lines is enabled). Set to StrictModes.STRICT_OFF to neither warn nor raise.
+    :param    bool ignore_short_data_lines: (default: True) when checking SP3d format compliance, don't warn/raise
+        about lines which are too short (eg 60 chars instead of 80).
     :return    _pd.DataFrame: The processed SP3 data as a DataFrame.
     """
     if not data or len(data) == 0:  # No data in this epoch
@@ -533,21 +538,31 @@ def _process_sp3_block(
     # will lead to incorrect parsing.
 
     if len(date) not in (_SP3_EPOCH_HEADER_WIDTH, _SP3_EPOCH_HEADER_WIDTH - 1):
-        raise ValueError(f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'")
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(
+                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
+            )
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
+            )
     epoch_header_offset = 0
     if len(date) == _SP3_EPOCH_HEADER_WIDTH - 1:  # Cut short by our block splitting logic. Adjust indexes accordingly.
         epoch_header_offset = -1
     # Check for polluted spare columns (indicating misalignment)
     for i in _SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER:
         if date[(i + epoch_header_offset) - 1] != " ":  # Unused column (accoding to spec) was not blank
-            raise ValueError(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
+            elif strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
 
     for line in data.splitlines():
         line_length = len(line)
         if line_length == 0:
             continue  # Skip completely empty lines
 
-        if line_length > _SP3_DATA_LINE_WIDTH:  # Fatal
+        if line_length > _SP3_DATA_LINE_WIDTH:  # Fatal, regardless of strict mode setting.
             raise ValueError(f"Overlong data line ({line_length} chars long): '{line}'")
 
         elif line_length < _SP3_DATA_LINE_WIDTH:  # Not compliant, but likely not serious
@@ -574,14 +589,20 @@ def _process_sp3_block(
         elif line[:2] == "EV":
             unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EV
         else:
-            raise ValueError(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
+            elif strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
 
         for i in unused_column_indexes:
             # Index out of range due to (non-compliant) short line. Skip testing further columns.
             if i > line_length - 1:
                 break  # TODO double check that breaks to where we want it to
             if line[i - 1] != " ":
-                raise ValueError(f"Misaligned data line (unused column did not contain a space): '{line}'")
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(f"Misaligned data line (unused column did not contain a space): '{line}'")
+                elif strict_mode == StrictModes.STRICT_WARN:
+                    logger.warning(f"Misaligned data line (unused column did not contain a space): '{line}'")
 
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
     # NOTE: setting dtype_backend="pyarrow" currently breaks parsing.
@@ -745,7 +766,7 @@ def check_sp3_version(sp3_bytes: bytes, strict_mode: type[StrictMode] = StrictMo
             raise ValueError(
                 f"Support for SP3 file version '{version_char_as_string}' is untested. Refusing to read as strict mode is on."
             )
-        if strict_mode == StrictModes.STRICT_WARN:
+        elif strict_mode == StrictModes.STRICT_WARN:
             logger.warning(
                 f"Reading an older SP3 file version '{version_char_as_string}'. This may not parse correctly!"
             )
@@ -814,7 +835,7 @@ def validate_sp3_comment_lines(
                 raise ValueError(
                     f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that"
                 )
-            if strict_mode == StrictModes.STRICT_WARN:
+            elif strict_mode == StrictModes.STRICT_WARN:
                 logger.warning(f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that")
 
         if attempt_fixes:
@@ -831,7 +852,7 @@ def validate_sp3_comment_lines(
             if (not attempt_fixes) or fail_on_fixed_issues:
                 if strict_mode == StrictModes.STRICT_RAISE:
                     raise ValueError(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
-                if strict_mode == StrictModes.STRICT_WARN:
+                elif strict_mode == StrictModes.STRICT_WARN:
                     logger.warning(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
 
             if attempt_fixes:
@@ -852,7 +873,7 @@ def validate_sp3_comment_lines(
                     "SP3 comment lines must not exceed 80 chars (including lead-in). "
                     f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
                 )
-            if strict_mode == StrictModes.STRICT_WARN:
+            elif strict_mode == StrictModes.STRICT_WARN:
                 logger.warning(
                     "SP3 comment lines must not exceed 80 chars (including lead-in). "
                     f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
@@ -1060,7 +1081,7 @@ def read_sp3(
         # This typically runs in sub ms time. Marks all but first instance as duped:
         duplicated_indexes = sp3_df.index.duplicated()
         first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
-        logging.warning(
+        logger.warning(
             f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
             f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
             f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
