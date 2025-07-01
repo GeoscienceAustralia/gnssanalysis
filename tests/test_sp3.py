@@ -169,19 +169,18 @@ class TestSP3(unittest.TestCase):
         end_line2_acc = sv_info.iloc[29]
         self.assertEqual(end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18")
 
-    @patch("builtins.open", new_callable=mock_open, read_data=sp3_test_data_cod_broken_missing_sv_in_content)
-    def test_read_sp3_validation_sv_count_mismatch_header_vs_content(self, mock_file):
+    def test_read_sp3_validation_sv_count_mismatch_header_vs_content(self):
         with self.assertRaises(ValueError) as context_manager:
-            result = sp3.read_sp3(
-                "COD0OPSFIN_20242010000_10M_05M_ORB.SP3",
+            sp3.read_sp3(
+                sp3_test_data_cod_broken_missing_sv_in_content,
                 pOnly=False,
                 check_header_vs_filename_vs_content_discrepancies=True,  # Actually enable the checks for this one
             )
-        self.assertEqual(
-            str(context_manager.exception),  # What did the exception message say?
-            "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
-            "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
-        )
+            self.assertEqual(
+                context_manager.msg,  # What did the exception message say?
+                "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
+                "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
+            )
 
     @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
     def test_read_sp3_correct_svs_read_when_ev_ep_present(self, mock_file):
@@ -224,7 +223,7 @@ class TestSP3(unittest.TestCase):
         Test that misaligned columns raise an error (currently only in STRICT mode)
         """
         with self.assertRaises(ValueError) as read_exception:
-            sp3.read_sp3(sp3_test_data_misaligned_columns, format_check_strictness=STRICT_RAISE)
+            sp3.read_sp3(sp3_test_data_misaligned_columns, strict_mode=STRICT_RAISE)
             self.assertTrue("Misaligned data line" in read_exception.msg if (read_exception.msg is not None) else False)
 
     @staticmethod

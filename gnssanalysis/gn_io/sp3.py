@@ -902,7 +902,7 @@ def read_sp3(
     # The following two apply when the above is enabled:
     skip_filename_in_discrepancy_check: bool = False,
     continue_on_discrepancies: bool = False,
-    format_check_strictness: type[StrictMode] = StrictModes.STRICT_WARN,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
     ignore_short_lines: bool = True,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
@@ -923,7 +923,7 @@ def read_sp3(
     :param bool continue_on_discrepancies: (Only applicable with check_header_vs_filename_vs_content_discrepancies)
         If True, logs a warning and continues if major discrepancies are detected between the SP3 content, SP3 header,
         and SP3 filename (if available). Set to false to raise a ValueError instead.
-    :param type[StrictMode] format_check_strictness: (work in progress) defines the response to things that are not
+    :param type[StrictMode] strict_mode: (work in progress) defines the response to things that are not
         quite to SP3 spec: whether to ignore, warn, or raise. Default: warn.
         Current functionality influenced by this includes:
          - trying to read an SP3 version b or c file (not officially supported)
@@ -932,7 +932,7 @@ def read_sp3(
         In future it could also impact things like:
          - less than min number of SV entries
         This parameter could be renamed to enforce_strict_format_compliance once more extensive checks are added.
-    :param bool ignore_short_lines: (default True) regardless of format_check_strictness above, indicates whether to
+    :param bool ignore_short_lines: (default True) regardless of strict_mode above, indicates whether to
         skip raising / warning about lines which are too short according to the SP3d spec.
     :return _pd.DataFrame: The SP3 data as a DataFrame.
     :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
@@ -949,7 +949,7 @@ def read_sp3(
 
     # Extract and check version. Raises exception for completely unsupported versions.
     # For version b and c behaviour depends on strict_mode setting
-    check_sp3_version(sp3_bytes=content, strict_mode=format_check_strictness)
+    check_sp3_version(sp3_bytes=content, strict_mode=strict_mode)
 
     # NOTE: Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
     # immediately followed by the mandatory 4+ comment lines.
@@ -961,7 +961,7 @@ def read_sp3(
     # These will be written to DataFrame.attrs["COMMENTS"] for easy access (but please use get_sp3_comments())
     comment_lines: list[str] = [line.decode("utf-8", errors="ignore").rstrip("\n") for line in comment_lines_bytes]
     # Validate comment lines (but don't make changes)
-    validate_sp3_comment_lines(comment_lines, strict_mode=format_check_strictness)
+    validate_sp3_comment_lines(comment_lines, strict_mode=strict_mode)
     # NOTE: The comment lines should be contiguous (not fragmented throughout the file), and they should be immediately
     # followed by the first Epoch Header Record.
     # Note: this interpretation is based on page 16 of the SP3d spec, which says 'The comment lines should be read in
@@ -982,9 +982,7 @@ def read_sp3(
     date_lines, data_blocks = _split_sp3_content(content)
     sp3_df = _pd.concat(
         [
-            _process_sp3_block(
-                date, data, strict_mode=format_check_strictness, ignore_short_data_lines=ignore_short_lines
-            )
+            _process_sp3_block(date, data, strict_mode=strict_mode, ignore_short_data_lines=ignore_short_lines)
             for date, data in zip(date_lines, data_blocks)
         ]
     )
