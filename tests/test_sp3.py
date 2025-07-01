@@ -92,33 +92,28 @@ class TestSP3(unittest.TestCase):
         with self.assertRaises(ValueError):
             sp3.check_sp3_version(fake_header_version_c, strict_mode=STRICT_RAISE)
 
-    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
-    def test_read_sp3_pOnly(self, mock_file):
-        result = sp3.read_sp3("mock_path", pOnly=True)
+    def test_read_sp3_pOnly(self):
+        result = sp3.read_sp3(input_data, pOnly=True)
         self.assertEqual(len(result), 6)
 
-    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
-    def test_read_sp3_pv(self, mock_file):
-        result = sp3.read_sp3("mock_path", pOnly=False)
+    def test_read_sp3_pv(self):
+        result = sp3.read_sp3(input_data, pOnly=False)
         self.assertEqual(len(result), 6)
         # Ensure first epoch is correct / not skipped by incorrect detection of data start.
         # Check output of both header and data section.
         self.assertEqual(result.attrs["HEADER"]["HEAD"]["DATETIME"], "2007  4 12  0  0  0.00000000")
         self.assertEqual(result.index[0][0], 229608000)  # Same date, as J2000
 
-    @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
-    def test_read_sp3_pv_with_ev_ep_rows(self, mock_file):
-        # Expect exception relating to the EV and EP rows, as we can't currently handle them properly.
-        self.assertRaises(
-            NotImplementedError, sp3.read_sp3, "mock_path", pOnly=False, continue_on_ep_ev_encountered=False
-        )
+    def test_read_sp3_pv_with_ev_ep_rows(self):
+        # Expect exception relating to the EV and EP rows (in RAISE mode), as we can't currently handle them properly.
+        with self.assertRaises(NotImplementedError) as raised_exception:
+            sp3.read_sp3(sp3c_example2_data, pOnly=False, strict_mode=STRICT_RAISE, skip_version_check=True)
 
-    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
-    def test_read_sp3_header_svs_basic(self, mock_file):
+    def test_read_sp3_header_svs_basic(self):
         """
         Minimal test of reading SVs from header
         """
-        result = sp3.read_sp3("mock_path", pOnly=False)
+        result = sp3.read_sp3(input_data, pOnly=False)
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].shape[0], 2, "Should be two SVs in data")
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].index[1], "G02", "Second SV should be G02")
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].iloc[1], 8, "Second ACC should be 8")
@@ -174,7 +169,8 @@ class TestSP3(unittest.TestCase):
             sp3.read_sp3(
                 sp3_test_data_cod_broken_missing_sv_in_content,
                 pOnly=False,
-                check_header_vs_filename_vs_content_discrepancies=True,  # Actually enable the checks for this one
+                # check_header_vs_filename_vs_content_discrepancies=True,  # Actually enable the checks for this one
+                strict_mode=STRICT_RAISE,
             )
             self.assertEqual(
                 context_manager.msg,  # What did the exception message say?
@@ -182,14 +178,14 @@ class TestSP3(unittest.TestCase):
                 "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
             )
 
-    @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
-    def test_read_sp3_correct_svs_read_when_ev_ep_present(self, mock_file):
+    def test_read_sp3_correct_svs_read_when_ev_ep_present(self):
         # This should not raise an exception; SV count should match header if parsed correctly.
         result = sp3.read_sp3(
-            "testfile.SP3",
+            sp3c_example2_data,
             pOnly=False,
-            check_header_vs_filename_vs_content_discrepancies=True,  # Actually enable the checks for this one
-            skip_filename_in_discrepancy_check=True,
+            strict_mode=STRICT_WARN,  # Don't crash in response to the EV/EP rows. We just want to ensure the other data is read ok.
+            # skip_filename_in_discrepancy_check=True, # As there is no filename
+            skip_version_check=True,
         )
         parsed_svs_content = sp3.get_unique_svs(result).astype(str).values
         self.assertEqual(set(parsed_svs_content), set(["G01", "G02", "G03", "G04", "G05"]))
@@ -934,14 +930,13 @@ SP3 comment reflow test. This should not break words if possible."""
         )
         self.assertTrue(sp3_df.equals(expected_result))
 
-    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
-    def test_velinterpolation(self, mock_file):
+    def test_velinterpolation(self):
         """
         Checking if the velocity interpolation works, right now there is no data to validate, the only thing done
         is to check if the function runs without errors
         TODO: update that to check actual expected values
         """
-        result = sp3.read_sp3("mock_path", pOnly=True)
+        result = sp3.read_sp3(input_data, pOnly=True)
         r = sp3.getVelSpline(result)
         r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r)
@@ -980,9 +975,8 @@ SP3 comment reflow test. This should not break words if possible."""
             "Should be two SVs after removing offline ones",
         )
 
-    @patch("builtins.open", new_callable=mock_open, read_data=offline_sat_test_data)
-    def test_sp3_offline_sat_removal(self, mock_file):
-        sp3_df = sp3.read_sp3("mock_path", pOnly=False)
+    def test_sp3_offline_sat_removal(self):
+        sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False)
 
         # Confirm starting state of content
         self.assertEqual(
@@ -1022,9 +1016,8 @@ SP3 comment reflow test. This should not break words if possible."""
         )
 
     # sp3_test_data_truncated_cod_final is input_data2
-    @patch("builtins.open", new_callable=mock_open, read_data=input_data2)
-    def test_filter_by_svs(self, mock_file):
-        sp3_df = sp3.read_sp3("mock_path", pOnly=False)
+    def test_filter_by_svs(self):
+        sp3_df = sp3.read_sp3(input_data2, pOnly=False)
         self.assertEqual(
             len(sp3_df.index.get_level_values(1).unique().array),
             34,
@@ -1052,9 +1045,8 @@ SP3 comment reflow test. This should not break words if possible."""
             "Should have only specific sats after filtering by name",
         )
 
-    @patch("builtins.open", new_callable=mock_open, read_data=offline_sat_test_data)
-    def test_trim_df(self, mock_file):
-        sp3_df = sp3.read_sp3("mock_path", pOnly=False)
+    def test_trim_df(self):
+        sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False)
         # offline_sat_test_data is based on the following file, but 3 epochs, not 2 days:
         filename = "IGS0DEMULT_20243181800_02D_05M_ORB.SP3"
         # Expected starting set of epochs, in j2000 seconds
@@ -1129,23 +1121,20 @@ SP3 comment reflow test. This should not break words if possible."""
 
 class TestSP3Utils(TestCase):
 
-    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
-    def test_get_unique_svs(self, mock_file):
-        sp3_df = sp3.read_sp3("mock_path", pOnly=True)
+    def test_get_unique_svs(self):
+        sp3_df = sp3.read_sp3(input_data, pOnly=True)
 
         unique_svs = set(sp3.get_unique_svs(sp3_df).values)
         self.assertEqual(unique_svs, set(["G01", "G02"]))
 
-    @patch("builtins.open", new_callable=mock_open, read_data=input_data)
-    def test_get_unique_epochs(self, mock_file):
-        sp3_df = sp3.read_sp3("mock_path", pOnly=True)
+    def test_get_unique_epochs(self):
+        sp3_df = sp3.read_sp3(input_data, pOnly=True)
 
         unique_epochs = set(sp3.get_unique_epochs(sp3_df).values)
         self.assertEqual(unique_epochs, set([229608000, 229608900, 229609800]))
 
-    @patch("builtins.open", new_callable=mock_open, read_data=sp3c_example2_data)
-    def test_remove_svs_from_header(self, mock_file):
-        sp3_df = sp3.read_sp3("mock_path", pOnly=True)
+    def test_remove_svs_from_header(self):
+        sp3_df = sp3.read_sp3(sp3c_example2_data, pOnly=True)
         self.assertEqual(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "5", "Header should have 5 SVs to start with")
         self.assertEqual(
             set(sp3_df.attrs["HEADER"].SV_INFO.index.values),
