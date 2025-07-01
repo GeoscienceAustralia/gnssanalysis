@@ -653,7 +653,7 @@ def check_epoch_counts_for_discrepancies(
     draft_sp3_df: _pd.DataFrame,
     parsed_sp3_header: _pd.Series,
     sp3_path_or_bytes: Union[Path, str, bytes, None] = None,
-    continue_on_error: bool = True,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
 ):
     """
     Utility function for use during SP3 parsing. Checks for discrepancies in the number of epochs the SP3 header
@@ -667,6 +667,7 @@ def check_epoch_counts_for_discrepancies(
         later in the SP3 reading process.
     :param Union[Path, str, bytes, None] sp3_path_or_bytes: representation of the source SP3 file path or binary data,
         used to determine whether a filename can be found, and extract it if so.
+    :param type[StrictMode] strict_mode: (Default: WARN) indicates whether to raise, warn, or ignore issues found.
     :raises ValueError: if discrepancies found in number of epochs indicated by SP3 filename/header/contents
     """
     sp3_filename: Union[str, None] = None
@@ -680,15 +681,16 @@ def check_epoch_counts_for_discrepancies(
     header_epoch_count = int(parsed_sp3_header.HEAD.N_EPOCHS)
 
     if content_unique_epoch_count != header_epoch_count:
-        if not continue_on_error:
+        if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(
                 f"Header says there should be {header_epoch_count} epochs, however there are "
                 f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
             )
-        logger.warning(
-            f"WARNING: Header says there should be {header_epoch_count} epochs, however there are "
-            f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
-        )
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"WARNING: Header says there should be {header_epoch_count} epochs, however there are "
+                f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
+            )
 
     if sp3_filename is None or len(sp3_filename) == 0:
         logger.info("SP3 filename not available to check for epoch count discrepancies, continuing")
@@ -716,7 +718,10 @@ def check_epoch_counts_for_discrepancies(
             ).total_seconds()
         )
     except Exception as e:
-        logger.warning("Failed to extract filename properties to validate against header / contents: ", e)
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise Exception("Failed to extract filename properties to validate against header / contents: ", e)
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning("Failed to extract filename properties to validate against header / contents: ", e)
         return
 
     # Now for the actual checks.
@@ -724,16 +729,16 @@ def check_epoch_counts_for_discrepancies(
     # Note filename is allowed to indicate a period one epoch longer than the data. E.g. 01D can end at 23:55
     # if in 5 min epochs.
     if header_epoch_count not in (filename_derived_epoch_count, filename_derived_epoch_count - 1):
-        if not continue_on_error:
+        if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(
                 f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
                 f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
             )
-        logger.warning(
-            f"WARNING: Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
-            f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
-        )
-    # All good, validation passed.
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"WARNING: Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+                f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
+            )
 
 
 def check_sp3_version(sp3_bytes: bytes, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN) -> bool:
@@ -1073,7 +1078,7 @@ def read_sp3(
             draft_sp3_df=sp3_df,
             parsed_sp3_header=parsed_header,
             sp3_path_or_bytes=path_bytes_to_pass,
-            continue_on_error=continue_on_discrepancies,
+            strict_mode=StrictModes.STRICT_WARN if continue_on_discrepancies else StrictModes.STRICT_RAISE,
         )
 
     # Check for duplicate epochs, dedupe and log warning
