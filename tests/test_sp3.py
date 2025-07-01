@@ -33,6 +33,7 @@ from test_datasets.sp3_test_data import (
     sp3_test_data_short_cod_final_header,  # For validating header output
     # For testing comment validation (overlong comment with nothing but extra SPACES in it)
     sp3_test_data_short_cod_final_overlong_comment_line as sp3_with_overlong_comment,
+    sp3_test_data_misaligned_columns,
 )
 
 
@@ -196,6 +197,35 @@ class TestSP3(unittest.TestCase):
 
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
+
+    def test_read_sp3_overlong_lines(self):
+        """
+        Test overlong content line check
+        """
+
+        test_content_no_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
+## 1422 345600.00000000   900.00000000 54202 0.0000000000000 THIS LINE IS TOO LONG
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 THIS IS OK.........
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN ......
+"""
+        #         test_content_no_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
+        # +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 THIS IS OK.........
+        # """
+
+        # sp3.read_sp3(test_content_no_overlong)
+        with self.assertRaises(ValueError) as read_exception:
+            sp3.read_sp3(test_content_no_overlong)
+            self.assertEqual(
+                read_exception.msg, "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
+            )
+
+    def test_read_sp3_misalignment_check(self):
+        """
+        Test that misaligned columns raise an error
+        """
+        with self.assertRaises(ValueError) as read_exception:
+            sp3.read_sp3(sp3_test_data_misaligned_columns)
+            self.assertTrue("Misaligned data line" in read_exception.msg if (read_exception.msg is not None) else False)
 
     @staticmethod
     def get_example_dataframe(template_name: str = "normal", include_simple_header: bool = True) -> pd.DataFrame:
@@ -427,6 +457,7 @@ class TestSP3(unittest.TestCase):
                 test_content_lines[i],
                 f"Content line {i} didn't match",
             )
+
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
     # These tests should include:
     # - Correct alignment of POS, CLK, STDPOS STDCLK, (not velocity yet), FLAGS

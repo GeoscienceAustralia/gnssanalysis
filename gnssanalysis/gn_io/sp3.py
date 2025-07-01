@@ -64,6 +64,20 @@ _RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})\W", _re.MU
 # File descriptor and clock
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
+# Max width of SP3 lines
+_SP3_MAX_WIDTH: int = 80
+_SP3_DATA_LINE_WIDTH: int = 80
+# TODO note that our current parsing in _split_sp3_content() removes the '*' from epoch headers, making them 30 chars
+# not 31
+_SP3_EPOCH_HEADER_WIDTH: int = 31
+
+# Columns in SP3 we expect (by SP3 d spec) to be unused (contain a space).
+# Deviation from this can be used to detect column misalignment
+_SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER: List[int] = [3, 8, 11, 14, 17, 20]
+_SP3_UNUSED_COLUMN_INDEXES_POS_CLK: List[int] = [61, 64, 67, 70, 74, 77, 78]
+_SP3_UNUSED_COLUMN_INDEXES_VELOCITY: List[int] = [61, 64, 67, 70, 74, 75, 76, 77, 78, 79, 80]
+_SP3_UNUSED_COLUMN_INDEXES_EP: List[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
+_SP3_UNUSED_COLUMN_INDEXES_EV: List[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
 
 _SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 2, 1, 1]
 _SP3_DEF_PV_NAME = [
@@ -496,6 +510,8 @@ def _process_sp3_block(
     data: str,
     widths: List[int] = _SP3_DEF_PV_WIDTH,
     names: List[str] = _SP3_DEF_PV_NAME,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
+    ignore_short_data_lines: bool = True,
 ) -> _pd.DataFrame:
     """Process a single block of SP3 data.
     NOTE: this process creates a temporary DataFrame for *every epoch* of SP3 data read in, complete with indexes, etc.
@@ -509,8 +525,64 @@ def _process_sp3_block(
     :param    List[str] names: The names of the columns in the SP3 data block.
     :return    _pd.DataFrame: The processed SP3 data as a DataFrame.
     """
-    if not data or len(data) == 0:
+    if not data or len(data) == 0:  # No data in this epoch
         return _pd.DataFrame()
+
+    # Check epoch header (date) and data lines (P/V/EP/EV) are the right length, and that all unused columns (by SP3d
+    # spec) are in fact blank (contain spaces). If this is not true, it probably indicates column misalignment which
+    # will lead to incorrect parsing.
+
+    if len(date) not in (_SP3_EPOCH_HEADER_WIDTH, _SP3_EPOCH_HEADER_WIDTH - 1):
+        raise ValueError(f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'")
+    epoch_header_offset = 0
+    if len(date) == _SP3_EPOCH_HEADER_WIDTH - 1:  # Cut short by our block splitting logic. Adjust indexes accordingly.
+        epoch_header_offset = -1
+    # Check for polluted spare columns (indicating misalignment)
+    for i in _SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER:
+        if date[(i + epoch_header_offset) - 1] != " ":  # Unused column (accoding to spec) was not blank
+            raise ValueError(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
+
+    for line in data.splitlines():
+        line_length = len(line)
+        if line_length == 0:
+            continue  # Skip completely empty lines
+
+        if line_length > _SP3_DATA_LINE_WIDTH:  # Fatal
+            raise ValueError(f"Overlong data line ({line_length} chars long): '{line}'")
+
+        elif line_length < _SP3_DATA_LINE_WIDTH:  # Not compliant, but likely not serious
+            if not ignore_short_data_lines:
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(
+                        f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
+                    )
+                elif strict_mode == StrictModes.STRICT_WARN:
+                    logger.warning(
+                        f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
+                    )
+
+        # Line length is to spec, or short but we're ignoring that.
+
+        # Check for polluted spare columns (indicating misalignment)
+        # Is this a POS, VEL, EP, or EV record?
+        if line[0] == "P":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_POS_CLK
+        elif line[0] == "V":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_VELOCITY
+        elif line[:2] == "EP":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EP
+        elif line[:2] == "EV":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EV
+        else:
+            raise ValueError(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
+
+        for i in unused_column_indexes:
+            # Index out of range due to (non-compliant) short line. Skip testing further columns.
+            if i > line_length - 1:
+                break  # TODO double check that breaks to where we want it to
+            if line[i - 1] != " ":
+                raise ValueError(f"Misaligned data line (unused column did not contain a space): '{line}'")
+
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
     # NOTE: setting dtype_backend="pyarrow" currently breaks parsing.
     temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
@@ -805,6 +877,7 @@ def read_sp3(
     skip_filename_in_discrepancy_check: bool = False,
     continue_on_discrepancies: bool = False,
     format_check_strictness: type[StrictMode] = StrictModes.STRICT_WARN,
+    ignore_short_lines: bool = True,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -833,6 +906,8 @@ def read_sp3(
         In future it could also impact things like:
          - less than min number of SV entries
         This parameter could be renamed to enforce_strict_format_compliance once more extensive checks are added.
+    :param bool ignore_short_lines: (default True) regardless of format_check_strictness above, indicates whether to
+        skip raising / warning about lines which are too short according to the SP3d spec.
     :return _pd.DataFrame: The SP3 data as a DataFrame.
     :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
     :raises Exception: For other errors reading SP3 file/bytes
@@ -879,7 +954,14 @@ def read_sp3(
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
     date_lines, data_blocks = _split_sp3_content(content)
-    sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
+    sp3_df = _pd.concat(
+        [
+            _process_sp3_block(
+                date, data, strict_mode=format_check_strictness, ignore_short_data_lines=ignore_short_lines
+            )
+            for date, data in zip(date_lines, data_blocks)
+        ]
+    )
     sp3_df = _reformat_df(sp3_df)
 
     # P/V/EP/EV flag handling is currently incomplete. The current implementation truncates to the first letter,
@@ -1024,7 +1106,7 @@ def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
     """
     pattern = _re.compile(r"^\*(.+)$", _re.MULTILINE)
     blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
-    date_lines = blocks[1::2]
+    date_lines = blocks[1::2]  # TODO this seems to be leaving out the "*" that it splits on
     data_blocks = _np.asarray(blocks[2::2])
     return date_lines, data_blocks
 
