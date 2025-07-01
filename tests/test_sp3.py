@@ -169,14 +169,13 @@ class TestSP3(unittest.TestCase):
             sp3.read_sp3(
                 sp3_test_data_cod_broken_missing_sv_in_content,
                 pOnly=False,
-                # check_header_vs_filename_vs_content_discrepancies=True,  # Actually enable the checks for this one
                 strict_mode=STRICT_RAISE,
             )
-            self.assertEqual(
-                context_manager.msg,  # What did the exception message say?
-                "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
-                "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
-            )
+        self.assertEqual(
+            str(context_manager.exception),  # What did the exception message say?
+            "Header says there should be 1 epochs, however there are 2 (unique) epochs in the content (duplicate epoch check comes later).",
+            "Loading SP3 with mismatch between SV count in header and in content, should raise exception",
+        )
 
     def test_read_sp3_correct_svs_read_when_ev_ep_present(self):
         # This should not raise an exception; SV count should match header if parsed correctly.
@@ -210,9 +209,9 @@ class TestSP3(unittest.TestCase):
         # sp3.read_sp3(test_content_no_overlong)
         with self.assertRaises(ValueError) as read_exception:
             sp3.read_sp3(test_content_no_overlong)
-            self.assertEqual(
-                read_exception.msg, "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
-            )
+        self.assertEqual(
+            str(read_exception.exception), "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
+        )
 
     def test_read_sp3_misalignment_check(self):
         """
@@ -220,7 +219,29 @@ class TestSP3(unittest.TestCase):
         """
         with self.assertRaises(ValueError) as read_exception:
             sp3.read_sp3(sp3_test_data_misaligned_columns, strict_mode=STRICT_RAISE)
-            self.assertTrue("Misaligned data line" in read_exception.msg if (read_exception.msg is not None) else False)
+        self.assertIn("Misaligned data line", str(read_exception.exception))
+
+    def test_sp3_block_column_check_standalone(self):
+        """
+        Test that misaligned columns in an epoch block raise an error (currently only in STRICT mode)
+        """
+        # Check that misaligned (but artificially not overlong) data line, raises exception
+        with self.assertRaises(ValueError) as validation_exception:
+            data = """
+PG06 -16988.173766  -1949.602010 -20295.348670  13551.688732                    
+PG07  -2270.179246 -18040.766586  19792.234454  13925.747073                    
+PG08-538216.0254931012968.294871-1053208.82032548447864.338317                  
+PG09  -7083.058359 -25531.577633  -1359.151582  14650.575917                    
+"""
+            sp3._check_column_alignment_of_sp3_block("*  2025  6 17  6  0  0.00000000", data, strict_mode=STRICT_RAISE)
+        self.assertIn("Misaligned data line", str(validation_exception.exception))
+
+        # Check that misaligned date raises exception
+        with self.assertRaises(ValueError) as validation_exception:
+            sp3._check_column_alignment_of_sp3_block(
+                date=" 2025  6 17  6  0  0.00000000", data="", strict_mode=STRICT_RAISE
+            )
+        self.assertIn("Epoch header should be 31 chars long, but was 29", str(validation_exception.exception))
 
     @staticmethod
     def get_example_dataframe(template_name: str = "normal", include_simple_header: bool = True) -> pd.DataFrame:

@@ -505,6 +505,112 @@ def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, 
     return offset, scale_factor
 
 
+# Hypothetically we could do this to the whole file, but we'd need a good way to parse over the header...
+# def _check_sp3_line_length_column_alignment(
+#     data: bytes | str,
+#     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
+#     ignore_short_data_lines: bool = True,
+# ) -> bool:
+#     """
+
+#     """
+
+
+def _check_column_alignment_of_sp3_block(
+    date: str,
+    data: str,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
+    ignore_short_data_lines: bool = True,
+) -> None:
+    """
+    Check an indivual SP3 block (one epoch), for line length and column alignment
+    :param str date: Epoch start date/time, typically beginning with '*'
+    :param str data: Entries for the given epoch (multiple rows, not yet split on '\n')
+    :param type[StrictMode] strict_mode: (default: WARN) how to respond to issues found. No check / warning / exception.
+    :param bool ignore_short_data_lines: (default True) don't fail the check due to data lines which are < 80 chars,
+        even though this is technically not to spec under SP3 version d.
+    # :returns bool: True if the block passes validation. False otherwise (along with logging a warning), unless an
+    #     exception is raised.
+    :raises ValueError: if validation doesn't pass, and strict_mode is set to STRICT_RAISE.
+    """
+    # Check epoch header (date) and data lines (P/V/EP/EV) are the right length, and that all unused columns (by SP3d
+    # spec) are in fact blank (contain spaces). If this is not true, it probably indicates column misalignment which
+    # will lead to incorrect parsing.
+
+    # First check epoch header line
+
+    if len(date) not in (_SP3_EPOCH_HEADER_WIDTH, _SP3_EPOCH_HEADER_WIDTH - 1):
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(
+                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
+            )
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
+            )
+    epoch_header_offset = 0  # TODO remove this after fixing our block splitting logic to not remove the '*'
+    if len(date) == _SP3_EPOCH_HEADER_WIDTH - 1:  # Cut short by our block splitting logic. Adjust indexes accordingly.
+        epoch_header_offset = -1
+    # Check for polluted unused columns (indicating misalignment)
+    for col_num in _SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER:
+        if date[(col_num + epoch_header_offset) - 1] != " ":  # Unused column (accoding to spec) was not blank
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
+            elif strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
+
+    # Now check each data line for this epoch
+
+    for line in data.splitlines():
+        line_length = len(line)
+        if line_length == 0:
+            continue  # Skip completely empty lines
+
+        if line_length > _SP3_DATA_LINE_WIDTH:  # Fatal, regardless of strict mode setting.
+            raise ValueError(f"Overlong data line ({line_length} chars long): '{line}'")
+
+        elif line_length < _SP3_DATA_LINE_WIDTH:  # Not compliant, but likely not serious
+            if not ignore_short_data_lines:
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(
+                        f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
+                    )
+                elif strict_mode == StrictModes.STRICT_WARN:
+                    logger.warning(
+                        f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
+                    )
+
+        # Line length is to spec (or short & we're ignoring that).
+
+        # What record type is this line (POS, VEL, EP, or EV record)?
+        if line[0] == "P":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_POS_CLK
+        elif line[0] == "V":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_VELOCITY
+        elif line[:2] == "EP":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EP
+        elif line[:2] == "EV":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EV
+        else:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
+            elif strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
+            # Can't check column alignment for this line as we don't know which record type it is.
+            continue
+
+        # For each 'unused' column we expect in a line of the determined record type, check column is actually empty.
+        for col_num in unused_column_indexes:
+            # Index out of range due to (non-compliant) short line. Skip testing further columns of this line.
+            if col_num > (line_length - 1):
+                break
+            if line[col_num - 1] != " ":  # 'Unused' column wasn't empty!
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(f"Misaligned data line (unused column did not contain a space): '{line}'")
+                elif strict_mode == StrictModes.STRICT_WARN:
+                    logger.warning(f"Misaligned data line (unused column did not contain a space): '{line}'")
+
+
 def _process_sp3_block(
     date: str,
     data: str,
@@ -533,76 +639,7 @@ def _process_sp3_block(
     if not data or len(data) == 0:  # No data in this epoch
         return _pd.DataFrame()
 
-    # Check epoch header (date) and data lines (P/V/EP/EV) are the right length, and that all unused columns (by SP3d
-    # spec) are in fact blank (contain spaces). If this is not true, it probably indicates column misalignment which
-    # will lead to incorrect parsing.
-
-    if len(date) not in (_SP3_EPOCH_HEADER_WIDTH, _SP3_EPOCH_HEADER_WIDTH - 1):
-        if strict_mode == StrictModes.STRICT_RAISE:
-            raise ValueError(
-                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
-            )
-        elif strict_mode == StrictModes.STRICT_WARN:
-            logger.warning(
-                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
-            )
-    epoch_header_offset = 0
-    if len(date) == _SP3_EPOCH_HEADER_WIDTH - 1:  # Cut short by our block splitting logic. Adjust indexes accordingly.
-        epoch_header_offset = -1
-    # Check for polluted spare columns (indicating misalignment)
-    for i in _SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER:
-        if date[(i + epoch_header_offset) - 1] != " ":  # Unused column (accoding to spec) was not blank
-            if strict_mode == StrictModes.STRICT_RAISE:
-                raise ValueError(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
-            elif strict_mode == StrictModes.STRICT_WARN:
-                logger.warning(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
-
-    for line in data.splitlines():
-        line_length = len(line)
-        if line_length == 0:
-            continue  # Skip completely empty lines
-
-        if line_length > _SP3_DATA_LINE_WIDTH:  # Fatal, regardless of strict mode setting.
-            raise ValueError(f"Overlong data line ({line_length} chars long): '{line}'")
-
-        elif line_length < _SP3_DATA_LINE_WIDTH:  # Not compliant, but likely not serious
-            if not ignore_short_data_lines:
-                if strict_mode == StrictModes.STRICT_RAISE:
-                    raise ValueError(
-                        f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
-                    )
-                elif strict_mode == StrictModes.STRICT_WARN:
-                    logger.warning(
-                        f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
-                    )
-
-        # Line length is to spec, or short but we're ignoring that.
-
-        # Check for polluted spare columns (indicating misalignment)
-        # Is this a POS, VEL, EP, or EV record?
-        if line[0] == "P":
-            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_POS_CLK
-        elif line[0] == "V":
-            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_VELOCITY
-        elif line[:2] == "EP":
-            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EP
-        elif line[:2] == "EV":
-            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EV
-        else:
-            if strict_mode == StrictModes.STRICT_RAISE:
-                raise ValueError(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
-            elif strict_mode == StrictModes.STRICT_WARN:
-                logger.warning(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
-
-        for i in unused_column_indexes:
-            # Index out of range due to (non-compliant) short line. Skip testing further columns.
-            if i > line_length - 1:
-                break  # TODO double check that breaks to where we want it to
-            if line[i - 1] != " ":
-                if strict_mode == StrictModes.STRICT_RAISE:
-                    raise ValueError(f"Misaligned data line (unused column did not contain a space): '{line}'")
-                elif strict_mode == StrictModes.STRICT_WARN:
-                    logger.warning(f"Misaligned data line (unused column did not contain a space): '{line}'")
+    _check_column_alignment_of_sp3_block(date, data, strict_mode, ignore_short_data_lines)
 
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
     # NOTE: setting dtype_backend="pyarrow" currently breaks parsing.
