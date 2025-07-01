@@ -1074,8 +1074,8 @@ def read_sp3(
                 f"Unique PV flag values seen: {pv_flag_values}"
             )
 
-        position_df = sp3_df.xs("P", level="PV_FLAG")
-        velocity_df = sp3_df.xs("V", level="PV_FLAG")
+        position_df = sp3_df.xs("P", level="PV_FLAG").sort_index()
+        velocity_df = sp3_df.xs("V", level="PV_FLAG").sort_index()
 
         # NOTE: care must now be taken to ensure this split and merge operation does not duplicate the FLAGS columns!
 
@@ -1085,7 +1085,7 @@ def read_sp3(
         # not drop all the data to which the column previously applied!)
         # We drop from pos rather than vel, because vel is on the right hand side, so the layout resembles the
         # layout of an SP3 file better. Functionally, this shouldn't make a difference.
-        position_df = position_df.drop(axis=1, columns="FLAGS")
+        position_df = position_df.drop(axis=1, columns="FLAGS", level=0)  # TODO double check this level is right
 
         velocity_df.columns = SP3_VELOCITY_COLUMNS
         # NOTE from the docs: pandas.concat copies attrs only if all input datasets have the same attrs.

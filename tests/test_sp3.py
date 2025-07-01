@@ -328,7 +328,7 @@ PG09  -7083.058359 -25531.577633  -1359.151582  14650.575917
         multi_index = pd.MultiIndex.from_product(index_elements, names=index_names)
 
         # Compose it all into a DataFrame
-        df = pd.DataFrame(frame_data, index=multi_index, columns=frame_columns)
+        df = pd.DataFrame(frame_data, index=multi_index, columns=frame_columns).sort_index()
 
         if include_simple_header:
             # Build SV table
