@@ -184,7 +184,7 @@ def read_frame_snx_all(*file_paths, core_sites=None):
             _gn_io.sinex._get_snx_vector_gzchunks(filename=path, block_name="SOLUTION/ESTIMATE"), snx_format="raw"
         )
     all_frame = _pd.concat(buf)
-    if core_sites is not None:
+    if core_sites is not None:  # TODO update datatype and check if we need to check if this is an empty list
         return all_frame[all_frame.CODE.isin(core_sites)]
     return all_frame
 
@@ -196,7 +196,7 @@ def read_disc_all(*file_paths, core_sites=None):
     all_discon = _pd.concat(buf)
     all_discon = all_discon[all_discon.MODEL.values == "P"]
 
-    if core_sites is not None:
+    if core_sites is not None:  # TODO update datatype and check if we need to check if this is an empty list
         return all_discon[all_discon.CODE.isin(core_sites)]
     return all_discon
 
@@ -206,7 +206,7 @@ def read_psd_all(*file_paths, core_sites=None):
     for path in file_paths:
         buf.append(_gn_io.psd._get_psd_df(path))
     all_psd = _pd.concat(buf)
-    if core_sites is not None:
+    if core_sites is not None:  # TODO update datatype and check if we need to check if this is an empty list
         psd_sites = all_psd.index.levels[0]
         return all_psd.loc[psd_sites[psd_sites.isin(core_sites)]]
     return all_psd

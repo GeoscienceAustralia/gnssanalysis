@@ -681,7 +681,7 @@ def orbq(
 
     sp3_a = gn_io.sp3.read_sp3(input[0], nodata_to_nan=nodata_to_nan)
     sp3_b = gn_io.sp3.read_sp3(input[1], nodata_to_nan=nodata_to_nan)
-    if reject_re is not None:
+    if reject_re is not None and len(reject_re) > 0:
         logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
         reject_mask = sp3_a.index.get_level_values(1).str.match(reject_re)
         sp3_a = sp3_a[~reject_mask]
@@ -871,7 +871,7 @@ def clkq(
     logger = configure_logging(verbose=verbose, output_logger=True)
 
     clk_a, clk_b = gn_io.clk.read_clk(input_clk_paths[0]), gn_io.clk.read_clk(input_clk_paths[1])
-    if reject_re is not None:
+    if reject_re is not None and len(reject_re) > 0:
         logger.log(msg=f"Excluding satellites based on regex expression: '{reject_re}'", level=_logging.INFO)
         reject_mask_a = clk_a.index.get_level_values(2).str.match(reject_re)
         reject_mask_b = clk_b.index.get_level_values(2).str.match(reject_re)

@@ -126,3 +126,28 @@ class SolutionTypes(metaclass=EnumMetaProperties):
             if name == solution_type.name:
                 return solution_type
         raise ValueError(f"No known solution type with short name '{name}'")
+
+    @staticmethod
+    def valid(name: str, strict_case: bool = True, allow_unknown: bool = False) -> bool:
+        """
+        Checks whether the provided SolutionType short name is a valid Solution Type according to the IGS long
+        product filename convention v2.0.
+
+        :param str name: Short name of the solution type to check. E.g. 'RAP'
+        :param bool strict_case: (default True) Strictly enforce that the short name must be all uppercase
+        :param bool allow_unknown: (default False) Permit 'UNK' as a way of expressing an unknown Solution Type.
+        :returns True if the provided SolutionType short name is a valid solution type (given config above),
+            False otherwise.
+        """
+        if name is None:
+            return False
+        if strict_case and (name.upper() != name):  # Name wasn't all uppercase
+            return False
+        try:
+            sol: type[SolutionType] = SolutionTypes.from_name(name)
+            # Solution type parsed ok, but was it 'UNK'?
+            if (not allow_unknown) and (sol == SolutionTypes.UNK):
+                return False
+            return True  # No issues, this is valid
+        except ValueError:
+            return False

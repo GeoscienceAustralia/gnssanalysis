@@ -435,12 +435,12 @@ def filter_by_svs(
     # Starting with all SVs
     keep_set: set[str] = set(all_sv_names)
 
-    # Disqualify SVs unless the match the given names
-    if filter_by_name is not None:
+    # Disqualify SVs unless they match the given names
+    if filter_by_name is not None and len(filter_by_name) > 0:
         keep_set = keep_set.intersection(filter_by_name)
 
     # Disqualify SVs unless they match a given constellation letter (i.e. 'G', 'E', 'R', 'C')
-    if filter_to_sat_letter is not None:
+    if filter_to_sat_letter is not None and len(filter_to_sat_letter) > 0:
         if len(filter_to_sat_letter) != 1:
             raise ValueError(
                 "Name of sat constellation to filter to, must be a single char. E.g. you cannot enter 'GE'"
@@ -1711,7 +1711,7 @@ def sp3merge(
         df.attrs = {}
     merged_sp3 = _pd.concat(sp3_dfs)
     merged_sp3.attrs["HEADER"] = merged_attrs
-    if clkpaths is not None:
+    if clkpaths is not None and len(clkpaths) > 0:
         clk_dfs = [_gn_io.clk.read_clk(clk_file) for clk_file in clkpaths]
         merged_sp3.EST.CLK = _pd.concat(clk_dfs).EST.AS * 1000000
     return merged_sp3

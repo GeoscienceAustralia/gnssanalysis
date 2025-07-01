@@ -52,7 +52,7 @@ class TestPropsFromNameAndContent(TestCase):
         derived_from_compliant = filenames.determine_properties_from_contents_and_filename(sp3_compliant_filename)
 
         # Verify
-        # These are computed values at time of wrting:
+        # These are computed values at time of writing:
         known_props_noncompliant = {
             "analysis_center": "FIL",  # TODO CHECK
             "content_type": "ORB",  # TODO CHECK
