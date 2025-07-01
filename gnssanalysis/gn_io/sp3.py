@@ -310,7 +310,8 @@ def reflow_string_as_lines_for_comment_block(
 
 def get_sp3_comments(sp3_df: _pd.DataFrame) -> list[str]:
     """
-    Utility function to retrieve stored SP3 comment lines from the attributes of an SP3 DataFrame.
+    Utility function to retrieve stored SP3 comment lines from the attributes of an SP3 DataFrame. NOTE: this does not
+    validate comment lines for compliance with SP3 d spec.
     :return list[str]: List of comment lines, verbatim. Note that comment line lead-in of '/* ' is not removed.
     """
     return sp3_df.attrs["COMMENTS"]
@@ -939,6 +940,7 @@ def read_sp3(
     # Optionally override above strictness for specific checks:
     strictness_content_discrepancy: type[StrictMode] | None = None,
     strictness_duped_epochs: type[StrictMode] | None = StrictModes.STRICT_WARN,
+    strictness_comments: type[StrictMode] | None = None,
     # Selectively turn off parts of strict mode (and don't raise exceptions in RAISE mode if these checks fail):
     skip_filename_in_discrepancy_check: bool = False,
     skip_short_line_check: bool = True,
@@ -968,6 +970,8 @@ def read_sp3(
         skip_filename_in_discrepancy_check will apply.
     :param type[StrictMode] | None strictness_duped_epochs: (default: WARN and dedupe duplicate epochs) optional
         override for how to handle duplicate epochs.
+    :param type[StrictMode] | None strictness_comments: (default: None) allows setting comment handling strictness
+        separately to overall strict_mode.
 
     *** OPTIONS to selectively turn off parts of strict mode, regardless of above settings ***:
     :param bool skip_filename_in_discrepancy_check: (default False) in strict_mode WARN or RAISE, if an SP3 filename is
@@ -1004,7 +1008,8 @@ def read_sp3(
     # These will be written to DataFrame.attrs["COMMENTS"] for easy access (but please use get_sp3_comments())
     comment_lines: list[str] = [line.decode("utf-8", errors="ignore").rstrip("\n") for line in comment_lines_bytes]
     # Validate comment lines (but don't make changes)
-    validate_sp3_comment_lines(comment_lines, strict_mode=strict_mode)
+    comment_strictness = strictness_comments if strictness_comments is not None else strict_mode
+    validate_sp3_comment_lines(comment_lines, strict_mode=comment_strictness)
     # NOTE: The comment lines should be contiguous (not fragmented throughout the file), and they should be immediately
     # followed by the first Epoch Header Record.
     # Note: this interpretation is based on page 16 of the SP3d spec, which says 'The comment lines should be read in
@@ -1440,7 +1445,10 @@ def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
 
 
 def gen_sp3_header(
-    sp3_df: _pd.DataFrame, output_comments: bool = False, strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE
+    sp3_df: _pd.DataFrame,
+    output_comments: bool = False,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE,
+    strictness_comments: type[StrictMode] | None = None,
 ) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
@@ -1451,6 +1459,8 @@ def gen_sp3_header(
     :param bool output_comment: Write the SP3 comment lines stored with the DataFrame, into the output. Off by default.
     :param type[StrictMode] strict_mode: Level of strictness with which to enforce SP3 specification rules (e.g.
         comments must have a leading space). Options defined by StrictModes, default STRICT_RAISE.
+    :param type[StrictMode] | None strictness_comments: Optional override on the level of strictness to apply to SP3
+        comment checks. If not set, strict_mode is used.
     :return str: The generated SP3 header as a string.
     """
     if output_comments and not "COMMENTS" in sp3_df.attrs:
@@ -1564,10 +1574,12 @@ def gen_sp3_header(
     if output_comments:
         # Use actual comments from the DataFrame, not placeholders
         sp3_comment_lines = get_sp3_comments(sp3_df)
+
+        comment_strictness = strictness_comments if strictness_comments is not None else strict_mode
         # Inspect incoming comments for validity, but don't change them.
-        if (strict_mode != StrictModes.STRICT_OFF) and not validate_sp3_comment_lines(
+        if (comment_strictness != StrictModes.STRICT_OFF) and not validate_sp3_comment_lines(
             sp3_comment_lines,
-            strict_mode=strict_mode,
+            strict_mode=comment_strictness,
             attempt_fixes=False,
             fail_on_fixed_issues=True,
         ):
@@ -1875,15 +1887,18 @@ def sp3merge(
     sp3paths: List[str],
     clkpaths: Union[List[str], None] = None,
     nodata_to_nan: bool = False,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
 ) -> _pd.DataFrame:
     """Reads in a list of sp3 files and optional list of clk files and merges them into a single sp3 file.
 
     :param List[str] sp3paths: The list of paths to the sp3 files.
     :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
+    :param type[StrictMode] strict_mode: (default: WARN) Strictness with which to check the SP3 files read in, for
+        compliance with the SP3 d spec.
     :return _pd.DataFrame: The merged SP3 DataFrame.
     """
-    sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
+    sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan, strict_mode=strict_mode) for sp3_file in sp3paths]
     # Create a new attrs dictionary to be used for the output DataFrame
     merged_attrs = merge_attrs(sp3_dfs)
     # If attrs of two DataFrames are different, pd.concat will fail - set them to empty dict instead

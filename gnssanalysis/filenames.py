@@ -754,11 +754,6 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
             "(Via warnings system) Extracting long filename properties (via regex) failed. "
             f"Check if the following is a valid filename: {filename}",
         )
-        # Temporary, until we confirm that warnings are coming out in main logs
-        logging.warning(
-            "(Via standard logging) Extracting long filename properties (via regex) failed. "
-            f"Check if the following is a valid filename: {filename}",
-        )
     # Short filenames
     # At the moment we'll return data even if the format doesn't really matter
     analysis_center = basename[0:3].upper()

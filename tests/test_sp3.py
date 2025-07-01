@@ -93,11 +93,11 @@ class TestSP3(unittest.TestCase):
             sp3.check_sp3_version(fake_header_version_c, strict_mode=STRICT_RAISE)
 
     def test_read_sp3_pOnly(self):
-        result = sp3.read_sp3(input_data, pOnly=True)
+        result = sp3.read_sp3(input_data, pOnly=True, strict_mode=STRICT_OFF)
         self.assertEqual(len(result), 6)
 
     def test_read_sp3_pv(self):
-        result = sp3.read_sp3(input_data, pOnly=False)
+        result = sp3.read_sp3(input_data, pOnly=False, strict_mode=STRICT_OFF)
         self.assertEqual(len(result), 6)
         # Ensure first epoch is correct / not skipped by incorrect detection of data start.
         # Check output of both header and data section.
@@ -113,7 +113,7 @@ class TestSP3(unittest.TestCase):
         """
         Minimal test of reading SVs from header
         """
-        result = sp3.read_sp3(input_data, pOnly=False)
+        result = sp3.read_sp3(input_data, pOnly=False, strict_mode=STRICT_OFF)
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].shape[0], 2, "Should be two SVs in data")
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].index[1], "G02", "Second SV should be G02")
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].iloc[1], 8, "Second ACC should be 8")
@@ -182,8 +182,7 @@ class TestSP3(unittest.TestCase):
         result = sp3.read_sp3(
             sp3c_example2_data,
             pOnly=False,
-            strict_mode=STRICT_WARN,  # Don't crash in response to the EV/EP rows. We just want to ensure the other data is read ok.
-            # skip_filename_in_discrepancy_check=True, # As there is no filename
+            strict_mode=STRICT_OFF,  # Don't crash (or be noisy) in response to the EV/EP rows. We just want to ensure the other data is read ok.
             skip_version_check=True,
         )
         parsed_svs_content = sp3.get_unique_svs(result).astype(str).values
@@ -208,25 +207,29 @@ class TestSP3(unittest.TestCase):
 
         # sp3.read_sp3(test_content_no_overlong)
         with self.assertRaises(ValueError) as read_exception:
-            sp3.read_sp3(test_content_no_overlong)
+            sp3.read_sp3(test_content_no_overlong, strictness_comments=STRICT_OFF)
         self.assertEqual(
             str(read_exception.exception), "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
         )
 
     def test_read_sp3_misalignment_check(self):
         """
-        Test that misaligned columns raise an error (currently only in STRICT mode)
+        Test that misaligned columns raise an error (currently only in STRICT mode).
+        Strictness of comment checking is set to OFF, as the test data has a comment line equal to '*/' not '*/ '
         """
         with self.assertRaises(ValueError) as read_exception:
-            sp3.read_sp3(sp3_test_data_misaligned_columns, strict_mode=STRICT_RAISE)
-        self.assertIn("Misaligned data line", str(read_exception.exception))
+            sp3.read_sp3(sp3_test_data_misaligned_columns, strict_mode=STRICT_RAISE, strictness_comments=STRICT_OFF)
+        self.assertEqual(
+            "Misaligned data line (unused column did not contain a space): 'PG08-538216.0254931012968.294871-1053208.82032548447864.338317                  '",
+            str(read_exception.exception),
+        )
 
     def test_sp3_block_column_check_standalone(self):
         """
         Test that misaligned columns in an epoch block raise an error (currently only in STRICT mode)
         """
         # Check that misaligned (but artificially not overlong) data line, raises exception
-        with self.assertRaises(ValueError) as validation_exception:
+        with self.assertRaises(ValueError) as misaligned_ex:
             data = """
 PG06 -16988.173766  -1949.602010 -20295.348670  13551.688732                    
 PG07  -2270.179246 -18040.766586  19792.234454  13925.747073                    
@@ -234,14 +237,29 @@ PG08-538216.0254931012968.294871-1053208.82032548447864.338317
 PG09  -7083.058359 -25531.577633  -1359.151582  14650.575917                    
 """
             sp3._check_column_alignment_of_sp3_block("*  2025  6 17  6  0  0.00000000", data, strict_mode=STRICT_RAISE)
-        self.assertIn("Misaligned data line", str(validation_exception.exception))
+        self.assertEqual(
+            "Misaligned data line (unused column did not contain a space): 'PG08-538216.0254931012968.294871-1053208.82032548447864.338317                  '",
+            str(misaligned_ex.exception),
+        )
+
+        # Check that misaligned data line (flags) trimmed to 80 chars, raises exception
+        with self.assertRaises(ValueError) as misaligned_flags:
+            data = """
+PG06  -5247.775383 -25963.469495   -106.156584  15892.813576               P   P
+PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P   
+"""
+            sp3._check_column_alignment_of_sp3_block("*  2025  6 17  6  0  0.00000000", data, strict_mode=STRICT_RAISE)
+        self.assertEqual(
+            "Misaligned data line (unused column did not contain a space): 'PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P   '",
+            str(misaligned_flags.exception),
+        )
 
         # Check that misaligned date raises exception
-        with self.assertRaises(ValueError) as validation_exception:
+        with self.assertRaises(ValueError) as date_ex:
             sp3._check_column_alignment_of_sp3_block(
                 date=" 2025  6 17  6  0  0.00000000", data="", strict_mode=STRICT_RAISE
             )
-        self.assertIn("Epoch header should be 31 chars long, but was 29", str(validation_exception.exception))
+        self.assertIn("Epoch header should be 31 chars long, but was 29", str(date_ex.exception))
 
     @staticmethod
     def get_example_dataframe(template_name: str = "normal", include_simple_header: bool = True) -> pd.DataFrame:
@@ -491,7 +509,7 @@ PG09  -7083.058359 -25531.577633  -1359.151582  14650.575917
             "/*  SP3 FILE GENERATED BY NAPEOS BAHN TOOL  (DETERMINATION)",
             "/* PCV:IGS14_2022 OL/AL:EOT11A   NONE     YN ORB:CoN CLK:CoN",
         ]
-        sp3_df: pd.DataFrame = sp3.read_sp3(input_data)
+        sp3_df: pd.DataFrame = sp3.read_sp3(input_data, strict_mode=STRICT_OFF)
         self.assertEqual(sp3.get_sp3_comments(sp3_df), expected_comments, "SP3 comments read should match expectation")
         self.assertEqual(sp3_df.attrs["COMMENTS"], expected_comments, "Manual read of SP3 comments should match")
 
@@ -504,7 +522,7 @@ PG09  -7083.058359 -25531.577633  -1359.151582  14650.575917
             "/* PCV:IGS14_2022 OL/AL:EOT11A   NONE     YN ORB:CoN CLK:CoN",
         ]
         # Initialise and check state
-        sp3_df: pd.DataFrame = sp3.read_sp3(input_data)  # Load DataFrame
+        sp3_df: pd.DataFrame = sp3.read_sp3(input_data, strict_mode=STRICT_OFF)  # Load DataFrame
         # Read comments directly from DataFrame to check they are as expected
         self.assertEqual(sp3_df.attrs["COMMENTS"], expected_comments, "SP3 initial comments read were not as expected")
 
@@ -869,7 +887,7 @@ SP3 comment reflow test. This should not break words if possible."""
         ]
 
         # Load, check initial state
-        sp3_df = sp3.read_sp3(input_data)
+        sp3_df = sp3.read_sp3(input_data, strict_mode=STRICT_OFF)
         initial_commments = sp3.get_sp3_comments(sp3_df)
         self.assertEqual(expected_initial_comments, initial_commments, "Initial SP3 comments were not as expected")
 
@@ -891,7 +909,7 @@ SP3 comment reflow test. This should not break words if possible."""
         self.assertEqual(expected_append_comments, appended_comments, "Comments were not as expected after appending")
 
         ### Overwrite/replace test ###
-        sp3_df = sp3.read_sp3(input_data)
+        sp3_df = sp3.read_sp3(input_data, strict_mode=STRICT_OFF)
         sp3.update_sp3_comments(sp3_df, comment_lines=new_lines, comment_string=new_freeform_string, ammend=False)
 
         expected_replaced_comments = []
@@ -957,7 +975,7 @@ SP3 comment reflow test. This should not break words if possible."""
         is to check if the function runs without errors
         TODO: update that to check actual expected values
         """
-        result = sp3.read_sp3(input_data, pOnly=True)
+        result = sp3.read_sp3(input_data, pOnly=True, strict_mode=STRICT_OFF)
         r = sp3.getVelSpline(result)
         r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r)
@@ -997,7 +1015,7 @@ SP3 comment reflow test. This should not break words if possible."""
         )
 
     def test_sp3_offline_sat_removal(self):
-        sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False)
+        sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False, strict_mode=STRICT_OFF)
 
         # Confirm starting state of content
         self.assertEqual(
@@ -1067,7 +1085,7 @@ SP3 comment reflow test. This should not break words if possible."""
         )
 
     def test_trim_df(self):
-        sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False)
+        sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False, strict_mode=STRICT_OFF)
         # offline_sat_test_data is based on the following file, but 3 epochs, not 2 days:
         filename = "IGS0DEMULT_20243181800_02D_05M_ORB.SP3"
         # Expected starting set of epochs, in j2000 seconds
@@ -1141,21 +1159,20 @@ SP3 comment reflow test. This should not break words if possible."""
 
 
 class TestSP3Utils(TestCase):
-
     def test_get_unique_svs(self):
-        sp3_df = sp3.read_sp3(input_data, pOnly=True)
+        sp3_df = sp3.read_sp3(input_data, pOnly=True, strict_mode=STRICT_OFF)
 
         unique_svs = set(sp3.get_unique_svs(sp3_df).values)
         self.assertEqual(unique_svs, set(["G01", "G02"]))
 
     def test_get_unique_epochs(self):
-        sp3_df = sp3.read_sp3(input_data, pOnly=True)
+        sp3_df = sp3.read_sp3(input_data, pOnly=True, strict_mode=STRICT_OFF)
 
         unique_epochs = set(sp3.get_unique_epochs(sp3_df).values)
         self.assertEqual(unique_epochs, set([229608000, 229608900, 229609800]))
 
     def test_remove_svs_from_header(self):
-        sp3_df = sp3.read_sp3(sp3c_example2_data, pOnly=True)
+        sp3_df = sp3.read_sp3(sp3c_example2_data, pOnly=True, strict_mode=STRICT_OFF)
         self.assertEqual(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "5", "Header should have 5 SVs to start with")
         self.assertEqual(
             set(sp3_df.attrs["HEADER"].SV_INFO.index.values),
@@ -1198,7 +1215,9 @@ class TestMergeSP3(TestCase):
         self.fs.create_file(file_paths[1], contents=input_data2)
 
         # Call the function to test
-        result = sp3.sp3merge(sp3paths=file_paths)
+        # Strict mode off to make output quieter. We check the output, and don't want to do format validation
+        # testing here.
+        result = sp3.sp3merge(sp3paths=file_paths, strict_mode=STRICT_OFF)
 
         # Test that epochs, satellite, attrs data is as expected:
         epoch_index = result.index.get_level_values("J2000")
