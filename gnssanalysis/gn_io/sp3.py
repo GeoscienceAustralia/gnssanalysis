@@ -1150,26 +1150,33 @@ def read_sp3(
         )
 
     strictness_dupes = strictness_duped_epochs if strictness_duped_epochs is not None else strict_mode
-    if strictness_dupes != StrictModes.STRICT_OFF:
-        # Check for duplicate epochs, dedupe and log warning
-        if sp3_df.index.has_duplicates:  # a literaly free check
-            # This typically runs in sub ms time. Marks all but first instance as duped:
-            duplicated_indexes = sp3_df.index.duplicated()
-            first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
-            if strictness_dupes == StrictModes.STRICT_RAISE:
-                raise ValueError(
-                    f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
-                    f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
-                    f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'."
-                )
-            elif strictness_dupes == StrictModes.STRICT_WARN:
-                logger.warning(
-                    f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
-                    f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
-                    f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
-                )
-            # Now dedupe them, keeping the first of any clashes:
-            sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
+    # NOTE: duplicates break things, so we still remove them even in STRICT_OFF mode
+    # Check for duplicate epochs, dedupe and (depending on config) silence, log warning, or raise
+    if sp3_df.index.has_duplicates:  # a literaly free check
+        # This typically runs in sub ms time. Marks all but first instance as duped:
+        duplicated_indexes = sp3_df.index.duplicated()
+        first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
+        if strictness_dupes == StrictModes.STRICT_RAISE:
+            raise ValueError(
+                f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
+                f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
+                f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'."
+            )
+        elif strictness_dupes == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
+                f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
+                f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
+            )
+        else:
+            logger.info(
+                f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
+                f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
+                f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be "
+                "removed, keeping first. NOTE: Not logged as a warning as dupe / global strictness was STRICT_OFF"
+            )
+        # Now dedupe them, keeping the first of any clashes:
+        sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
 
     return sp3_df
 
