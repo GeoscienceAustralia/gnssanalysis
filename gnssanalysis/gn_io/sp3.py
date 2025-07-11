@@ -938,9 +938,9 @@ def read_sp3(
     drop_offline_sats: bool = False,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
     # Optionally override above strictness for specific checks:
-    strictness_content_discrepancy: type[StrictMode] | None = None,
-    strictness_duped_epochs: type[StrictMode] | None = StrictModes.STRICT_WARN,
-    strictness_comments: type[StrictMode] | None = None,
+    strictness_content_discrepancy: Optional[type[StrictMode]] = None,
+    strictness_duped_epochs: Optional[type[StrictMode]] = StrictModes.STRICT_WARN,
+    strictness_comments: Optional[type[StrictMode]] = None,
     # Selectively turn off parts of strict mode (and don't raise exceptions in RAISE mode if these checks fail):
     skip_filename_in_discrepancy_check: bool = False,
     skip_short_line_check: bool = True,
@@ -1455,7 +1455,7 @@ def gen_sp3_header(
     sp3_df: _pd.DataFrame,
     output_comments: bool = False,
     strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE,
-    strictness_comments: type[StrictMode] | None = None,
+    strictness_comments: Optional[type[StrictMode]] = None,
 ) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
