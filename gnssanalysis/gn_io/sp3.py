@@ -726,7 +726,7 @@ def check_epoch_counts_for_discrepancies(
             )
         elif strict_mode == StrictModes.STRICT_WARN:
             logger.warning(
-                f"WARNING: Header says there should be {header_epoch_count} epochs, however there are "
+                f"Header says there should be {header_epoch_count} epochs, however there are "
                 f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
             )
 
@@ -775,7 +775,7 @@ def check_epoch_counts_for_discrepancies(
             )
         elif strict_mode == StrictModes.STRICT_WARN:
             logger.warning(
-                f"WARNING: Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+                f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
                 f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
             )
 
