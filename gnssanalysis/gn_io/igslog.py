@@ -4,10 +4,12 @@ import logging
 import glob as _glob
 import re as _re
 from multiprocessing import Pool as _Pool
-from typing import Union, List, Tuple
+from typing import Optional, Union, List, Tuple
 
 import numpy as _np
 import pandas as _pd
+
+from gnssanalysis.gn_utils import gnssanalysis_pretty_version
 from .. import gn_const as _gn_const
 from .. import gn_datetime as _gn_datetime
 from .. import gn_frame as _gn_frame
@@ -702,7 +704,7 @@ def write_meta_gather_master(
     frame_snx_path: str,
     frame_soln_path: str,
     frame_psd_path: str,
-    frame_datetime: _np.datetime64 = None,
+    frame_datetime: Optional[_np.datetime64] = None,
     out_path: str = "/data/meta_gather.snx",
     num_threads: int = 1,
 ) -> None:
@@ -756,8 +758,8 @@ def write_meta_gather_master(
             + "+FILE/REFERENCE\n"
             + "DESCRIPTION        merged metadata\n"
             + "OUTPUT             historical sinex header file\n"
-            + "CONTACT            bogdan.matviichuk@ga.gov.au\n"
-            + "SOFTWARE           LOG2SNX v0.1.2\n"
+            + "CONTACT            gnssanalysis@ga.gov.au\n"
+            + f"SOFTWARE           {gnssanalysis_pretty_version()}\n"
             + "HARDWARE           AWS\n"
             + "INPUT              igs ftp site logs\n"
             + "-FILE/REFERENCE\n"
@@ -766,7 +768,7 @@ def write_meta_gather_master(
             + trf_header
             + "-FILE/COMMENT\n"
             + "+INPUT/ACKNOWLEDGMENTS\n"
-            + "IGS International GNSS Service, GA\n"
+            + "IGS International GNSS Service & Geoscience Australia\n"
             + "-INPUT/ACKNOWLEDGMENTS\n"
         ]
     )
