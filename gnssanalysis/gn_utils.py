@@ -9,6 +9,7 @@ import click as _click
 from typing import List, Union
 
 from gnssanalysis.enum_meta_properties import EnumMetaProperties
+from gnssanalysis import __version__ as gnssanalysis_version
 
 
 class StrictMode(metaclass=EnumMetaProperties):
@@ -57,6 +58,25 @@ class StrictModes(metaclass=EnumMetaProperties):
     STRICT_OFF = STRICT_OFF  # Strict mode off
     STRICT_WARN = STRICT_WARN  # Strict mode warn
     STRICT_RAISE = STRICT_RAISE  # Strict mode warn
+
+
+def gnssanalysis_pretty_version() -> str:
+    """
+    Print a pretty version of gnssanalysis name.
+    E.g. 'gnssanalysis 0.0.59' or (in unpublished versions) 'gnssanalysis 0.0.59.dev1+2.g2133fb3.dirty'
+
+    returns str: gnssanalysis analysis package name (hardcoded) and version
+    """
+
+    return f"gnssanalysis {gnssanalysis_version}"
+
+    # Note, we have the option of using the versioning utility's get_version() (below implementation), or the equally
+    # unofficial (but more standard) API: __version__ (above implementation)
+
+    # Alternatively:
+    # if get_versions() is None or "version" not in get_versions():
+    #     return "gnssanalysis (unknown version)"
+    # return f"gnssanalysis {get_versions()['version']}"
 
 
 def diffutil_verify_input(input):
