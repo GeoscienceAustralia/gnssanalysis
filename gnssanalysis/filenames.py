@@ -19,6 +19,40 @@ from . import gn_datetime, gn_io, gn_const
 # May be unnecessary, but for safety explicitly enable it
 logging.captureWarnings(True)
 
+# Precompile regex
+
+# Implements IGS long filename spec v2.1, including subsection 2.3 on Long Term Products.
+# https://files.igs.org/pub/resource/guidelines/Guidelines_for_Long_Product_Filenames_in_the_IGS_v2.1.pdf
+_RE_IGS_LONG_FILENAME = re.compile(
+    r"""\A # Assert beginning of string
+        (?P<analysis_center>\w{3})
+        (?P<version>\w)
+        (?P<project>\w{3}) # Campaign / project
+        (?P<solution_type>\w{3}) # Solution type identifier
+        _
+        (?P<year>\d{4})(?P<day_of_year>\d{3}) # All filenames have at least this much precision in start_epoch, then:
+        (
+            (?P<hour>\d{2})(?P<minute>\d{2})_(?P<period>\w{3})| # Either: more precision and timerange / period
+            _(?P<end_year>\d{4})(?P<end_day_of_year>\d{3}) # Or, for Long Term Products: end epoch
+        )
+        _
+        (?P<sampling>\w{3}) # Temporal sampling resolution E.g. 05M, 00U
+        _
+        ((?P<station_id>\w{9}_|)) # (Optionally) station ID
+        (?P<content_type>\w{3})\. # Content type E.g. SOL, SUM, CLK
+        (?P<file_format>\w{3,4}) # File Format (extension) 3-4 chars. E.g. SP3, SUM, CLK, ERP, BIA, SNX, JSON, YAML, YML
+        (?P<compression_ext>\.gz|) # (Optionally) .gz extension indicating compression
+        \Z""",  # Assert end of string
+    re.VERBOSE,
+)
+
+# Approximate regex which matches a majority of IGS format short filenames.
+# NOTE: a clear definition for IGS short filenames could not be found. This regex was reverse engineered from
+# numerous filenames, and is likely a lot more permissive / general than the official specification.
+_RE_IGS_SHORT_FILENAME_APPROX = re.compile(
+    r"""^(?P<ac_and_cpgn>[a-z,A-Z]{3})(?P<short_year_sometimes_lower>\d{2}[P,p](?P<short_week>\d{2}|)|)(?P<gps_weekd>\d{4,5}|)(?P<pred_flag_maybe>p\d{0,2}|)(?P<hour>_\d{2}|_all|)(?P<version_campgn>_v\d|_[a-z,A-Z]{3}|)\.(?P<file_format>\w{3,4})(?P<sample_rate>_\d{2}[s,m,h,d]|)(?P<compressed>\.Z|)$"""
+)
+
 
 @click.command()
 @click.argument("files", type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=pathlib.Path), nargs=-1)
@@ -737,34 +771,7 @@ def determine_properties_from_filename(
         warnings.warn(f"IGS long filename can't be <38 chars: '{filename}'. expect_long_filenames is on")
         return None
 
-    # Attempt regex match of the filename according to IGS long product filename specification v2.1.
-    # This regex implements subsection 2.3 on Long Term Products.
-    # https://files.igs.org/pub/resource/guidelines/Guidelines_for_Long_Product_Filenames_in_the_IGS_v2.1.pdf
-
-    match_long = re.fullmatch(
-        r"""\A # Assert beginning of string
-        (?P<analysis_center>\w{3})
-        (?P<version>\w)
-        (?P<project>\w{3}) # Campaign / project
-        (?P<solution_type>\w{3}) # Solution type identifier
-        _
-        (?P<year>\d{4})(?P<day_of_year>\d{3}) # All filenames have at least this much precision in start_epoch, then:
-        (
-            (?P<hour>\d{2})(?P<minute>\d{2})_(?P<period>\w{3})| # Either: more precision and timerange / period
-            _(?P<end_year>\d{4})(?P<end_day_of_year>\d{3}) # Or, for Long Term Products: end epoch
-        )
-        _
-        (?P<sampling>\w{3}) # Temporal sampling resolution E.g. 05M, 00U
-        _
-        ((?P<station_id>\w{9}_|)) # (Optionally) station ID
-        (?P<content_type>\w{3})\. # Content type E.g. SOL, SUM, CLK
-        (?P<file_format>\w{3,4}) # File Format (extension) 3-4 chars. E.g. SP3, SUM, CLK, ERP, BIA, SNX, JSON, YAML, YML
-        (?P<compression_ext>\.gz|) # (Optionally) .gz extension indicating compression
-        \Z""",  # Assert end of string
-        filename,
-        re.VERBOSE,
-    )
-
+    match_long = _RE_IGS_LONG_FILENAME.fullmatch(filename)
     if match_long is not None:
         prop_dict: dict[str, Any] = {
             "analysis_center": match_long["analysis_center"].upper(),
