@@ -14,9 +14,8 @@ import click
 import pandas as pd
 import numpy as np
 
-from gnssanalysis.gn_utils import StrictMode, StrictModes
-
 from . import gn_datetime, gn_io, gn_const
+from .gn_utils import StrictMode, StrictModes
 
 # May be unnecessary, but for safety explicitly enable it
 logging.captureWarnings(True)
@@ -40,7 +39,7 @@ _RE_IGS_LONG_FILENAME = re.compile(
         _
         (?P<sampling>\w{3}) # Temporal sampling resolution E.g. 05M, 00U
         _
-        ((?P<station_id>\w{9}_|)) # (Optionally) station ID
+        ((?P<station_id>\w{9})_|) # (Optionally) station ID (with _ matched but not captured)
         (?P<content_type>\w{3})\. # Content type E.g. SOL, SUM, CLK
         (?P<file_format>\w{3,4}) # File Format (extension) 3-4 chars. E.g. SP3, SUM, CLK, ERP, BIA, SNX, JSON, YAML, YML
         (?P<compression_ext>\.gz|) # (Optionally) .gz extension indicating compression
@@ -826,6 +825,10 @@ def determine_properties_from_filename(
         if include_compressed_flag:
             # If .gz ext present: compressed
             prop_dict["compressed"] = True if len(match_long["compression_ext"]) != 0 else False
+
+        station_id = match_long["station_id"]
+        if station_id is not None and len(station_id) > 0:
+            prop_dict["station_id"] = station_id
 
         # Standard or long term product?
         period = match_long["period"]
