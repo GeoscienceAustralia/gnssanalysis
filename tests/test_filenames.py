@@ -98,6 +98,32 @@ class TestPropsFromNameAndContent(TestCase):
         }
         self.assertEqual(derived_props, known_props)
 
+        # Test for Long Term Product format
+        long_term_product = "IGS0OPSSNX_1994002_2025207_00U_CRD.SNX"
+
+        exp_start_epoch = datetime.datetime(1994, 1, 2, 0, 0)
+        exp_end_epoch = datetime.datetime(2025, 7, 26, 0, 0)
+        exp_timespan = exp_end_epoch - exp_start_epoch
+
+        expected_props = {
+            "analysis_center": "IGS",
+            "content_type": "CRD",
+            "format_type": "SNX",
+            "start_epoch": exp_start_epoch,
+            "end_epoch": exp_end_epoch,
+            "timespan": exp_timespan,
+            "solution_type": "SNX",
+            "sampling_rate": "00U",
+            "version": "0",
+            "project": "OPS",
+            "compressed": False,
+        }
+
+        derived_props_ltp = filenames.determine_properties_from_filename(
+            long_term_product, include_compressed_flag=True
+        )
+        self.assertEqual(derived_props_ltp, expected_props)
+
     def test_determine_file_name(self):
         """
         Test of the filename generation function that leverages determine_properties_from_contents()
