@@ -46,6 +46,8 @@ class TestPropsFromNameAndContent(TestCase):
         with self.assertWarns(Warning):
             # Temporary, until we confirm warnings are appearing in standard logs. Then logging.warning() call can go.
             logging.disable(logging.WARNING)
+            # NOTE: this only meaningfully tests determine_sp3_name_props(), and only really the filename
+            # (not content) based parts of this:
             derived_from_noncompliant = filenames.determine_properties_from_contents_and_filename(
                 sp3_noncompliant_filename
             )
