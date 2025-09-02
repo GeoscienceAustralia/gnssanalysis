@@ -667,7 +667,9 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     return name_props
 
 
-def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
+def determine_sp3_name_props(
+    file_path: pathlib.Path, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN
+) -> Dict[str, Any]:
     """Determine the IGS filename properties for a SP3 files
 
     Like all functions in this series, the function reads both a filename and the files contents
@@ -675,15 +677,45 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     function returns a dictionary with any properties it manages to successfully determine.
 
     :param pathlib.Path file_path: file for which to determine name properties
-    :return Dict[str, Any]: dictionary containing the extracted name properties
+    :param type[StrictMode] strict_mode: indicates whether to raise, warn, or silently continue on errors such as
+        failure to get properties from a filename.
+    :return Dict[str, Any]: dictionary containing the extracted name properties. May be empty on some errors, if
+        strict_mode is not set to RAISE.
+    :raises ValueError: if strict_mode set to RAISE, and unable to statically extract properties from a filename
     """
     name_props = {}
+    # First, properties from the SP3 data:
     try:
-        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False)
-        props_from_existing_name = determine_properties_from_filename(file_path.name)
-        logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
-        # name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3,"X")
-        name_props["analysis_center"] = props_from_existing_name["analysis_center"]
+        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False, format_check_strictness=strict_mode)
+    except Exception as e:
+        # TODO: Work out what exceptions read_sp3 can actually throw when given a non-SP3 file
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(f"{file_path.name} can't be read as an SP3 file. Bailing out as strict_mode is RAISE")
+        if strict_mode == StrictModes.STRICT_WARN:
+            warnings.warn(
+                f"{file_path.name} can't be read as an SP3 file. Defaulting properties. " f"Exception:  {e}, {type(e)}"
+            )
+            logging.info(traceback.format_exc())
+        return {}
+
+    # Next, properties from the filename:
+    try:
+        props_from_existing_name: Union[dict, None] = determine_properties_from_filename(
+            file_path.name, strict_mode=strict_mode
+        )
+        logging.debug(f"props_from_existing_name =\n{str(props_from_existing_name)}")
+        if props_from_existing_name is None:
+            # Exception or warning will have been raised by above function, we don't need to duplicate that
+            props_from_existing_name = {}
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError("Couldn't extract properties from filename, bailing out as in strict mode RAISE")
+            if strict_mode == StrictModes.STRICT_WARN:
+                warnings.warn("Couldn't extract properties from filename, will try to get AC from SP3 header")
+            # TODO old code, ensure this still works:
+            name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3, "X")
+        else:
+            name_props["analysis_center"] = props_from_existing_name["analysis_center"]
+
         # SP3 files always ORB
         name_props["content_type"] = "ORB"
         # SP3 files are always SP3
@@ -724,11 +756,13 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         subset_dictupdate(name_props, props_from_existing_name, ("version", "project"))
         logging.debug(f"name_props to return = {name_props}")
     except Exception as e:
-        # TODO: Work out what exceptions read_sp3 can actually throw when given a non-SP3 file
-        # At the moment we will also swallow errors we really shouldn't
-        logging.warning(f"{file_path.name} can't be read as an SP3 file. Defaulting properties.")
-        logging.warning(f"Exception {e}, {type(e)}")
-        logging.info(traceback.format_exc())
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(f"Failed to determine properties of {file_path.name}. Bailing out as strict_mode is RAISE")
+        if strict_mode == StrictModes.STRICT_WARN:
+            warnings.warn(
+                f"Failed to determine properties of {file_path.name}. Defaulting properties. Exception {e}, {type(e)}"
+            )
+            logging.info(traceback.format_exc())
         return {}
     return name_props
 
