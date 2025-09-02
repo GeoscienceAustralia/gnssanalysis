@@ -893,17 +893,25 @@ def determine_properties_from_filename(
                 warnings.warn(f"Long filename parse failed, but >=38 chars is too long for 'short': '{filename}'")
             return None
 
-        # Try to parse as short filename as last resort.
+        # Try to simplistically parse as short filename as last resort.
+
+        # Does name seem roughly compliant?
+        short_match = _RE_IGS_SHORT_FILENAME_APPROX.fullmatch(filename)
+        if short_match is None:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Filename failed overly permissive regex for IGS short format': '{filename}'")
+            if strict_mode == StrictModes.STRICT_WARN:
+                warnings.warn(
+                    f"Filename failed overly permissive regex for IGS short format': '{filename}'. "
+                    "Will attempt to parse, but output will likely be wrong"
+                )
+
         if filename.endswith(".Z"):  # Old style indication of gz compression
-            core_filename = filename[:-2]
+            core_filename = filename[:-2]  # Trim e.g. igs.sp3.Z -> igs.sp3
         else:
             core_filename = filename
-        basename, _, extension = core_filename.rpartition(".")
+        basename, _, extension = core_filename.rpartition(".")  # -> 'igs', 'sp3'
 
-        # Is core name compliant?
-        # TODO add regex for short filename. UPdate it to allow non-dated file eg igs.sp3
-
-        # Short filenames
         # At the moment we'll return data even if the format doesn't really matter
         analysis_center = basename[0:3].upper()
         if analysis_center == "IGU":
