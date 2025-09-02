@@ -14,6 +14,8 @@ import click
 import pandas as pd
 import numpy as np
 
+from gnssanalysis.gn_utils import StrictMode, StrictModes
+
 from . import gn_datetime, gn_io, gn_const
 
 # May be unnecessary, but for safety explicitly enable it
@@ -735,7 +737,7 @@ def determine_properties_from_filename(
     filename: str,
     expect_long_filenames: bool = False,
     reject_long_term_products: bool = False,
-    raise_on_error: bool = False,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
     include_compressed_flag: bool = False,
 ) -> Union[Dict[str, Any], None]:
     """Determine IGS filename properties based purely on a filename
@@ -749,7 +751,8 @@ def determine_properties_from_filename(
         convention (v2.1), and raise / error if they do not.
     :param bool reject_long_term_products: raise exception if an IGS Long Term Product is encountered (these have
         no timerange / period, and include an end_epoch).
-    :param bool raise_on_error: raise exception if filename is clearly not valid / a format we support
+    :param type[StrictMode] strict_mode: indicates whether to raise or warn, if filename is clearly not valid / a
+        format we support.
     :param bool include_compressed_flag: include a flag in output, indicating if the filename indicated
         compression (.gz)
     :return Dict[str, Any]: dictionary containing the extracted name properties
@@ -758,17 +761,19 @@ def determine_properties_from_filename(
     """
 
     if len(filename) > 51:
-        if raise_on_error:
+        if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(f"Filename too long (over 51 chars): '{filename}'")
-        warnings.warn(f"Filename too long (over 51 chars): '{filename}'")
+        if strict_mode == StrictModes.STRICT_WARN:
+            warnings.warn(f"Filename too long (over 51 chars): '{filename}'")
         return None
 
     # Filename isn't too long...
     # If we're expecting a long format filename, is it too short?
     if expect_long_filenames and (len(filename) < 38):
-        if raise_on_error:
+        if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(f"IGS long filename can't be <38 chars: '{filename}'. expect_long_filenames is on")
-        warnings.warn(f"IGS long filename can't be <38 chars: '{filename}'. expect_long_filenames is on")
+        if strict_mode == StrictModes.STRICT_WARN:
+            warnings.warn(f"IGS long filename can't be <38 chars: '{filename}'. expect_long_filenames is on")
         return None
 
     match_long = _RE_IGS_LONG_FILENAME.fullmatch(filename)
@@ -807,9 +812,10 @@ def determine_properties_from_filename(
 
         else:  # Long Term Product
             if reject_long_term_products:
-                if raise_on_error:
+                if strict_mode == StrictModes.STRICT_RAISE:
                     raise ValueError(f"Long Term Product encountered: '{filename}' and reject_long_term_products is on")
-                warnings.warn(f"Long Term Product encountered: '{filename}' and reject_long_term_products is on")
+                if strict_mode == StrictModes.STRICT_WARN:
+                    warnings.warn(f"Long Term Product encountered: '{filename}' and reject_long_term_products is on")
                 return None
 
             start_epoch = datetime.datetime(  # Lacks hour and minute precision in LTP version
@@ -838,17 +844,19 @@ def determine_properties_from_filename(
 
     else:  # Regex for IGS format long product filename did not match
         if expect_long_filenames:
-            if raise_on_error:
+            if strict_mode == StrictModes.STRICT_RAISE:
                 raise ValueError(f"Expecting an IGS format long product name, but regex didn't match: '{filename}'")
-            warnings.warn(f"Expecting an IGS format long product name, but regex didn't match: '{filename}'")
+            if strict_mode == StrictModes.STRICT_WARN:
+                warnings.warn(f"Expecting an IGS format long product name, but regex didn't match: '{filename}'")
             return None
 
         # Is it plausibly a short filename?
         if len(filename) >= 38:
             # Length is within the bounds of a long filename. This doesn't seem like a short one!
-            if raise_on_error:
+            if strict_mode == StrictModes.STRICT_RAISE:
                 raise ValueError(f"Long filename parse failed, but >=38 chars is too long for 'short': '{filename}'")
-            warnings.warn(f"Long filename parse failed, but >=38 chars is too long for 'short': '{filename}'")
+            if strict_mode == StrictModes.STRICT_WARN:
+                warnings.warn(f"Long filename parse failed, but >=38 chars is too long for 'short': '{filename}'")
             return None
 
         # Try to parse as short filename as last resort.
