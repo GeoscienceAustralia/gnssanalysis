@@ -168,7 +168,7 @@ class TestPropsFromNameAndContent(TestCase):
             # "start_epoch": exp_start_epoch,
             # "timespan": exp_timespan,
             "solution_type": "ULT",  # TODO check
-            # "sampling_rate": "15M", # TODO check what the old default was. Might've been 05M. Arguably should leave this out as it isn't explicit...
+            # "sampling_rate": "15M", # Old default was 15M, though arguably we should leave this out as it isn't explicit, and we don't support detection of filename patterns indicating otherwise.
             # "version": "0",
             # "project": "OPS",
             # "compressed": True,
