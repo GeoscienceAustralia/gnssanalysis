@@ -780,15 +780,16 @@ def determine_properties_from_filename(
     the name properties it manages to successfully determine.
 
     :param str filename: filename to examine for naming properties
-    :param bool expect_long_filenames: expect provided filenames to conform to IGS long product filename
-        convention (v2.1), and raise / error if they do not.
-    :param bool reject_long_term_products: raise exception if an IGS Long Term Product is encountered (these have
-        no timerange / period, and include an end_epoch).
-    :param type[StrictMode] strict_mode: indicates whether to raise or warn, if filename is clearly not valid / a
-        format we support.
-    :param bool include_compressed_flag: include a flag in output, indicating if the filename indicated
-        compression (.gz)
-    :return Dict[str, Any]: dictionary containing the extracted name properties
+    :param bool expect_long_filenames: (off by default for backwards compatibility) expect provided filenames to
+        conform to IGS long product filename convention (v2.1), and raise / error if they do not.
+    :param bool reject_long_term_products: (on by default for backwards compatibility) raise warning or exception if
+        an IGS Long Term Product is encountered (these have no timerange / period, and include an end_epoch).
+    :param type[StrictMode] strict_mode: indicates whether to raise or warn (default), if filename is clearly
+        not valid / a format we support.
+    :param bool include_compressed_flag: (off by default for backwards compatibility) include a flag in output,
+        indicating if the filename indicated compression (.gz).
+    :return Dict[str, Any]: dictionary containing the extracted name properties. Will be empty on errors, when
+        strict_mode is set to WARN (default).
     :raises ValueError: if filename seems invalid / unsupported, E.g. if it is too long to be a short filename, but
         doesn't match long filename regex
     """
