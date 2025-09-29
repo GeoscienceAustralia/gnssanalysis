@@ -207,10 +207,18 @@ class TestSP3(unittest.TestCase):
 
         # sp3.read_sp3(test_content_no_overlong)
         with self.assertRaises(ValueError) as read_exception:
-            sp3.read_sp3(test_content_no_overlong, strictness_comments=STRICT_OFF)
+            sp3.read_sp3(test_content_no_overlong, strictness_comments=STRICT_OFF, strict_mode=STRICT_RAISE)
         self.assertEqual(
             str(read_exception.exception), "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
         )
+
+        # # Assert that it still warns by default (NOTE: we can't test this with above example data, as it doens't
+        # # contain a full header)
+        # with self.assertWarns(Warning) as read_warning:
+        #     sp3.read_sp3(test_content_no_overlong, strictness_comments=STRICT_OFF)
+        # self.assertEqual(
+        #     str(read_warning.msg), "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
+        # )
 
     def test_read_sp3_misalignment_check(self):
         """
