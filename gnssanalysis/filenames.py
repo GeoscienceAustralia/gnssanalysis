@@ -949,7 +949,7 @@ def determine_properties_from_filename(
 def check_filename_and_contents_consistency(
     input_file: pathlib.Path,
     ignore_single_epoch_short: bool = True,
-    output_orphan_prop_names=False,
+    output_orphan_prop_names: bool = False,
 ) -> Mapping[str, tuple[str, str]]:
     """
     Checks that the content of the provided file matches what its filename says should be in it.
@@ -964,6 +964,10 @@ def check_filename_and_contents_consistency(
     File properties which do not match are returned as a mapping of str -> tuple(str, str), taking the form
     property_name > filename_derived_value, file_contents_derived_value
     :param Path input_file: Path to the file to be checked.
+    :param bool ignore_single_epoch_short: (on by default) consider it ok for file content to be one epoch short of
+        what the filename says.
+    :param bool output_orphan_prop_names: (off by default) for properties found exclusively in file content or name
+        (not in both, and therefore not compared), return these as 'prop_name': None.
     :return Mapping[str, tuple[str,str]]: Empty map if properties agree, else map of discrepancies, OR None on failure.
     of property_name > filename_derived_value, file_contents_derived_value.
     :raises NotImplementedError: if called with a file type not yet supported.
