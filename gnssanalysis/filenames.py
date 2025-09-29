@@ -685,7 +685,7 @@ def determine_sp3_name_props(
     name_props = {}
     # First, properties from the SP3 data:
     try:
-        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False, format_check_strictness=strict_mode)
+        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False, strict_mode=strict_mode)
     except Exception as e:
         # TODO: Work out what exceptions read_sp3 can actually throw when given a non-SP3 file
         if strict_mode == StrictModes.STRICT_RAISE:
@@ -769,10 +769,10 @@ def determine_sp3_name_props(
 def determine_properties_from_filename(
     filename: str,
     expect_long_filenames: bool = False,
-    reject_long_term_products: bool = False,
+    reject_long_term_products: bool = True,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
     include_compressed_flag: bool = False,
-) -> Union[Dict[str, Any], None]:
+) -> Dict[str, Any]:
     """Determine IGS filename properties based purely on a filename
 
     This function does its best to support both IGS long filenames and old short filenames.
@@ -798,7 +798,7 @@ def determine_properties_from_filename(
             raise ValueError(f"Filename too long (over 51 chars): '{filename}'")
         if strict_mode == StrictModes.STRICT_WARN:
             warnings.warn(f"Filename too long (over 51 chars): '{filename}'")
-        return None
+        return {}
 
     # Filename isn't too long...
     # If we're expecting a long format filename, is it too short?
@@ -807,7 +807,7 @@ def determine_properties_from_filename(
             raise ValueError(f"IGS long filename can't be <38 chars: '{filename}'. expect_long_filenames is on")
         if strict_mode == StrictModes.STRICT_WARN:
             warnings.warn(f"IGS long filename can't be <38 chars: '{filename}'. expect_long_filenames is on")
-        return None
+        return {}
 
     match_long = _RE_IGS_LONG_FILENAME.fullmatch(filename)
     if match_long is not None:
@@ -853,7 +853,7 @@ def determine_properties_from_filename(
                     raise ValueError(f"Long Term Product encountered: '{filename}' and reject_long_term_products is on")
                 if strict_mode == StrictModes.STRICT_WARN:
                     warnings.warn(f"Long Term Product encountered: '{filename}' and reject_long_term_products is on")
-                return None
+                return {}
 
             start_epoch = datetime.datetime(  # Lacks hour and minute precision in LTP version
                 year=int(match_long["year"]),
@@ -885,7 +885,7 @@ def determine_properties_from_filename(
                 raise ValueError(f"Expecting an IGS format long product name, but regex didn't match: '{filename}'")
             if strict_mode == StrictModes.STRICT_WARN:
                 warnings.warn(f"Expecting an IGS format long product name, but regex didn't match: '{filename}'")
-            return None
+            return {}
 
         # Is it plausibly a short filename?
         if len(filename) >= 38:
@@ -894,7 +894,7 @@ def determine_properties_from_filename(
                 raise ValueError(f"Long filename parse failed, but >=38 chars is too long for 'short': '{filename}'")
             if strict_mode == StrictModes.STRICT_WARN:
                 warnings.warn(f"Long filename parse failed, but >=38 chars is too long for 'short': '{filename}'")
-            return None
+            return {}
 
         # Try to simplistically parse as short filename as last resort.
 
@@ -946,7 +946,9 @@ def determine_properties_from_filename(
 
 
 def check_filename_and_contents_consistency(
-    input_file: pathlib.Path, ignore_single_epoch_short: bool = True
+    input_file: pathlib.Path,
+    ignore_single_epoch_short: bool = True,
+    output_orphan_prop_names=False,
 ) -> Mapping[str, tuple[str, str]]:
     """
     Checks that the content of the provided file matches what its filename says should be in it.
@@ -987,7 +989,20 @@ def check_filename_and_contents_consistency(
         )
 
     discrepancies = {}
-    for key in file_name_properties.keys():
+    # Check for keys only present on one side
+    orphan_keys = set(file_name_properties.keys()).symmetric_difference((set(file_content_properties.keys())))
+    logging.warning(
+        "The following properties can't be compared, as they were extracted only from file content or "
+        f"name (not both): {str(orphan_keys)}"
+    )
+    if output_orphan_prop_names:
+        # Output properties found only in content OR filename.
+        for orphan_key in orphan_keys:
+            discrepancies[orphan_key] = None
+
+    mutual_keys = set(file_name_properties.keys()).difference(orphan_keys)
+    # For keys present in both dicts, compare values.
+    for key in mutual_keys:
         if (file_name_val := file_name_properties[key]) != (file_content_val := file_content_properties[key]):
             # If enabled, and epoch interval successfully extracted, ignore cases where the timespan of epochs in the
             # file content, is one epoch shorter than the timespan the filename implies (e.g. 23:55 vs 1D i.e. 24:00).
