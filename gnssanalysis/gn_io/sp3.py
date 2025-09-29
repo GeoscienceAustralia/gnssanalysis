@@ -5,6 +5,7 @@ import os as _os
 import re as _re
 from typing import Callable, Literal, Mapping, Optional, Union, List, Tuple, overload
 from pathlib import Path
+import warnings
 
 import numpy as _np
 import pandas as _pd
@@ -1016,18 +1017,24 @@ def read_sp3(
     # until the first Epoch Header Record (i.e. the first time tag line) is encountered.'
     # For robustness we strip comments THROUGHOUT the data before continuing parsing.
 
-    # Check no (non-comment) line is overlong (>80 chars not counting \n)
-    sp3_lines: List[str] = content.decode("utf-8", errors="ignore").split("\n")
-    overlong_lines_found: int = 0
-    for line in sp3_lines:
-        if len(line) > _SP3_MAX_WIDTH:
-            overlong_lines_found += 1
-            logger.error(f"Line of SP3 input exceeded max width: '{line}'")
+    if strict_mode != StrictModes.STRICT_OFF:
+        # Check no (non-comment) line is overlong (>80 chars not counting \n)
+        sp3_lines: List[str] = content.decode("utf-8", errors="ignore").split("\n")
+        overlong_lines_found: int = 0
+        for line in sp3_lines:
+            if len(line) > _SP3_MAX_WIDTH:
+                overlong_lines_found += 1
+                if overlong_lines_found <= 5:  # Avoid printing out the whole file
+                    warnings.warn(f"Line of SP3 input exceeded max width: '{line}'")
 
-    if overlong_lines_found > 0:
-        raise ValueError(
-            f"{overlong_lines_found} SP3 epoch data lines were overlong and very likely to parse incorrectly."
-        )
+        if overlong_lines_found > 0:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(
+                    f"{overlong_lines_found} SP3 epoch data lines were overlong and very likely to parse incorrectly."
+                )
+            warnings.warn(
+                f"{overlong_lines_found} SP3 epoch data lines were overlong and very likely to parse incorrectly."
+            )
 
     # NOTE: We just stripped all comment lines from the input data, so the %i records are now the last thing in the
     # header before the first Epoch Header Record.
