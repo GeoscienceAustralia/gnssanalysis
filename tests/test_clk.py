@@ -34,6 +34,7 @@ class TestClk(TestCase):
         self.assertEqual(clk_df_igs["EST"].iloc[-1], -0.0006105557076344, msg="Check last datapoint is correct")
         self.assertEqual(clk_df_gfz["EST"].iloc[-1], -0.000610553573006, msg="Check last datapoint is correct")
 
+    # TODO replace with test for revised diff_clk
     def test_compare_clk(self):
         self.fs.reset()  # Reset pyfakefs to delete any files which may have persisted from a previous test
         file_paths = ["/fake/dir/file0.clk", "/fake/dir/file1.clk"]
