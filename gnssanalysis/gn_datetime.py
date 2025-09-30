@@ -162,7 +162,10 @@ class GPSDate:
 
 def datetime_to_gps_week(dt: _datetime, wkday_suff: bool = False) -> str:
     """
-    Convert the given datetime object to a GPS week (option to include day suffix)
+    Convert given datetime object to GPS week e.g. '2350', optionally including day suffix e.g. '23500' (Sunday)
+
+    :param datetime dt: datetime for which to calculate a GPS week (and optionally day)
+    :returns str: intput datetime expressed as a GPS week (wwww) or GPS week with day (wwwwd)
     """
     yr = dt.strftime("%Y")
     doy = dt.strftime("%j")
