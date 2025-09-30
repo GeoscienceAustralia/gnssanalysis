@@ -197,6 +197,27 @@ class TestSP3(unittest.TestCase):
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
 
+    def test_read_sp3_overlong_lines(self):
+        """
+        Test overlong content line check
+        """
+
+        test_content_no_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
+## 1422 345600.00000000   900.00000000 54202 0.0000000000000 THIS LINE IS TOO LONG
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 THIS IS OK.........
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN ......
+"""
+        #         test_content_no_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
+        # +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 THIS IS OK.........
+        # """
+
+        # sp3.read_sp3(test_content_no_overlong)
+        with self.assertRaises(ValueError) as read_exception:
+            sp3.read_sp3(test_content_no_overlong)
+            self.assertEqual(
+                read_exception.msg, "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
+            )
+
     @staticmethod
     def get_example_dataframe(template_name: str = "normal", include_simple_header: bool = True) -> pd.DataFrame:
 
@@ -295,7 +316,7 @@ class TestSP3(unittest.TestCase):
                 [
                     "d",
                     "P",
-                    "Time TODO",
+                    "Time TODO",  # TODO
                     "3",  # Num epochs
                     "Data TODO",
                     "coords TODO",

@@ -65,6 +65,8 @@ _RE_SP3_HEADER_ACC = _re.compile(rb"^\+{2}[ ]+((?:[\-\d\s]{2}\d){17})\W", _re.MU
 # File descriptor and clock
 _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
+# Max width of SP3 lines
+_SP3_MAX_WIDTH: int = 80
 
 _SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 2, 1, 1]
 _SP3_DEF_PV_NAME = [
@@ -867,6 +869,19 @@ def read_sp3(
     # Note: this interpretation is based on page 16 of the SP3d spec, which says 'The comment lines should be read in
     # until the first Epoch Header Record (i.e. the first time tag line) is encountered.'
     # For robustness we strip comments THROUGHOUT the data before continuing parsing.
+
+    # Check no (non-comment) line is overlong (>80 chars not counting \n)
+    sp3_lines: List[str] = content.decode("utf-8", errors="ignore").split("\n")
+    overlong_lines_found: int = 0
+    for line in sp3_lines:
+        if len(line) > _SP3_MAX_WIDTH:
+            overlong_lines_found += 1
+            logger.error(f"Line of SP3 input exceeded max width: '{line}'")
+
+    if overlong_lines_found > 0:
+        raise ValueError(
+            f"{overlong_lines_found} SP3 epoch data lines were overlong and very likely to parse incorrectly."
+        )
 
     # NOTE: We just stripped all comment lines from the input data, so the %i records are now the last thing in the
     # header before the first Epoch Header Record.
