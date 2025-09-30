@@ -73,10 +73,14 @@ class TestGPSDate(unittest.TestCase):
         self.assertEqual(str(gps_date), "2021-08-31")
 
         gps_date = gps_date.next
-        self.assertEqual(int(gps_date.yr), 2021)
-        self.assertEqual(int(gps_date.dy), 244)
-        self.assertEqual(int(gps_date.gpswk), 2173)
-        self.assertEqual(int(gps_date.gpswkD[-1]), 3)
+        self.assertEqual(int(gps_date.yr), 2021)  # Deprecated
+        self.assertEqual(int(gps_date.year), 2021)
+        self.assertEqual(int(gps_date.dy), 244)  # Deprecated
+        self.assertEqual(int(gps_date.day_of_year), 244)
+        self.assertEqual(int(gps_date.gpswk), 2173)  # Deprecated
+        self.assertEqual(int(gps_date.gps_week), 2173)
+        self.assertEqual(int(gps_date.gpswkD[-1]), 3)  # Deprecated
+        self.assertEqual(int(gps_date.gps_week_and_day_of_week[-1]), 3)
         self.assertEqual(str(gps_date), "2021-09-01")
 
         yds = np.asarray(["00:000:00000"])
@@ -116,7 +120,7 @@ class TestGPSDate(unittest.TestCase):
 
         # And exceptions on trying to construct from incorrect types or date string formats
         with self.assertRaises(TypeError):
-            gn_datetime.GPSDate(5)  # An int isn't one of the supported date types
+            gn_datetime.GPSDate(5)  # type: ignore # An int isn't one of the supported date types
 
         with self.assertRaises(ValueError):
             gn_datetime.GPSDate("123-12-123")  # A string, but not a valid date format
