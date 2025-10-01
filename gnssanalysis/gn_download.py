@@ -336,7 +336,7 @@ def generate_long_filename(
     start_epoch: _datetime.datetime,  # YYYYDDDHHMM
     end_epoch: _datetime.datetime = None,
     timespan: _datetime.timedelta = None,  # LEN
-    solution_type: str = "",  # TTT
+    solution_type: str = "",  # TTT # TODO look at updating to formalised SolutionType
     sampling_rate: str = "15M",  # SMP
     version: str = "0",  # V
     project: str = "EXP",  # PPP, e.g. EXP, OPS
@@ -432,12 +432,15 @@ def generate_product_filename(
         )
     else:
         if file_ext.lower() == "snx":
-            product_filename = f"igs{gps_date.yr[2:]}P{gps_date.gpswk}.snx.Z"
+            product_filename = f"igs{gps_date.year[2:]}P{gps_date.gps_week}.snx.Z"
         else:
             hour = f"{reference_start.hour:02}"
             prefix = "igs" if solution_type == "FIN" else "igr" if solution_type == "RAP" else "igu"
-            product_filename = f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z" if solution_type == "ULT" else \
-                f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
+            product_filename = (
+                f"{prefix}{gps_date.gps_week_and_day_of_week}_{hour}.{file_ext}.Z"
+                if solution_type == "ULT"
+                else f"{prefix}{gps_date.gps_week_and_day_of_week}.{file_ext}.Z"
+            )
     return product_filename, gps_date, reference_start
 
 
@@ -495,7 +498,7 @@ def attempt_ftps_download(
     download_dir: _Path,
     ftps: _ftplib.FTP_TLS,
     filename: str,
-    type_of_file: str = None,
+    type_of_file: Optional[str] = None,
     if_file_present: str = "prompt_user",
 ) -> Union[_Path, None]:
     """Attempt download of file (filename) given the ftps client object (ftps) to chosen location (download_dir)
@@ -739,7 +742,7 @@ def download_file_from_cddis(
     max_retries: int = 3,
     decompress: bool = True,
     if_file_present: str = "prompt_user",
-    note_filetype: str = None,
+    note_filetype: Optional[str] = None,
 ) -> Union[_Path, None]:
     """Downloads a single file from the CDDIS ftp server
 
@@ -752,7 +755,7 @@ def download_file_from_cddis(
     :param str note_filetype: How to label the file for STDOUT messages, defaults to None
     :raises e: Raise any error that is run into by ftplib
     :return _Path or None: The pathlib.Path of the downloaded file (or decompressed output of it). Returns None if the
-        file already existed and was skipped.
+        file already existed and was skipped, or if the download failed.
     """
     with ftp_tls(CDDIS_FTP) as ftps:
         ftps.cwd(ftp_folder)
@@ -793,7 +796,7 @@ def download_file_from_cddis(
     raise Exception("Failed to download file or raise exception. Some logic is broken.")
 
 
-def download_multiple_files_from_cddis(files: List[str], ftp_folder: str, output_folder: _Path) -> None:
+def download_multiple_files_from_cddis(files: list[str], ftp_folder: str, output_folder: _Path) -> None:
     """Downloads multiple files in a single folder from cddis in a thread pool.
 
     :param files: List of str filenames
@@ -843,7 +846,7 @@ def download_product_from_cddis(
         # We do this because the weekly files are released/dated as Sunday of each GPS week.
         start_epoch_as_gps_date = GPSDate(start_epoch)
         # Get GPS week number *without* DayOfWeek suffix (therefore start of the GPS Week), then convert back to datetime
-        start_epoch = gps_week_day_to_datetime(f"{start_epoch_as_gps_date.gpswk}")
+        start_epoch = gps_week_day_to_datetime(f"{start_epoch_as_gps_date.gps_week}")
         timespan = _datetime.timedelta(days=7)
 
     logging.info("Attempting CDDIS Product download/s")
@@ -865,14 +868,14 @@ def download_product_from_cddis(
         project=project_type,
     )
     logging.debug(
-        f"Generated filename: {product_filename}, with GPS Date: {gps_date.gpswkD} and reference: {reference_start}"
+        f"Generated filename: {product_filename}, with GPS Date: {gps_date.gps_week_and_day_of_week} and reference: {reference_start}"
     )
 
     ensure_folders([download_dir])
     download_filepaths = []
     with ftp_tls(CDDIS_FTP) as ftps:
         try:
-            ftps.cwd(f"gnss/products/{gps_date.gpswk}")
+            ftps.cwd(f"gnss/products/{gps_date.gps_week}")
         except _ftplib.all_errors as e:
             logging.warning(f"{reference_start} too recent")
             logging.warning(f"ftp_lib error: {e}")
@@ -888,11 +891,11 @@ def download_product_from_cddis(
                 version=version,
                 project=project_type,
             )
-            ftps.cwd(f"gnss/products/{gps_date.gpswk}")
+            ftps.cwd(f"gnss/products/{gps_date.gps_week}")
 
             all_files = ftps.nlst()
             if not (product_filename in all_files):
-                logging.warning(f"{product_filename} not in gnss/products/{gps_date.gpswk} - too recent")
+                logging.warning(f"{product_filename} not in gnss/products/{gps_date.gps_week} - too recent")
                 raise FileNotFoundError
 
         # reference_start will be changed in the first run through while loop below
@@ -923,7 +926,7 @@ def download_product_from_cddis(
                     download_filepaths.append(
                         download_file_from_cddis(
                             filename=product_filename,
-                            ftp_folder=f"gnss/products/{gps_date.gpswk}",
+                            ftp_folder=f"gnss/products/{gps_date.gps_week}",
                             output_folder=download_dir,
                             if_file_present=if_file_present,
                             note_filetype=file_ext,
