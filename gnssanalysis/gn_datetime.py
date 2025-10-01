@@ -17,7 +17,7 @@ from . import gn_const as _gn_const
 logger = logging.getLogger(__name__)
 
 
-def gpsweekD(yr, doy, wkday_suff=False):
+def derive_gps_week(year: Union[int, str], day_of_year: Union[int, str], weekday_suffix: bool = False) -> str:
     """
     Convert year, day-of-year to GPS week format: WWWWD or WWWW
     Based on code from Kristine Larson's gps.py
@@ -32,28 +32,35 @@ def gpsweekD(yr, doy, wkday_suff=False):
     """
 
     # Set up the date and time variables
-    yr = int(yr)
-    doy = int(doy)
-    dt = _datetime.strptime(f"{yr}-{doy:03d} 01", "%Y-%j %H")
+    year = int(year)
+    day_of_year = int(day_of_year)
+    dt: _datetime = _datetime.strptime(f"{year}-{day_of_year:03d} 01", "%Y-%j %H")
 
     wkday = dt.weekday() + 1
 
     if wkday == 7:
         wkday = 0
 
-    mn, dy, hr = dt.month, dt.day, dt.hour
+    month, day, hour = dt.month, dt.day, dt.hour
 
-    if mn <= 2:
-        yr = yr - 1
-        mn = mn + 12
+    if month <= 2:
+        year = year - 1
+        month = month + 12
 
-    JD = _np.floor(365.25 * yr) + _np.floor(30.6001 * (mn + 1)) + dy + hr / 24.0 + 1720981.5
-    GPS_wk = int(_np.floor((JD - 2444244.5) / 7.0))
+    julian_day: float = _np.floor(365.25 * year) + _np.floor(30.6001 * (month + 1)) + day + hour / 24.0 + 1720981.5
+    GPS_wk = int(_np.floor((julian_day - 2444244.5) / 7.0))
 
-    if wkday_suff:
+    if weekday_suffix:
         return str(GPS_wk) + str(wkday)
     else:
         return str(GPS_wk)
+
+
+def gpsweekD(yr, doy, wkday_suff=False) -> str:
+    """
+    TODO DEPRECATED. Legacy wrapper for the above
+    """
+    return derive_gps_week(yr, doy, wkday_suff)
 
 
 class GPSDate:
@@ -94,24 +101,49 @@ class GPSDate:
         return _pd.Timestamp(self._internal_dt64).to_pydatetime()
 
     @property
-    def yr(self) -> str:
+    def as_date(self) -> _date:
+        """Convert to Python `date` object."""
+        return self._internal_dt64.astype(_date)
+
+    @property
+    def year(self) -> str:
         """Year"""
         return self.as_datetime.strftime("%Y")
 
+    @property  # For backwards compatibility
+    def yr(self) -> str:
+        """Year DEPRECATED, use GPSDate.year"""
+        return self.year
+
     @property
-    def dy(self) -> str:
+    def day_of_year(self) -> str:
         """Day of year"""
         return self.as_datetime.strftime("%j")
 
-    @property
-    def gpswk(self) -> str:
-        """GPS week"""
-        return gpsweekD(self.yr, self.dy, wkday_suff=False)
+    @property  # For backwards compatibility
+    def dy(self) -> str:
+        """Day of year. DEPRECATED, use GPSDate.day_of_year"""
+        return self.day_of_year
 
     @property
-    def gpswkD(self) -> str:
+    def gps_week(self) -> str:
+        """GPS week"""
+        return derive_gps_week(self.yr, self.dy, weekday_suffix=False)
+
+    @property  # For backwards compatibility
+    def gpswk(self) -> str:
+        """GPS week. DEPRECATED, use GPSDate.gps_week"""
+        return self.gps_week
+
+    @property
+    def gps_week_and_day_of_week(self) -> str:
         """GPS week with weekday suffix"""
-        return gpsweekD(self.yr, self.dy, wkday_suff=True)
+        return derive_gps_week(self.yr, self.dy, weekday_suffix=True)
+
+    @property  # For backwards compatibility
+    def gpswkD(self) -> str:
+        """GPS week with weekday suffix. DEPRECATED, use GPSDate.gps_week_and_day_of_week"""
+        return self.gps_week_and_day_of_week
 
     @property
     def next(self):
@@ -128,24 +160,27 @@ class GPSDate:
         return str(self._internal_dt64)
 
 
-def dt2gpswk(dt, wkday_suff=False, both=False) -> Union[str, tuple[str, str]]:
+def datetime_to_gps_week(dt: _datetime, wkday_suff: bool = False) -> str:
     """
-    Convert the given datetime object to a GPS week (option to include day suffix)
+    Convert given datetime object to GPS week e.g. '2350', optionally including day suffix e.g. '23500' (Sunday)
+
+    :param datetime dt: datetime for which to calculate a GPS week (and optionally day)
+    :returns str: intput datetime expressed as a GPS week (wwww) or GPS week with day (wwwwd)
     """
     yr = dt.strftime("%Y")
     doy = dt.strftime("%j")
-    if not both:
-        return gpsweekD(yr, doy, wkday_suff=wkday_suff)
+    return derive_gps_week(yr, doy, weekday_suffix=wkday_suff)
+
+
+def dt2gpswk(dt: _datetime, wkday_suff: bool = False, both: bool = False) -> Union[str, tuple[str, str]]:
+    """
+    TODO DEPRECATED. Please use datetime_to_gps_week()
+    """
+
+    if both:
+        return (datetime_to_gps_week(dt, wkday_suff=False), datetime_to_gps_week(dt, wkday_suff=True))
     else:
-        return gpsweekD(yr, doy, wkday_suff=False), gpsweekD(yr, doy, wkday_suff=True)
-
-
-# TODO DEPRECATED
-def gpswkD2dt(gpswkD: str) -> _datetime:
-    """
-    DEPRECATED. This is a compatibility wrapper. Use gps_week_day_to_datetime() instead.
-    """
-    return gps_week_day_to_datetime(gpswkD)
+        return datetime_to_gps_week(dt, wkday_suff=wkday_suff)
 
 
 def gps_week_day_to_datetime(gps_week_and_weekday: str) -> _datetime:
@@ -176,6 +211,14 @@ def gps_week_day_to_datetime(gps_week_and_weekday: str) -> _datetime:
         dt_64 = _gn_const.GPS_ORIGIN + _np.timedelta64(int(gps_week_and_weekday), "W")
 
     return dt_64.astype(_datetime)
+
+
+# TODO DEPRECATED
+def gpswkD2dt(gpswkD: str) -> _datetime:
+    """
+    DEPRECATED. This is a compatibility wrapper. Use gps_week_day_to_datetime() instead.
+    """
+    return gps_week_day_to_datetime(gpswkD)
 
 
 def yydoysec2datetime(
