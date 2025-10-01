@@ -15,9 +15,44 @@ import pandas as pd
 import numpy as np
 
 from . import gn_datetime, gn_io, gn_const
+from .gn_utils import StrictMode, StrictModes
 
 # May be unnecessary, but for safety explicitly enable it
 logging.captureWarnings(True)
+
+# Precompile regex
+
+# Implements IGS long filename spec v2.1, including subsection 2.3 on Long Term Products.
+# https://files.igs.org/pub/resource/guidelines/Guidelines_for_Long_Product_Filenames_in_the_IGS_v2.1.pdf
+_RE_IGS_LONG_FILENAME = re.compile(
+    r"""\A # Assert beginning of string
+        (?P<analysis_center>\w{3})
+        (?P<version>\w)
+        (?P<project>\w{3}) # Campaign / project
+        (?P<solution_type>\w{3}) # Solution type identifier
+        _
+        (?P<year>\d{4})(?P<day_of_year>\d{3}) # All filenames have at least this much precision in start_epoch, then:
+        (
+            (?P<hour>\d{2})(?P<minute>\d{2})_(?P<period>\w{3})| # Either: more precision and timerange / period
+            _(?P<end_year>\d{4})(?P<end_day_of_year>\d{3}) # Or, for Long Term Products: end epoch
+        )
+        _
+        (?P<sampling>\w{3}) # Temporal sampling resolution E.g. 05M, 00U
+        _
+        ((?P<station_id>\w{9})_|) # (Optionally) station ID (with _ matched but not captured)
+        (?P<content_type>\w{3})\. # Content type E.g. SOL, SUM, CLK
+        (?P<file_format>\w{3,4}) # File Format (extension) 3-4 chars. E.g. SP3, SUM, CLK, ERP, BIA, SNX, JSON, YAML, YML
+        (?P<compression_ext>\.gz|) # (Optionally) .gz extension indicating compression
+        \Z""",  # Assert end of string
+    re.VERBOSE,
+)
+
+# Approximate regex which matches a majority of IGS format short filenames.
+# NOTE: a clear definition for IGS short filenames could not be found. This regex was reverse engineered from
+# numerous filenames, and is likely a lot more permissive / general than the official specification.
+_RE_IGS_SHORT_FILENAME_APPROX = re.compile(
+    r"""^(?P<ac_and_cpgn>[a-z,A-Z]{3})(?P<short_year_sometimes_lower>\d{2}[P,p](?P<short_week>\d{2}|)|)(?P<gps_weekd>\d{4,5}|)(?P<pred_flag_maybe>p\d{0,2}|)(?P<hour>_\d{2}|_all|)(?P<version_campgn>_v\d|_[a-z,A-Z]{3}|)\.(?P<file_format>\w{3,4})(?P<sample_rate>_\d{2}[s,m,h,d]|)(?P<compressed>\.Z|)$"""
+)
 
 
 @click.command()
@@ -631,7 +666,9 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     return name_props
 
 
-def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
+def determine_sp3_name_props(
+    file_path: pathlib.Path, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN
+) -> Dict[str, Any]:
     """Determine the IGS filename properties for a SP3 files
 
     Like all functions in this series, the function reads both a filename and the files contents
@@ -639,15 +676,45 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     function returns a dictionary with any properties it manages to successfully determine.
 
     :param pathlib.Path file_path: file for which to determine name properties
-    :return Dict[str, Any]: dictionary containing the extracted name properties
+    :param type[StrictMode] strict_mode: indicates whether to raise, warn, or silently continue on errors such as
+        failure to get properties from a filename.
+    :return Dict[str, Any]: dictionary containing the extracted name properties. May be empty on some errors, if
+        strict_mode is not set to RAISE.
+    :raises ValueError: if strict_mode set to RAISE, and unable to statically extract properties from a filename
     """
     name_props = {}
+    # First, properties from the SP3 data:
     try:
-        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False)
-        props_from_existing_name = determine_properties_from_filename(file_path.name)
-        logging.debug(f"props_from_existing_name =\n{props_from_existing_name}")
-        # name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3,"X")
-        name_props["analysis_center"] = props_from_existing_name["analysis_center"]
+        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False, format_check_strictness=strict_mode)
+    except Exception as e:
+        # TODO: Work out what exceptions read_sp3 can actually throw when given a non-SP3 file
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(f"{file_path.name} can't be read as an SP3 file. Bailing out as strict_mode is RAISE")
+        if strict_mode == StrictModes.STRICT_WARN:
+            warnings.warn(
+                f"{file_path.name} can't be read as an SP3 file. Defaulting properties. " f"Exception:  {e}, {type(e)}"
+            )
+            logging.info(traceback.format_exc())
+        return {}
+
+    # Next, properties from the filename:
+    try:
+        props_from_existing_name: Union[dict, None] = determine_properties_from_filename(
+            file_path.name, strict_mode=strict_mode
+        )
+        logging.debug(f"props_from_existing_name =\n{str(props_from_existing_name)}")
+        if props_from_existing_name is None:
+            # Exception or warning will have been raised by above function, we don't need to duplicate that
+            props_from_existing_name = {}
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError("Couldn't extract properties from filename, bailing out as in strict mode RAISE")
+            if strict_mode == StrictModes.STRICT_WARN:
+                warnings.warn("Couldn't extract properties from filename, will try to get AC from SP3 header")
+            # TODO old code, ensure this still works:
+            name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3, "X")
+        else:
+            name_props["analysis_center"] = props_from_existing_name["analysis_center"]
+
         # SP3 files always ORB
         name_props["content_type"] = "ORB"
         # SP3 files are always SP3
@@ -688,16 +755,24 @@ def determine_sp3_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
         subset_dictupdate(name_props, props_from_existing_name, ("version", "project"))
         logging.debug(f"name_props to return = {name_props}")
     except Exception as e:
-        # TODO: Work out what exceptions read_sp3 can actually throw when given a non-SP3 file
-        # At the moment we will also swallow errors we really shouldn't
-        logging.warning(f"{file_path.name} can't be read as an SP3 file. Defaulting properties.")
-        logging.warning(f"Exception {e}, {type(e)}")
-        logging.info(traceback.format_exc())
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(f"Failed to determine properties of {file_path.name}. Bailing out as strict_mode is RAISE")
+        if strict_mode == StrictModes.STRICT_WARN:
+            warnings.warn(
+                f"Failed to determine properties of {file_path.name}. Defaulting properties. Exception {e}, {type(e)}"
+            )
+            logging.info(traceback.format_exc())
         return {}
     return name_props
 
 
-def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
+def determine_properties_from_filename(
+    filename: str,
+    expect_long_filenames: bool = False,
+    reject_long_term_products: bool = False,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
+    include_compressed_flag: bool = False,
+) -> Union[Dict[str, Any], None]:
     """Determine IGS filename properties based purely on a filename
 
     This function does its best to support both IGS long filenames and old short filenames.
@@ -705,89 +780,169 @@ def determine_properties_from_filename(filename: str) -> Dict[str, Any]:
     the name properties it manages to successfully determine.
 
     :param str filename: filename to examine for naming properties
+    :param bool expect_long_filenames: expect provided filenames to conform to IGS long product filename
+        convention (v2.1), and raise / error if they do not.
+    :param bool reject_long_term_products: raise exception if an IGS Long Term Product is encountered (these have
+        no timerange / period, and include an end_epoch).
+    :param type[StrictMode] strict_mode: indicates whether to raise or warn, if filename is clearly not valid / a
+        format we support.
+    :param bool include_compressed_flag: include a flag in output, indicating if the filename indicated
+        compression (.gz)
     :return Dict[str, Any]: dictionary containing the extracted name properties
+    :raises ValueError: if filename seems invalid / unsupported, E.g. if it is too long to be a short filename, but
+        doesn't match long filename regex
     """
-    basename, _, extension = filename.rpartition(".")
-    # Long filenames
-    long_match = re.fullmatch(
-        r"""(?P<analysis_center>\w{3})
-            (?P<version>\w)
-            (?P<project>\w{3})
-            (?P<solution_type>\w{3})
-            _
-            (?P<year>\d{4})(?P<day_of_year>\d{3})(?P<hour>\d{2})(?P<minute>\d{2})
-            _
-            (?P<period>\w{3})
-            _
-            (?P<sampling>\w{3})
-            _
-            (?P<content_type>\w{3})""",
-        basename,
-        re.VERBOSE,
-    )
-    if long_match is not None:
-        return {
-            "analysis_center": long_match["analysis_center"].upper(),
-            "content_type": long_match["content_type"].upper(),
-            "format_type": extension.upper(),
-            "start_epoch": (
-                datetime.datetime(
-                    year=int(long_match["year"]),
-                    month=1,
-                    day=1,
-                    hour=int(long_match["hour"]),
-                    minute=int(long_match["minute"]),
+
+    if len(filename) > 51:
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(f"Filename too long (over 51 chars): '{filename}'")
+        if strict_mode == StrictModes.STRICT_WARN:
+            warnings.warn(f"Filename too long (over 51 chars): '{filename}'")
+        return None
+
+    # Filename isn't too long...
+    # If we're expecting a long format filename, is it too short?
+    if expect_long_filenames and (len(filename) < 38):
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(f"IGS long filename can't be <38 chars: '{filename}'. expect_long_filenames is on")
+        if strict_mode == StrictModes.STRICT_WARN:
+            warnings.warn(f"IGS long filename can't be <38 chars: '{filename}'. expect_long_filenames is on")
+        return None
+
+    match_long = _RE_IGS_LONG_FILENAME.fullmatch(filename)
+    if match_long is not None:
+        prop_dict: dict[str, Any] = {
+            "analysis_center": match_long["analysis_center"].upper(),
+            "content_type": match_long["content_type"].upper(),
+            "format_type": match_long["file_format"].upper(),
+            "solution_type": match_long["solution_type"],
+            "sampling_rate": match_long["sampling"],
+            "version": match_long["version"],
+            "project": match_long["project"],
+            # Extra fields will be added depending on standard vs Long Term Product
+        }
+
+        if include_compressed_flag:
+            # If .gz ext present: compressed
+            prop_dict["compressed"] = True if len(match_long["compression_ext"]) != 0 else False
+
+        station_id = match_long["station_id"]
+        if station_id is not None and len(station_id) > 0:
+            prop_dict["station_id"] = station_id
+
+        # Standard or long term product?
+        period = match_long["period"]
+        end_year = match_long["end_year"]
+
+        if (period is not None) and (end_year is None):  # Period / timerange present, end_year not: Standard product
+            start_epoch = datetime.datetime(
+                year=int(match_long["year"]),
+                month=1,
+                day=1,
+                hour=int(match_long["hour"]),
+                minute=int(match_long["minute"]),
+            ) + datetime.timedelta(days=int(match_long["day_of_year"]) - 1)
+            timespan = convert_nominal_span(match_long["period"])
+
+            prop_dict["start_epoch"] = start_epoch
+            prop_dict["timespan"] = timespan
+
+        else:  # Long Term Product
+            if reject_long_term_products:
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(f"Long Term Product encountered: '{filename}' and reject_long_term_products is on")
+                if strict_mode == StrictModes.STRICT_WARN:
+                    warnings.warn(f"Long Term Product encountered: '{filename}' and reject_long_term_products is on")
+                return None
+
+            start_epoch = datetime.datetime(  # Lacks hour and minute precision in LTP version
+                year=int(match_long["year"]),
+                month=1,
+                day=1,
+                hour=0,
+                minute=0,
+            ) + datetime.timedelta(days=int(match_long["day_of_year"]) - 1)
+
+            end_epoch = datetime.datetime(
+                year=int(match_long["end_year"]),
+                month=1,
+                day=1,
+                hour=0,
+                minute=0,
+            ) + datetime.timedelta(days=int(match_long["end_day_of_year"]) - 1)
+
+            timespan = end_epoch - start_epoch
+
+            prop_dict["start_epoch"] = start_epoch
+            prop_dict["end_epoch"] = end_epoch
+            prop_dict["timespan"] = timespan
+
+        return prop_dict
+
+    else:  # Regex for IGS format long product filename did not match
+        if expect_long_filenames:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Expecting an IGS format long product name, but regex didn't match: '{filename}'")
+            if strict_mode == StrictModes.STRICT_WARN:
+                warnings.warn(f"Expecting an IGS format long product name, but regex didn't match: '{filename}'")
+            return None
+
+        # Is it plausibly a short filename?
+        if len(filename) >= 38:
+            # Length is within the bounds of a long filename. This doesn't seem like a short one!
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Long filename parse failed, but >=38 chars is too long for 'short': '{filename}'")
+            if strict_mode == StrictModes.STRICT_WARN:
+                warnings.warn(f"Long filename parse failed, but >=38 chars is too long for 'short': '{filename}'")
+            return None
+
+        # Try to simplistically parse as short filename as last resort.
+
+        # Does name seem roughly compliant?
+        short_match = _RE_IGS_SHORT_FILENAME_APPROX.fullmatch(filename)
+        if short_match is None:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Filename failed overly permissive regex for IGS short format': '{filename}'")
+            if strict_mode == StrictModes.STRICT_WARN:
+                warnings.warn(
+                    f"Filename failed overly permissive regex for IGS short format': '{filename}'. "
+                    "Will attempt to parse, but output will likely be wrong"
                 )
-                + datetime.timedelta(days=int(long_match["day_of_year"]) - 1)
-            ),
-            "timespan": convert_nominal_span(long_match["period"]),
-            "solution_type": long_match["solution_type"],
-            "sampling_rate": long_match["sampling"],
-            "version": long_match["version"],
-            "project": long_match["project"],
-        }
-    else:
-        # TODO we could add support for raising an exception in this case, if a long filename was expected. This
-        # could include use of StrictMode
-        logging.captureWarnings(True)  # Probably unnecessary, but for safety's sake...
-        warnings.warn(
-            "(Via warnings system) Extracting long filename properties (via regex) failed. "
-            f"Check if the following is a valid filename: {filename}",
-        )
-        # Temporary, until we confirm that warnings are coming out in main logs
-        logging.warning(
-            "(Via standard logging) Extracting long filename properties (via regex) failed. "
-            f"Check if the following is a valid filename: {filename}",
-        )
-    # Short filenames
-    # At the moment we'll return data even if the format doesn't really matter
-    analysis_center = basename[0:3].upper()
-    if analysis_center == "IGU":
+
+        if filename.endswith(".Z"):  # Old style indication of gz compression
+            core_filename = filename[:-2]  # Trim e.g. igs.sp3.Z -> igs.sp3
+        else:
+            core_filename = filename
+        basename, _, extension = core_filename.rpartition(".")  # -> 'igs', 'sp3'
+
+        # At the moment we'll return data even if the format doesn't really matter
+        analysis_center = basename[0:3].upper()
+        if analysis_center == "IGU":
+            return {
+                "analysis_center": "IGS",
+                "format_type": extension[0:3].upper(),
+                "solution_type": "ULT",
+                # Do start epoch estimation eventually # TODO: looks like we're not doing start epoch estimation here at all...
+            }
+        elif analysis_center == "IGR":
+            return {
+                "analysis_center": "IGS",
+                "format_type": extension[0:3].upper(),
+                "solution_type": "RAP",
+                # Do start epoch estimation eventually
+            }
+        elif analysis_center == "IGS":
+            return {
+                "analysis_center": "IGS",
+                "format_type": extension[0:3].upper(),
+                "solution_type": "FIN",
+                # Do start epoch estimation eventually
+            }
         return {
-            "analysis_center": "IGS",
+            "analysis_center": analysis_center,
             "format_type": extension[0:3].upper(),
-            "solution_type": "ULT",
-            # Do start epoch estimation eventually # TODO: looks like we're not doing start epoch estimation here at all...
-        }
-    elif analysis_center == "IGR":
-        return {
-            "analysis_center": "IGS",
-            "format_type": extension[0:3].upper(),
-            "solution_type": "RAP",
             # Do start epoch estimation eventually
         }
-    elif analysis_center == "IGS":
-        return {
-            "analysis_center": "IGS",
-            "format_type": extension[0:3].upper(),
-            "solution_type": "FIN",
-            # Do start epoch estimation eventually
-        }
-    return {
-        "analysis_center": analysis_center,
-        "format_type": extension[0:3].upper(),
-        # Do start epoch estimation eventually
-    }
 
 
 def check_filename_and_contents_consistency(
