@@ -10,7 +10,9 @@ import pandas as _pd
 from .. import gn_io as _gn_io
 
 
-def nanu_path_to_id(nanu_path):
+def nanu_path_to_id(nanu_path: str) -> str:
+    # TODO some examples would be good here.
+
     dir, _, filename = nanu_path.rpartition(_os.sep)
     nanu_id, _, extension = filename.partition(".")  # get filename without extension
     if nanu_id == "nanu":  # celestrak naming convention
@@ -46,17 +48,17 @@ def parse_nanu(nanu_bytes: bytes) -> dict:
     return output_dict
 
 
-def read_nanu(path_or_bytes: _Union[str, bytes]) -> dict:
+def read_nanu(path: str) -> dict:
     """A parser for Notice Advisory to Navstar Users (NANU) files.
     Assumes there is only one message per file, that starts with '1.'
 
     :param _Union[str, bytes] path_or_bytes: path to nanu file or a bytes object
     :return dict: nanu values with parameter names as keys
     """
-    nanu_bytes = _gn_io.common.path2bytes(path_or_bytes)
+    nanu_bytes = _gn_io.common.path2bytes(path)
     output_dict = {}
-    output_dict["FILEPATH"] = path_or_bytes  # TODO change to pathlib
-    output_dict["NANU ID"] = nanu_path_to_id(path_or_bytes)
+    output_dict["FILEPATH"] = path  # TODO change to pathlib
+    output_dict["NANU ID"] = nanu_path_to_id(path)
     output_dict["CONTENT"] = nanu_bytes
     output_dict.update(parse_nanu(nanu_bytes))
     return output_dict
