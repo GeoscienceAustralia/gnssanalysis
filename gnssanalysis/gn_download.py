@@ -846,7 +846,7 @@ def download_product_from_cddis(
         # We do this because the weekly files are released/dated as Sunday of each GPS week.
         start_epoch_as_gps_date = GPSDate(start_epoch)
         # Get GPS week number *without* DayOfWeek suffix (therefore start of the GPS Week), then convert back to datetime
-        start_epoch = gps_week_day_to_datetime(f"{start_epoch_as_gps_date.gpswk}")
+        start_epoch = gps_week_day_to_datetime(f"{start_epoch_as_gps_date.gps_week}")
         timespan = _datetime.timedelta(days=7)
 
     logging.info("Attempting CDDIS Product download/s")
@@ -875,7 +875,7 @@ def download_product_from_cddis(
     download_filepaths = []
     with ftp_tls(CDDIS_FTP) as ftps:
         try:
-            ftps.cwd(f"gnss/products/{gps_date.gpswk}")
+            ftps.cwd(f"gnss/products/{gps_date.gps_week}")
         except _ftplib.all_errors as e:
             logging.warning(f"{reference_start} too recent")
             logging.warning(f"ftp_lib error: {e}")
@@ -891,11 +891,11 @@ def download_product_from_cddis(
                 version=version,
                 project=project_type,
             )
-            ftps.cwd(f"gnss/products/{gps_date.gpswk}")
+            ftps.cwd(f"gnss/products/{gps_date.gps_week}")
 
             all_files = ftps.nlst()
             if not (product_filename in all_files):
-                logging.warning(f"{product_filename} not in gnss/products/{gps_date.gpswk} - too recent")
+                logging.warning(f"{product_filename} not in gnss/products/{gps_date.gps_week} - too recent")
                 raise FileNotFoundError
 
         # reference_start will be changed in the first run through while loop below
@@ -926,7 +926,7 @@ def download_product_from_cddis(
                     download_filepaths.append(
                         download_file_from_cddis(
                             filename=product_filename,
-                            ftp_folder=f"gnss/products/{gps_date.gpswk}",
+                            ftp_folder=f"gnss/products/{gps_date.gps_week}",
                             output_folder=download_dir,
                             if_file_present=if_file_present,
                             note_filetype=file_ext,
