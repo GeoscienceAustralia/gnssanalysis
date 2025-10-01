@@ -77,12 +77,15 @@ def collect_nanus_to_df(glob_expr: str) -> _pd.DataFrame:
 def get_bad_sv_from_nanu_df(
     nanu_df: _pd.DataFrame, up_to_epoch: _Union[_np.datetime64, datetime, str], offset_days: int
 ) -> list:
-    """A simple function that analyses an input dataframe NANU collection and outputs a list of SVs that should be excluded for the entered epoch+offset
+    """A simple function that analyses an input dataframe NANU collection and outputs a list of SVs that should be
+    excluded for the entered epoch+offset
 
-    :param _pd.DataFrame nanu_df: a dataframe returned by the collect_nanus_to_df, effectively a _pd.DataFrame call on a list of parsed dicts or a parsed dict
-    :param _Union[_np.datetime64, str] datetime: epoch to analyse NANUs up to
+    :param _pd.DataFrame nanu_df: a dataframe returned by the collect_nanus_to_df, effectively a _pd.DataFrame call on
+        a list of parsed dicts or a parsed dict
+    :param _Union[_np.datetime64, datetime, str] up_to_epoch: epoch to analyse NANUs up to
     :param int offset_days: an offset or a length of a planned processing session in days
-    :return list: a list of SVs that should not be used for the specified timeperiod. FIXME Potentially needs to be int?
+    :return list[str]: a list of SVs that should not be used for the specified timeperiod. FIXME Potentially needs to
+        be int?
     """
     up_to_epoch_datetime64: _np.datetime64 = (
         up_to_epoch if isinstance(up_to_epoch, _np.datetime64) else _np.datetime64(up_to_epoch)
