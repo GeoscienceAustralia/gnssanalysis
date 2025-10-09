@@ -507,17 +507,6 @@ def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, 
     return offset, scale_factor
 
 
-# Hypothetically we could do this to the whole file, but we'd need a good way to parse over the header...
-# def _check_sp3_line_length_column_alignment(
-#     data: bytes | str,
-#     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
-#     ignore_short_data_lines: bool = True,
-# ) -> bool:
-#     """
-
-#     """
-
-
 def _check_column_alignment_of_sp3_block(
     date: str,
     data: str,
@@ -534,6 +523,8 @@ def _check_column_alignment_of_sp3_block(
         even though this is technically not to spec under SP3 version d. Defaults to True.
     :raises ValueError: if validation doesn't pass, and strict_mode is set to STRICT_RAISE.
     """
+    # NOTE: we currently only run these checks on individual SP3 blocks, not the entire file.
+
     # Check epoch header (date) and data lines (P/V/EP/EV) are the right length, and that all unused columns (by SP3d
     # spec) are in fact blank (contain spaces). If this is not true, it probably indicates column misalignment which
     # will lead to incorrect parsing.
