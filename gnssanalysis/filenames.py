@@ -772,7 +772,7 @@ def determine_properties_from_filename(
     reject_long_term_products: bool = True,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
     include_compressed_flag: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Determine IGS filename properties based purely on a filename
 
     This function does its best to support both IGS long filenames and old short filenames.
@@ -788,7 +788,7 @@ def determine_properties_from_filename(
         not valid / a format we support.
     :param bool include_compressed_flag: (off by default for backwards compatibility) include a flag in output,
         indicating if the filename indicated compression (.gz).
-    :return Dict[str, Any]: dictionary containing the extracted name properties. Will be empty on errors, when
+    :return dict[str, Any]: dictionary containing the extracted name properties. Will be empty on errors, when
         strict_mode is set to WARN (default).
     :raises ValueError: if filename seems invalid / unsupported, E.g. if it is too long to be a short filename, but
         doesn't match long filename regex

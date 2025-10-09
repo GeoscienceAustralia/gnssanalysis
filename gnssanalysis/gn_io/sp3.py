@@ -74,11 +74,11 @@ _SP3_EPOCH_HEADER_WIDTH: int = 31
 
 # Columns in SP3 we expect (by SP3 d spec) to be unused (contain a space).
 # Deviation from this can be used to detect column misalignment
-_SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER: List[int] = [3, 8, 11, 14, 17, 20]
-_SP3_UNUSED_COLUMN_INDEXES_POS_CLK: List[int] = [61, 64, 67, 70, 74, 77, 78]
-_SP3_UNUSED_COLUMN_INDEXES_VELOCITY: List[int] = [61, 64, 67, 70, 74, 75, 76, 77, 78, 79, 80]
-_SP3_UNUSED_COLUMN_INDEXES_EP: List[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
-_SP3_UNUSED_COLUMN_INDEXES_EV: List[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
+_SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER: list[int] = [3, 8, 11, 14, 17, 20]
+_SP3_UNUSED_COLUMN_INDEXES_POS_CLK: list[int] = [61, 64, 67, 70, 74, 77, 78]
+_SP3_UNUSED_COLUMN_INDEXES_VELOCITY: list[int] = [61, 64, 67, 70, 74, 75, 76, 77, 78, 79, 80]
+_SP3_UNUSED_COLUMN_INDEXES_EP: list[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
+_SP3_UNUSED_COLUMN_INDEXES_EV: list[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
 
 _SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 2, 1, 1]
 _SP3_DEF_PV_NAME = [
