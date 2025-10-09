@@ -7,7 +7,7 @@ import pathlib
 # from collections.abc import Callable, Iterable
 from typing import Callable, Iterable
 from io import BytesIO as _BytesIO
-from typing import List, TextIO, Union
+from typing import TextIO, Union
 from urllib import request as _rqs
 
 import numpy as _np

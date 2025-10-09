@@ -3,7 +3,7 @@ import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Callable, Literal, Mapping, Optional, Union, List, Tuple, overload
+from typing import Callable, Literal, Mapping, Optional, Union, overload
 from pathlib import Path
 import warnings
 
@@ -74,11 +74,11 @@ _SP3_EPOCH_HEADER_WIDTH: int = 31
 
 # Columns in SP3 we expect (by SP3 d spec) to be unused (contain a space).
 # Deviation from this can be used to detect column misalignment
-_SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER: List[int] = [3, 8, 11, 14, 17, 20]
-_SP3_UNUSED_COLUMN_INDEXES_POS_CLK: List[int] = [61, 64, 67, 70, 74, 77, 78]
-_SP3_UNUSED_COLUMN_INDEXES_VELOCITY: List[int] = [61, 64, 67, 70, 74, 75, 76, 77, 78, 79, 80]
-_SP3_UNUSED_COLUMN_INDEXES_EP: List[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
-_SP3_UNUSED_COLUMN_INDEXES_EV: List[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
+_SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER: list[int] = [3, 8, 11, 14, 17, 20]
+_SP3_UNUSED_COLUMN_INDEXES_POS_CLK: list[int] = [61, 64, 67, 70, 74, 77, 78]
+_SP3_UNUSED_COLUMN_INDEXES_VELOCITY: list[int] = [61, 64, 67, 70, 74, 75, 76, 77, 78, 79, 80]
+_SP3_UNUSED_COLUMN_INDEXES_EP: list[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
+_SP3_UNUSED_COLUMN_INDEXES_EV: list[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
 
 _SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 2, 1, 1]
 _SP3_DEF_PV_NAME = [
@@ -492,13 +492,13 @@ def filter_by_svs(
     return sp3_df
 
 
-def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, float]:
+def mapparm(old: tuple[float, float], new: tuple[float, float]) -> tuple[float, float]:
     """
     Evaluate the offset and scale factor needed to map values from the old range to the new range.
 
-    :param Tuple[float, float] old: The range of values to be mapped from.
-    :param Tuple[float, float] new: The range of values to be mapped to.
-    :return Tuple[float, float]: The offset and scale factor for the mapping.
+    :param tuple[float, float] old: The range of values to be mapped from.
+    :param tuple[float, float] new: The range of values to be mapped to.
+    :return tuple[float, float]: The offset and scale factor for the mapping.
     """
     old_range = old[1] - old[0]
     new_range = new[1] - new[0]
@@ -616,8 +616,8 @@ def _check_column_alignment_of_sp3_block(
 def _process_sp3_block(
     date: str,
     data: str,
-    widths: List[int] = _SP3_DEF_PV_WIDTH,
-    names: List[str] = _SP3_DEF_PV_NAME,
+    widths: list[int] = _SP3_DEF_PV_WIDTH,
+    names: list[str] = _SP3_DEF_PV_NAME,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
     ignore_short_data_lines: bool = True,
 ) -> _pd.DataFrame:
@@ -629,8 +629,8 @@ def _process_sp3_block(
 
     :param    str date: The date of the SP3 data block.
     :param    str data: The SP3 data block.
-    :param    List[int] widths: The widths of the columns in the SP3 data block.
-    :param    List[str] names: The names of the columns in the SP3 data block.
+    :param    list[int] widths: The widths of the columns in the SP3 data block.
+    :param    list[str] names: The names of the columns in the SP3 data block.
     :param    type[StrictMode] strict_mode: (default: WARN) level of strictness with which to check for SP3d
         format compliance. StrictModes.STRICT_RAISE will raise an exception if a format issue is detected (except
         if ignore_short_data_lines is enabled). Set to StrictModes.STRICT_OFF to neither warn nor raise.
@@ -1019,7 +1019,7 @@ def read_sp3(
 
     if strict_mode != StrictModes.STRICT_OFF:
         # Check no (non-comment) line is overlong (>80 chars not counting \n)
-        sp3_lines: List[str] = content.decode("utf-8", errors="ignore").split("\n")
+        sp3_lines: list[str] = content.decode("utf-8", errors="ignore").split("\n")
         overlong_lines_found: int = 0
         for line in sp3_lines:
             if len(line) > _SP3_MAX_WIDTH:
@@ -1214,12 +1214,12 @@ def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
     return sp3_df
 
 
-def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
+def _split_sp3_content(content: bytes) -> tuple[list[str], _np.ndarray]:
     """
     Split the content of an SP3 file into date lines and data blocks.
 
     :param bytes content: The content of the SP3 file.
-    :return Tuple[List[str], _np.ndarray]: The date lines and data blocks.
+    :return tuple[list[str], _np.ndarray]: The date lines and data blocks.
     """
     pattern = _re.compile(r"^\*(.+)$", _re.MULTILINE)
     blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
@@ -1851,10 +1851,10 @@ def write_sp3(sp3_df: _pd.DataFrame, path: str) -> None:
         file.write(content)
 
 
-def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
+def merge_attrs(df_list: list[_pd.DataFrame]) -> _pd.Series:
     """Merges attributes of a list of sp3 dataframes into a single set of attributes.
 
-    :param List[pd.DataFrame] df_list: The list of sp3 dataframes.
+    :param list[pd.DataFrame] df_list: The list of sp3 dataframes.
     :return _pd.Series: The merged attributes.
     """
     df = _pd.concat(list(map(lambda obj: obj.attrs["HEADER"], df_list)), axis=1)
@@ -1898,15 +1898,15 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
 
 
 def sp3merge(
-    sp3paths: List[str],
-    clkpaths: Union[List[str], None] = None,
+    sp3paths: list[str],
+    clkpaths: Union[list[str], None] = None,
     nodata_to_nan: bool = False,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
 ) -> _pd.DataFrame:
     """Reads in a list of sp3 files and optional list of clk files and merges them into a single sp3 file.
 
-    :param List[str] sp3paths: The list of paths to the sp3 files.
-    :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
+    :param list[str] sp3paths: The list of paths to the sp3 files.
+    :param Union[list[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
     :param type[StrictMode] strict_mode: (default: WARN) Strictness with which to check the SP3 files read in, for
         compliance with the SP3 d spec.

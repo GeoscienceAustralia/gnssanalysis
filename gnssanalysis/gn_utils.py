@@ -6,7 +6,7 @@ from time import perf_counter
 
 import click as _click
 
-from typing import List, Union
+from typing import Union
 
 from gnssanalysis.enum_meta_properties import EnumMetaProperties
 

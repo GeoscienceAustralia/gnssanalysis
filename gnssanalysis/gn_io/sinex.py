@@ -1,4 +1,4 @@
-"""IO functions for various formats used: trace, sinex etc """
+"""IO functions for various formats used: trace, sinex etc"""
 
 import logging as _logging
 import math as _math
@@ -6,10 +6,8 @@ import os as _os
 import re as _re
 import zlib as _zlib
 from io import BytesIO as _BytesIO
-from typing import Any as _Any, Union
-from typing import Dict as _Dict
+from typing import Any as _Any
 from typing import Iterable as _Iterable
-from typing import List as _List
 from typing import Union as _Union
 
 import numpy as _np
@@ -61,7 +59,7 @@ def _get_snx_header(path_or_bytes):
 
 # This is in tension with the existing above function but is what was used by
 # the filenames functionality and so is ported here for now.
-def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _Any]:
+def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> dict[str, _Any]:
     """Extract the data contained in the header of a sinex file
 
     The extracted data is returned in a dictionary containing:
@@ -75,7 +73,7 @@ def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _
      - "contents": list[str]
 
     :param _Union[str, bytes, _os.PathLike] file_path: sinex file from which to read header
-    :return _Dict[str, _Any]: dictionary containing the properties extracted from the header
+    :return dict[str, _Any]: dictionary containing the properties extracted from the header
     """
     with open(file_path, mode="r", encoding="utf-8") as f:
         header_line = f.readline()
@@ -107,20 +105,20 @@ def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _
             return {}
 
 
-def get_available_blocks(file_path: _Union[str, bytes, _os.PathLike]) -> _List[str]:
+def get_available_blocks(file_path: _Union[str, bytes, _os.PathLike]) -> list[str]:
     """Return the blocks available within a sinex file
 
     :param _Union[str, bytes, _os.PathLike] file_path: sinex file to read for blocks
-    :return _List[str]: list of names of blocks available in sinex file
+    :return list[str]: list of names of blocks available in sinex file
     """
     with open(file_path, "r", encoding="utf-8") as f:
         return [line[1:-1].strip() for line in f if line.startswith("+")]
 
 
-def includes_noncrd_block(block_labels: _List[str]) -> bool:
+def includes_noncrd_block(block_labels: list[str]) -> bool:
     """Check whether list of block names includes at least one non-coordinate block
 
-    :param _List[str] block_labels: list of block names to check
+    :param list[str] block_labels: list of block names to check
     :return bool: whether any block names correspond to non-coordinate blocks
     """
     return any(is_noncrd_block(b) for b in block_labels)
@@ -159,7 +157,7 @@ def all_notnan(iterable: _Iterable) -> bool:
 
 
 # TODO: Generalise to handle a path or bytes object?
-def read_sinex_comment_block(filename: _Union[str, bytes, _os.PathLike]) -> _List[str]:
+def read_sinex_comment_block(filename: _Union[str, bytes, _os.PathLike]) -> list[str]:
     """Extract comments from a provided sinex file
 
     :param Union[str, bytes, os.PathLike] filename: path to sinex file
@@ -179,7 +177,7 @@ def read_sinex_comment_block(filename: _Union[str, bytes, _os.PathLike]) -> _Lis
         return comment_lines
 
 
-def extract_mincon_from_comments(comment_block: _Iterable[str]) -> _Dict[str, _Any]:
+def extract_mincon_from_comments(comment_block: _Iterable[str]) -> dict[str, _Any]:
     """Extract PEA-style minimum constraints data from sinex comments
 
     PEA can place information about the minimum constraint solution applied into a sinex
@@ -198,7 +196,7 @@ def extract_mincon_from_comments(comment_block: _Iterable[str]) -> _Dict[str, _A
     The entries will only be included if complete data is extracted for them.
 
     :param _Iterable[str] comment_block: iterable containing comment lines to parse
-    :return _Dict[str, _Any]: dictionary containing extracted minimum constraints information
+    :return dict[str, _Any]: dictionary containing extracted minimum constraints information
     """
     # Initialise the places where we'll store our output data
     unused = []
@@ -269,7 +267,7 @@ def extract_mincon_from_comments(comment_block: _Iterable[str]) -> _Dict[str, _A
             transform["rotation_uncertainty"] = rotation_uncertainty
 
     # Set up return data dictionary
-    mincon_dict: _Dict[str, _Any] = {"used": used, "unused": unused}
+    mincon_dict: dict[str, _Any] = {"used": used, "unused": unused}
     if len(transform) != 0:
         mincon_dict["transform"] = transform
 
@@ -277,7 +275,7 @@ def extract_mincon_from_comments(comment_block: _Iterable[str]) -> _Dict[str, _A
 
 
 # TODO: Generalise to handle a path or bytes object?
-def read_sinex_mincon(filename: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _Any]:
+def read_sinex_mincon(filename: _Union[str, bytes, _os.PathLike]) -> dict[str, _Any]:
     """Extract PEA-style minimum constraints data from sinex file
 
     PEA can place information about the minimum constraint solution applied into a sinex
@@ -296,7 +294,7 @@ def read_sinex_mincon(filename: _Union[str, bytes, _os.PathLike]) -> _Dict[str, 
     The entries will only be included if complete data is extracted for them.
 
     :param _Union[str, bytes, _os.PathLike] filename: sinex file from which to read minimum constraints data
-    :return _Dict[str, _Any]: dictionary containing extracted minimum constraints information
+    :return dict[str, _Any]: dictionary containing extracted minimum constraints information
     """
     return extract_mincon_from_comments(read_sinex_comment_block(filename))
 
@@ -323,7 +321,7 @@ def snx_soln_int_to_str(soln: _pd.Series, nan_as_dash=True) -> _pd.Series:
     return soln_str
 
 
-def _get_valid_stypes(stypes: Union[list[str], set[str]]) -> _List[str]:
+def _get_valid_stypes(stypes: _Union[list[str], set[str]]) -> list[str]:
     """Returns only stypes in allowed list
     Fastest if stypes size is small"""
     allowed_stypes = ["EST", "APR", "NEQ"]
@@ -515,13 +513,13 @@ def snxdf2xyzdf(snx_df: _pd.DataFrame, unstack: bool = True, keep_all_soln: _Uni
 
 def _get_snx_vector(
     path_or_bytes: _Union[str, bytes],
-    stypes: Union[set[str], list[str]] = set(["EST", "APR"]),
+    stypes: _Union[set[str], list[str]] = set(["EST", "APR"]),
     format: str = "long",
     keep_all_soln: _Union[bool, None] = None,
     verbose: bool = True,
     recenter_epochs: bool = False,
     snx_header: dict = {},
-) -> Union[_pd.DataFrame, None]:
+) -> _Union[_pd.DataFrame, None]:
     """Main function of reading vector data from sinex file. Doesn't support sinex files from EMR AC as APRIORI and ESTIMATE indices are not in sync (APRIORI params might not even exist in he ESTIMATE block). While will parse the file, the alignment of EST and APR values might be wrong. No easy solution was found for the issue thus unsupported for now. TODO parse header and add a warning if EMR agency
 
     Args:
