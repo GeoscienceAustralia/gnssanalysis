@@ -525,14 +525,13 @@ def _check_column_alignment_of_sp3_block(
     ignore_short_data_lines: bool = True,
 ) -> None:
     """
-    Check an indivual SP3 block (one epoch), for line length and column alignment
+    Check an individual SP3 block (one epoch), for line length and column alignment
     :param str date: Epoch start date/time, typically beginning with '*'
     :param str data: Entries for the given epoch (multiple rows, not yet split on '\n')
-    :param type[StrictMode] strict_mode: (default: WARN) how to respond to issues found. No check / warning / exception.
-    :param bool ignore_short_data_lines: (default True) don't fail the check due to data lines which are < 80 chars,
-        even though this is technically not to spec under SP3 version d.
-    # :returns bool: True if the block passes validation. False otherwise (along with logging a warning), unless an
-    #     exception is raised.
+    :param type[StrictMode] strict_mode: Determines response to issues found. Ignore or don't run check / warning /
+        raise exception. Defaults to WARN.
+    :param bool ignore_short_data_lines: don't fail the check due to data lines which are < 80 chars,
+        even though this is technically not to spec under SP3 version d. Defaults to True.
     :raises ValueError: if validation doesn't pass, and strict_mode is set to STRICT_RAISE.
     """
     # Check epoch header (date) and data lines (P/V/EP/EV) are the right length, and that all unused columns (by SP3d
