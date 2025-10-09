@@ -123,10 +123,10 @@ def configure_logging(verbose: bool, output_logger: bool = False) -> Union[_logg
         return None
 
 
-def ensure_folders(paths: List[_pathlib.Path]):
+def ensure_folders(paths: list[_pathlib.Path]):
     """Ensures the folders in the input list exist in the file system - if not, create them
 
-    :param List[_pathlib.Path] paths: list of pathlib.Path/s to check
+    :param list[_pathlib.Path] paths: list of pathlib.Path/s to check
     """
     for path in paths:
         if not isinstance(path, _pathlib.Path):

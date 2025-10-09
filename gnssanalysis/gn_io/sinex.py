@@ -161,7 +161,7 @@ def read_sinex_comment_block(filename: _Union[str, bytes, _os.PathLike]) -> list
     """Extract comments from a provided sinex file
 
     :param Union[str, bytes, os.PathLike] filename: path to sinex file
-    :return List[str]: list containing all lines in sinex comment block
+    :return list[str]: list containing all lines in sinex comment block
     """
     with open(filename, "r", encoding="utf-8") as f:
         # Find start of "+FILE/COMMENT"

@@ -17,11 +17,11 @@ from gnssanalysis import gn_datetime as _gn_datetime
 from gnssanalysis import gn_io as _gn_io
 
 
-def normalise_headers(headers: Iterable[str]) -> List[str]:
+def normalise_headers(headers: Iterable[str]) -> list[str]:
     """Apply :func: `gn_io.erp.normalise_headers` to all headers in an iterable
 
     :param Iterable[str] headers: Iterable of header strings obtained from an ERP file
-    :return List[str]: List of normalised headers as per :func: `gn_io.erp.normalise_headers`
+    :return list[str]: List of normalised headers as per :func: `gn_io.erp.normalise_headers`
     """
     return [normalise_header(h) for h in headers]
 
@@ -44,7 +44,7 @@ def normalise_header(header: str) -> str:
     return get_canonical_header(header)
 
 
-def merge_hyphen_headers(raw_split_header: Iterable[str]) -> List[str]:
+def merge_hyphen_headers(raw_split_header: Iterable[str]) -> list[str]:
     """Take a list of raw headers from an ERP file and merge hyphenated headers that got split
 
     In some ERP files hyphenated headers, such as UTC-TAI, occasionally have spaces before or after
@@ -52,7 +52,7 @@ def merge_hyphen_headers(raw_split_header: Iterable[str]) -> List[str]:
     This function re-merges those header components.
 
     :param Iterable[str] raw_split_header: ERP header line that has been split/tokenized
-    :return List[str]: List of ERP headers with hyphen-separated headers merged
+    :return list[str]: List of ERP headers with hyphen-separated headers merged
     """
     # Copy to avoid mutating input list
     headers = list(raw_split_header)
