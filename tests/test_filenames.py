@@ -152,7 +152,7 @@ class TestPropsFromNameAndContent(TestCase):
         }
 
         derived_props_ltp = filenames.determine_properties_from_filename(
-            long_term_product, include_compressed_flag=True
+            long_term_product, reject_long_term_products=False, include_compressed_flag=True
         )
         self.assertEqual(derived_props_ltp, expected_props_ltp)
 

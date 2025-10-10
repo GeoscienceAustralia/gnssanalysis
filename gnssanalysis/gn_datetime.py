@@ -382,7 +382,7 @@ def j2000_to_igs_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
     time_h = _pd.Series((hour - day).astype("int64").astype(str)).str.rjust(3).values
     time_m = _pd.Series((minute - hour).astype("int64").astype(str)).str.rjust(3).values
     # Width 12 due to one extra leading space (for easier concatenation next), then _0.00000000 format per SP3d spec:
-    time_s = (_pd.Series((datetime - minute)).view("int64") / 1e9).apply("{:.8f}".format).str.rjust(12).values
+    time_s = (_pd.Series((datetime - minute)).astype("int64") / 1e9).apply("{:.8f}".format).str.rjust(12).values
     return date_y + date_m + date_d + time_h + time_m + time_s
 
 
