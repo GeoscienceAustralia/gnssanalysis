@@ -34,7 +34,10 @@ class TestClk(TestCase):
         self.assertEqual(clk_df_igs["EST"].iloc[-1], -0.0006105557076344, msg="Check last datapoint is correct")
         self.assertEqual(clk_df_gfz["EST"].iloc[-1], -0.000610553573006, msg="Check last datapoint is correct")
 
-    def test_compare_clk(self):
+    def test_diff_clk(self):
+        """
+        Note this also tests the now deprecated version, compare_clk()
+        """
         self.fs.reset()  # Reset pyfakefs to delete any files which may have persisted from a previous test
         file_paths = ["/fake/dir/file0.clk", "/fake/dir/file1.clk"]
         self.fs.create_file(file_paths[0], contents=input_data_igs)
@@ -43,6 +46,7 @@ class TestClk(TestCase):
         clk_df_igs = clk.read_clk(clk_path=file_paths[0])
         clk_df_gfz = clk.read_clk(clk_path=file_paths[1])
 
+        # Deprecated version
         result_default = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz)
         result_daily_only = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["daily"])
         result_epoch_only = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["epoch"])
@@ -62,6 +66,39 @@ class TestClk(TestCase):
         self.assertEqual(result_sv_only["G05"].iloc[0], 1.1623200004470119e-10, msg="Check datapoint is correct")
         self.assertEqual(result_G06["G06"].iloc[0], 0.0, msg="Check datapoint is correct")
         self.assertEqual(result_daily_epoch_G04["G07"].iloc[0], 1.3071733365871419e-11, msg="Check datapoint is correct")
+        self.assertEqual(result_epoch_G07["G08"].iloc[0], -3.3217389966032004e-11, msg="Check datapoint is correct")
+        self.assertEqual(result_daily_G08["G09"].iloc[-1], 1.3818666534399365e-12, msg="Check datapoint is correct")
+        self.assertEqual(result_G09_G11["G11"].iloc[-1], 0.0, msg="Check datapoint is correct")
+        self.assertEqual(result_G09_G11["G01"].iloc[-1], 8.94520000606358e-11, msg="Check datapoint is correct")
+
+        # New version (clk order flipped)
+        result_default = gn_diffaux.diff_clk(clk_baseline=clk_df_gfz, clk_test=clk_df_igs)
+        result_daily_only = gn_diffaux.diff_clk(clk_baseline=clk_df_gfz, clk_test=clk_df_igs, norm_types=["daily"])
+        result_epoch_only = gn_diffaux.diff_clk(clk_baseline=clk_df_gfz, clk_test=clk_df_igs, norm_types=["epoch"])
+        result_sv_only = gn_diffaux.diff_clk(clk_baseline=clk_df_gfz, clk_test=clk_df_igs, norm_types=["sv"])  # G01 ref
+        result_G06 = gn_diffaux.diff_clk(clk_baseline=clk_df_gfz, clk_test=clk_df_igs, norm_types=["G06"])
+        result_daily_epoch_G04 = gn_diffaux.diff_clk(
+            clk_baseline=clk_df_gfz, clk_test=clk_df_igs, norm_types=["daily", "epoch", "G04"]
+        )
+        result_epoch_G07 = gn_diffaux.diff_clk(
+            clk_baseline=clk_df_gfz, clk_test=clk_df_igs, norm_types=["epoch", "G07"]
+        )
+        result_daily_G08 = gn_diffaux.diff_clk(
+            clk_baseline=clk_df_gfz, clk_test=clk_df_igs, norm_types=["daily", "G08"]
+        )
+        result_G09_G11 = gn_diffaux.diff_clk(clk_baseline=clk_df_gfz, clk_test=clk_df_igs, norm_types=["G09", "G11"])
+
+        # Test index is as expected
+        self.assertEqual(result_default.index[0], 760708800)
+        # Test that a sample value is as expected from each result above
+        self.assertEqual(result_default["G01"].iloc[0], -4.56406886282918e-12, msg="Check datapoint is correct")
+        self.assertEqual(result_daily_only["G03"].iloc[0], 2.9891233314493365e-11, msg="Check datapoint is correct")
+        self.assertEqual(result_epoch_only["G04"].iloc[0], 2.7128617820053325e-12, msg="Check datapoint is correct")
+        self.assertEqual(result_sv_only["G05"].iloc[0], 1.1623200004470119e-10, msg="Check datapoint is correct")
+        self.assertEqual(result_G06["G06"].iloc[0], 0.0, msg="Check datapoint is correct")
+        self.assertEqual(
+            result_daily_epoch_G04["G07"].iloc[0], 1.3071733365871419e-11, msg="Check datapoint is correct"
+        )
         self.assertEqual(result_epoch_G07["G08"].iloc[0], -3.3217389966032004e-11, msg="Check datapoint is correct")
         self.assertEqual(result_daily_G08["G09"].iloc[-1], 1.3818666534399365e-12, msg="Check datapoint is correct")
         self.assertEqual(result_G09_G11["G11"].iloc[-1], 0.0, msg="Check datapoint is correct")

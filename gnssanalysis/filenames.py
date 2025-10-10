@@ -715,7 +715,7 @@ def determine_sp3_name_props(
     name_props = {}
     # First, properties from the SP3 data:
     try:
-        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False, format_check_strictness=strict_mode)
+        sp3_df = gn_io.sp3.read_sp3(file_path, nodata_to_nan=False, strict_mode=strict_mode)
     except Exception as e:
         # TODO: Work out what exceptions read_sp3 can actually throw when given a non-SP3 file
         if strict_mode == StrictModes.STRICT_RAISE:
@@ -799,11 +799,11 @@ def determine_sp3_name_props(
 def determine_properties_from_filename(
     filename: str,
     expect_long_filenames: bool = False,
-    reject_long_term_products: bool = False,
+    reject_long_term_products: bool = True,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
     include_compressed_flag: bool = False,
     non_timed_span_output_mode: Literal["none", "timedelta"] = "timedelta",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Determine IGS filename properties based purely on a filename
 
     This function does its best to support both IGS long filenames and old short filenames.
@@ -811,18 +811,19 @@ def determine_properties_from_filename(
     the name properties it manages to successfully determine.
 
     :param str filename: filename to examine for naming properties
-    :param bool expect_long_filenames: expect provided filenames to conform to IGS long product filename
-        convention (v2.1), and raise / error if they do not.
-    :param bool reject_long_term_products: raise exception if an IGS Long Term Product is encountered (these have
-        no timerange / period, and include an end_epoch).
-    :param type[StrictMode] strict_mode: indicates whether to raise or warn, if filename is clearly not valid / a
-        format we support.
-    :param bool include_compressed_flag: include a flag in output, indicating if the filename indicated
-        compression (.gz)
+    :param bool expect_long_filenames: (off by default for backwards compatibility) expect provided filenames to
+        conform to IGS long product filename convention (v2.1), and raise / error if they do not.
+    :param bool reject_long_term_products: (on by default for backwards compatibility) raise warning or exception if
+        an IGS Long Term Product is encountered (these have no timerange / period, and include an end_epoch).
+    :param type[StrictMode] strict_mode: indicates whether to raise or warn (default), if filename is clearly
+        not valid / a format we support.
+    :param bool include_compressed_flag: (off by default for backwards compatibility) include a flag in output,
+        indicating if the filename indicated compression (.gz).
     :param Literal["none", "timedelta"] non_timed_span_output_mode: by default, a zero-length span i.e. '00U' will
         be parsed as a zero-length timedelta. Set this to 'none' to return None in this case instead.
         Added in ~0.0.59.dev3
-    :return Dict[str, Any]: dictionary containing the extracted name properties
+    :return dict[str, Any]: dictionary containing the extracted name properties. Will be empty on errors, when
+        strict_mode is set to WARN (default).
     :raises ValueError: if filename seems invalid / unsupported, E.g. if it is too long to be a short filename, but
         doesn't match long filename regex
     """
@@ -983,7 +984,9 @@ def determine_properties_from_filename(
 
 
 def check_filename_and_contents_consistency(
-    input_file: pathlib.Path, ignore_single_epoch_short: bool = True
+    input_file: pathlib.Path,
+    ignore_single_epoch_short: bool = True,
+    output_orphan_prop_names: bool = False,
 ) -> Mapping[str, tuple[str, str]]:
     """
     Checks that the content of the provided file matches what its filename says should be in it.
@@ -998,6 +1001,10 @@ def check_filename_and_contents_consistency(
     File properties which do not match are returned as a mapping of str -> tuple(str, str), taking the form
     property_name > filename_derived_value, file_contents_derived_value
     :param Path input_file: Path to the file to be checked.
+    :param bool ignore_single_epoch_short: (on by default) consider it ok for file content to be one epoch short of
+        what the filename says.
+    :param bool output_orphan_prop_names: (off by default) for properties found exclusively in file content or name
+        (not in both, and therefore not compared), return these as 'prop_name': None.
     :return Mapping[str, tuple[str,str]]: Empty map if properties agree, else map of discrepancies, OR None on failure.
     of property_name > filename_derived_value, file_contents_derived_value.
     :raises NotImplementedError: if called with a file type not yet supported.
@@ -1024,7 +1031,20 @@ def check_filename_and_contents_consistency(
         )
 
     discrepancies = {}
-    for key in file_name_properties.keys():
+    # Check for keys only present on one side
+    orphan_keys = set(file_name_properties.keys()).symmetric_difference((set(file_content_properties.keys())))
+    logging.warning(
+        "The following properties can't be compared, as they were extracted only from file content or "
+        f"name (not both): {str(orphan_keys)}"
+    )
+    if output_orphan_prop_names:
+        # Output properties found only in content OR filename.
+        for orphan_key in orphan_keys:
+            discrepancies[orphan_key] = None
+
+    mutual_keys = set(file_name_properties.keys()).difference(orphan_keys)
+    # For keys present in both dicts, compare values.
+    for key in mutual_keys:
         if (file_name_val := file_name_properties[key]) != (file_content_val := file_content_properties[key]):
             # If enabled, and epoch interval successfully extracted, ignore cases where the timespan of epochs in the
             # file content, is one epoch shorter than the timespan the filename implies (e.g. 23:55 vs 1D i.e. 24:00).
