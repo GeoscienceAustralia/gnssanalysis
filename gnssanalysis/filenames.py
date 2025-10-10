@@ -7,7 +7,7 @@ import traceback
 
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections import Iterable
-from typing import Iterable, Mapping, Any, Dict, Optional, Tuple, Union, overload
+from typing import Iterable, Mapping, Any, Optional, Union, overload
 import warnings
 
 import click
@@ -99,8 +99,8 @@ _RE_IGS_SHORT_FILENAME_APPROX = re.compile(
 @click.option("--verbose", is_flag=True)
 def determine_file_name_main(
     files: Iterable[pathlib.Path],
-    defaults: Iterable[Tuple[str, str]],
-    overrides: Iterable[Tuple[str, str]],
+    defaults: Iterable[tuple[str, str]],
+    overrides: Iterable[tuple[str, str]],
     current_name: bool,
     delimiter: str,
     verbose: bool,
@@ -165,8 +165,8 @@ def determine_file_name(
      defined as a parameter to maintain syntactic simplicity when calling.
 
     :param pathlib.Path file_path: Path to the file for which to determine name
-    :param Dict[str, Any] defaults: Default name properties to use when properties can't be determined
-    :param Dict[str, Any] overrides: Name properties that should override anything detected in the file
+    :param dict[str, Any] defaults: Default name properties to use when properties can't be determined
+    :param dict[str, Any] overrides: Name properties that should override anything detected in the file
     :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
     :return str: Proposed IGS long filename
     """
@@ -182,7 +182,7 @@ def determine_properties_from_contents_and_filename(
     file_path: pathlib.Path,
     defaults: Optional[Mapping[str, Any]] = None,
     overrides: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Determine the properties of a file based on its contents
 
     The function reads both the existing filename of the provided file as well as
@@ -204,8 +204,8 @@ def determine_properties_from_contents_and_filename(
      - project: str
 
     :param pathlib.Path file_path: Path to the file for which to determine properties
-    :param Dict[str, Any] defaults: Default name properties to use when properties can't be determined
-    :param Dict[str, Any] overrides: Name properties that should override anything detected in the file
+    :param dict[str, Any] defaults: Default name properties to use when properties can't be determined
+    :param dict[str, Any] overrides: Name properties that should override anything detected in the file
     :raises NotImplementedError: For files that we should support but currently don't (bia, iox, obx, sum, tro)
     :return str: Dictionary of file properties
     """
@@ -459,7 +459,7 @@ def convert_nominal_span(nominal_span: str) -> datetime.timedelta:
         return datetime.timedelta()
 
 
-def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
+def determine_clk_name_props(file_path: pathlib.Path) -> dict[str, Any]:
     """Determine the IGS filename properties for a CLK files
 
     Like all functions in this series, the function reads both a filename and the files contents
@@ -467,7 +467,7 @@ def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     function returns a dictionary with any properties it manages to successfully determine.
 
     :param pathlib.Path file_path: file for which to determine name properties
-    :return Dict[str, Any]: dictionary containing the extracted name properties
+    :return dict[str, Any]: dictionary containing the extracted name properties
     """
     name_props = {}
     try:
@@ -519,7 +519,7 @@ def determine_clk_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     return name_props
 
 
-def determine_erp_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
+def determine_erp_name_props(file_path: pathlib.Path) -> dict[str, Any]:
     """Determine the IGS filename properties for a ERP files
 
     Like all functions in this series, the function reads both a filename and the files contents
@@ -527,7 +527,7 @@ def determine_erp_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     function returns a dictionary with any properties it manages to successfully determine.
 
     :param pathlib.Path file_path: file for which to determine name properties
-    :return Dict[str, Any]: dictionary containing the extracted name properties
+    :return dict[str, Any]: dictionary containing the extracted name properties
     """
     name_props = {}
     try:
@@ -574,7 +574,7 @@ def determine_erp_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     return name_props
 
 
-def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
+def determine_snx_name_props(file_path: pathlib.Path) -> dict[str, Any]:
     """Determine the IGS filename properties for a SINEX files
 
     Like all functions in this series, the function reads both a filename and the files contents
@@ -582,7 +582,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
     function returns a dictionary with any properties it manages to successfully determine.
 
     :param pathlib.Path file_path: file for which to determine name properties
-    :return Dict[str, Any]: dictionary containing the extracted name properties
+    :return dict[str, Any]: dictionary containing the extracted name properties
     """
     name_props = {}
     try:
@@ -668,7 +668,7 @@ def determine_snx_name_props(file_path: pathlib.Path) -> Dict[str, Any]:
 
 def determine_sp3_name_props(
     file_path: pathlib.Path, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Determine the IGS filename properties for a SP3 files
 
     Like all functions in this series, the function reads both a filename and the files contents
@@ -678,7 +678,7 @@ def determine_sp3_name_props(
     :param pathlib.Path file_path: file for which to determine name properties
     :param type[StrictMode] strict_mode: indicates whether to raise, warn, or silently continue on errors such as
         failure to get properties from a filename.
-    :return Dict[str, Any]: dictionary containing the extracted name properties. May be empty on some errors, if
+    :return dict[str, Any]: dictionary containing the extracted name properties. May be empty on some errors, if
         strict_mode is not set to RAISE.
     :raises ValueError: if strict_mode set to RAISE, and unable to statically extract properties from a filename
     """
