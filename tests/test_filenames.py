@@ -225,3 +225,44 @@ class TestPropsFromNameAndContent(TestCase):
         expected_discrepant_properties = {"timespan": (timedelta(days=2), timedelta(days=1))}
 
         self.assertEqual(discrepant_properties, expected_discrepant_properties)
+
+
+class TestSpanCalculation(TestCase):
+    def test_convert_nominal_span(self):
+        """
+        Test conversion of span strings e.g. '05M' as defined in IGS long filename specification, to an equivalent
+        timedelta. Not applicable / unspecified ('00U') is returned as a zero-length timedelta by default, but can
+        also be returned as None (preferred).
+        """
+
+        # Standard conversions
+        self.assertEqual(filenames.convert_nominal_span("15S"), timedelta(seconds=15))
+        self.assertEqual(filenames.convert_nominal_span("05M"), timedelta(minutes=5))
+        self.assertEqual(filenames.convert_nominal_span("05M", non_timed_span_output="none"), timedelta(minutes=5))
+        self.assertEqual(filenames.convert_nominal_span("06H"), timedelta(hours=6))
+        self.assertEqual(filenames.convert_nominal_span("18H"), timedelta(hours=18))
+        self.assertEqual(filenames.convert_nominal_span("01D"), timedelta(days=1))
+        self.assertEqual(filenames.convert_nominal_span("36H"), timedelta(hours=36))
+        self.assertEqual(filenames.convert_nominal_span("02D"), timedelta(days=2))
+        self.assertEqual(filenames.convert_nominal_span("01W"), timedelta(days=7))
+        self.assertEqual(filenames.convert_nominal_span("52W"), timedelta(days=364))
+        self.assertEqual(filenames.convert_nominal_span("01Y"), timedelta(days=365))
+        self.assertEqual(filenames.convert_nominal_span("02Y"), timedelta(days=730))
+
+        # Lunar cycle is an obscure unit. Reading is supported, writing is not (outputting 28 days leads to '04W')
+        self.assertEqual(filenames.convert_nominal_span("01L"), timedelta(days=28))
+        self.assertEqual(filenames.convert_nominal_span("02L"), timedelta(days=56))  # Two lunar cycles
+
+        # Zero-delta or None for non-timed span
+        self.assertEqual(filenames.convert_nominal_span("00U"), timedelta())
+        self.assertEqual(filenames.convert_nominal_span("00U", non_timed_span_output="none"), None)
+
+        # Exception on malformed or unknown type
+        with self.assertRaises(ValueError):
+            filenames.convert_nominal_span("05P")
+
+        with self.assertRaises(ValueError):
+            filenames.convert_nominal_span("5M")
+
+        with self.assertRaises(ValueError):
+            filenames.convert_nominal_span("005M")
