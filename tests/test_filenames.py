@@ -1,5 +1,5 @@
-import datetime
 import logging
+from datetime import datetime, timedelta
 from pathlib import Path
 from pyfakefs.fake_filesystem_unittest import TestCase
 
@@ -60,9 +60,9 @@ class TestPropsFromNameAndContent(TestCase):
             "analysis_center": "FIL",  # TODO CHECK
             "content_type": "ORB",  # TODO CHECK
             "format_type": "SP3",
-            "start_epoch": datetime.datetime(2024, 7, 19, 0, 0),
-            "end_epoch": datetime.datetime(2024, 7, 19, 0, 5),
-            "timespan": datetime.timedelta(seconds=300),
+            "start_epoch": datetime(2024, 7, 19, 0, 0),
+            "end_epoch": datetime(2024, 7, 19, 0, 5),
+            "timespan": timedelta(seconds=300),
             "sampling_rate_seconds": 300.0,
             "sampling_rate": "05M",
         }
@@ -71,9 +71,9 @@ class TestPropsFromNameAndContent(TestCase):
             "content_type": "ORB",
             "format_type": "SP3",
             "project": "OPS",
-            "start_epoch": datetime.datetime(2024, 7, 19, 0, 0),
-            "end_epoch": datetime.datetime(2024, 7, 19, 0, 5),
-            "timespan": datetime.timedelta(seconds=300),
+            "start_epoch": datetime(2024, 7, 19, 0, 0),
+            "end_epoch": datetime(2024, 7, 19, 0, 5),
+            "timespan": timedelta(seconds=300),
             "sampling_rate_seconds": 300.0,
             "sampling_rate": "05M",
             "solution_type": "FIN",
@@ -93,8 +93,8 @@ class TestPropsFromNameAndContent(TestCase):
             "analysis_center": "COD",
             "content_type": "ORB",
             "format_type": "SP3",
-            "start_epoch": datetime.datetime(2024, 7, 19, 0, 0),
-            "timespan": datetime.timedelta(days=1),
+            "start_epoch": datetime(2024, 7, 19, 0, 0),
+            "timespan": timedelta(days=1),
             "solution_type": "FIN",
             "sampling_rate": "05M",
             "version": "0",
@@ -133,8 +133,8 @@ class TestPropsFromNameAndContent(TestCase):
         # Test for Long Term Product format
         long_term_product = "IGS0OPSSNX_1994002_2025207_00U_CRD.SNX"
 
-        exp_start_epoch = datetime.datetime(1994, 1, 2, 0, 0)
-        exp_end_epoch = datetime.datetime(2025, 7, 26, 0, 0)
+        exp_start_epoch = datetime(1994, 1, 2, 0, 0)
+        exp_end_epoch = datetime(2025, 7, 26, 0, 0)
         exp_timespan = exp_end_epoch - exp_start_epoch
 
         expected_props_ltp = {
@@ -222,6 +222,47 @@ class TestPropsFromNameAndContent(TestCase):
         test_sp3_file = Path(fake_path_string)
 
         discrepant_properties = filenames.check_filename_and_contents_consistency(test_sp3_file)
-        expected_discrepant_properties = {"timespan": (datetime.timedelta(days=2), datetime.timedelta(days=1))}
+        expected_discrepant_properties = {"timespan": (timedelta(days=2), timedelta(days=1))}
 
         self.assertEqual(discrepant_properties, expected_discrepant_properties)
+
+
+class TestSpanCalculation(TestCase):
+    def test_convert_nominal_span(self):
+        """
+        Test conversion of span strings e.g. '05M' as defined in IGS long filename specification, to an equivalent
+        timedelta. Not applicable / unspecified ('00U') is returned as a zero-length timedelta by default, but can
+        also be returned as None (preferred).
+        """
+
+        # Standard conversions
+        self.assertEqual(filenames.convert_nominal_span("15S"), timedelta(seconds=15))
+        self.assertEqual(filenames.convert_nominal_span("05M"), timedelta(minutes=5))
+        self.assertEqual(filenames.convert_nominal_span("05M", non_timed_span_output="none"), timedelta(minutes=5))
+        self.assertEqual(filenames.convert_nominal_span("06H"), timedelta(hours=6))
+        self.assertEqual(filenames.convert_nominal_span("18H"), timedelta(hours=18))
+        self.assertEqual(filenames.convert_nominal_span("01D"), timedelta(days=1))
+        self.assertEqual(filenames.convert_nominal_span("36H"), timedelta(hours=36))
+        self.assertEqual(filenames.convert_nominal_span("02D"), timedelta(days=2))
+        self.assertEqual(filenames.convert_nominal_span("01W"), timedelta(days=7))
+        self.assertEqual(filenames.convert_nominal_span("52W"), timedelta(days=364))
+        self.assertEqual(filenames.convert_nominal_span("01Y"), timedelta(days=365))
+        self.assertEqual(filenames.convert_nominal_span("02Y"), timedelta(days=730))
+
+        # Lunar cycle is an obscure unit. Reading is supported, writing is not (outputting 28 days leads to '04W')
+        self.assertEqual(filenames.convert_nominal_span("01L"), timedelta(days=28))
+        self.assertEqual(filenames.convert_nominal_span("02L"), timedelta(days=56))  # Two lunar cycles
+
+        # Zero-delta or None for non-timed span
+        self.assertEqual(filenames.convert_nominal_span("00U"), timedelta())
+        self.assertEqual(filenames.convert_nominal_span("00U", non_timed_span_output="none"), None)
+
+        # Exception on malformed or unknown type
+        with self.assertRaises(ValueError):
+            filenames.convert_nominal_span("05P")
+
+        with self.assertRaises(ValueError):
+            filenames.convert_nominal_span("5M")
+
+        with self.assertRaises(ValueError):
+            filenames.convert_nominal_span("005M")

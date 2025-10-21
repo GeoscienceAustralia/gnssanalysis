@@ -7,7 +7,7 @@ import traceback
 
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections import Iterable
-from typing import Iterable, Mapping, Any, Optional, Union, overload
+from typing import Iterable, Literal, Mapping, Any, Optional, Union, overload
 import warnings
 
 import click
@@ -434,14 +434,37 @@ def nominal_span_string(span_seconds: float) -> str:
     return f"{span_unit_counts:02}{unit}"
 
 
-def convert_nominal_span(nominal_span: str) -> datetime.timedelta:
+def convert_nominal_span(
+    nominal_span: str,
+    non_timed_span_output: Literal["none", "timedelta"] = "timedelta",
+) -> Union[datetime.timedelta, None]:
     """Effectively invert :func: `filenames.generate_nominal_span`, turn a span string into a timedelta
 
-    :param str nominal_span: Three-character span string in IGS format
-    :return datetime.timedelta: Time delta of same duration as span string
+    :param str nominal_span: Three-character span string in IGS format (e.g. 01D, 15M, 01L ?)
+    :param Literal["none", "timedelta"] non_timed_span_output: when a non-timed span e.g. '00U' is encountered,
+        return a zero-length timedelta (default), or return None.
+        instead of raising / warning / returning zero-length timedelta.
+    :returns datetime.timedelta | None: Time delta of same duration as span string. If input has non-timed unit 'U',
+        returns zero-length timedelta, or if non_timed_span_output is set to 'none' returns None.
+    :raises ValueError: when input format is invalid, i.e. was not 3 chars where first 2 parse as an int, or time unit
+        is not valid.
     """
-    span = int(nominal_span[0:2])
+    if nominal_span is None or not isinstance(nominal_span, str) or len(nominal_span) != 3:
+        raise ValueError(f"Provided nominal span was not a 3 char string: '{str(nominal_span)}'")
+    try:
+        span = int(nominal_span[0:2])
+    except ValueError:  # Except and re-raise with more context
+        raise ValueError(f"First two chars of nominal span '{nominal_span}' did not parse as an int")
     unit = nominal_span[2].upper()
+
+    if unit == "U":
+        if non_timed_span_output == "none":
+            return None
+        elif non_timed_span_output == "timedelta":  # Return zero-length timedelta (legacy behaviour)
+            return datetime.timedelta()
+        else:
+            raise ValueError(f"Invalid mode for non_timed_span_output: {str(non_timed_span_output)}")
+
     unit_to_timedelta_args = {
         "S": {"seconds": 1},
         "M": {"minutes": 1},
@@ -451,12 +474,19 @@ def convert_nominal_span(nominal_span: str) -> datetime.timedelta:
         "L": {"days": 28},
         "Y": {"days": 365},
     }
-    try:
-        timedelta_args = unit_to_timedelta_args[unit]
-        return datetime.timedelta(**{k: v * span for k, v in timedelta_args.items()})
-    except KeyError:
-        logging.warning("Time unit '%s' not understood", unit)
-        return datetime.timedelta()
+    unit_names: set[str] = set(unit_to_timedelta_args.keys())
+
+    if unit not in unit_names:
+        # Probably due to an upstream parsing issue / invalid filename, as we've already handled the case of 'U'.
+        raise ValueError(f"Unit of span '{nominal_span}' not understood / valid.")
+
+    timedelta_args = unit_to_timedelta_args[unit]  # E.g. for year, this is: {days, 365}
+
+    # Now multiply the input (span value) e.g. '02' by the unit multiplier defined above e.g. 'Y'.
+    # E.g 02Y -> unit: days, value: 02 * 365
+    # The following is a bit clunky because we must pass the unit as the *name of the parameter* to timedelta,
+    # e.g. days=365. We can't pass unit=days, value=365.
+    return datetime.timedelta(**{k: v * span for k, v in timedelta_args.items()})
 
 
 def determine_clk_name_props(file_path: pathlib.Path) -> dict[str, Any]:
@@ -772,6 +802,7 @@ def determine_properties_from_filename(
     reject_long_term_products: bool = True,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
     include_compressed_flag: bool = False,
+    non_timed_span_output_mode: Literal["none", "timedelta"] = "timedelta",
 ) -> dict[str, Any]:
     """Determine IGS filename properties based purely on a filename
 
@@ -788,6 +819,9 @@ def determine_properties_from_filename(
         not valid / a format we support.
     :param bool include_compressed_flag: (off by default for backwards compatibility) include a flag in output,
         indicating if the filename indicated compression (.gz).
+    :param Literal["none", "timedelta"] non_timed_span_output_mode: by default, a zero-length span i.e. '00U' will
+        be parsed as a zero-length timedelta. Set this to 'none' to return None in this case instead.
+        Added in ~0.0.59.dev3
     :return dict[str, Any]: dictionary containing the extracted name properties. Will be empty on errors, when
         strict_mode is set to WARN (default).
     :raises ValueError: if filename seems invalid / unsupported, E.g. if it is too long to be a short filename, but
@@ -843,7 +877,9 @@ def determine_properties_from_filename(
                 hour=int(match_long["hour"]),
                 minute=int(match_long["minute"]),
             ) + datetime.timedelta(days=int(match_long["day_of_year"]) - 1)
-            timespan = convert_nominal_span(match_long["period"])
+
+            # Non-timed span e.g. 'OOU' can be zero-length timedelta or None, based on setting of non_timed_span_output
+            timespan = convert_nominal_span(match_long["period"], non_timed_span_output=non_timed_span_output_mode)
 
             prop_dict["start_epoch"] = start_epoch
             prop_dict["timespan"] = timespan
@@ -856,7 +892,8 @@ def determine_properties_from_filename(
                     warnings.warn(f"Long Term Product encountered: '{filename}' and reject_long_term_products is on")
                 return {}
 
-            start_epoch = datetime.datetime(  # Lacks hour and minute precision in LTP version
+            # Note: start and end epoch lack hour and minute precision in Long Term Product filenames
+            start_epoch = datetime.datetime(
                 year=int(match_long["year"]),
                 month=1,
                 day=1,
