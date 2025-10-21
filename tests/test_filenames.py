@@ -276,7 +276,7 @@ class TestSpanCalculation(TestCase):
 
         # 5 mins
         self.assertEqual(filenames.nominal_span_string(300), "05M")
-        self.assertEqual(filenames.nominal_span_string(300.0), "05M")  # TODO float test
+        self.assertEqual(filenames.nominal_span_string(300.0), "05M")
 
         # 6 hours
         self.assertEqual(filenames.nominal_span_string(60 * 60 * 6), "06H")
