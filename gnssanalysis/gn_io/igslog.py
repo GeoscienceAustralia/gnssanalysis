@@ -4,7 +4,7 @@ import logging
 import glob as _glob
 import re as _re
 from multiprocessing import Pool as _Pool
-from typing import Union, List, Tuple
+from typing import Union
 
 import numpy as _np
 import pandas as _pd
@@ -169,7 +169,7 @@ def determine_log_version(data: bytes) -> str:
 
 def extract_id_block(
     data: bytes, file_path: str, file_code: str, version: Union[str, None] = None
-) -> Union[List[str], _np.ndarray]:
+) -> Union[list[str], _np.ndarray]:
     """Extract the site ID block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
@@ -229,12 +229,12 @@ def extract_location_block(data: bytes, file_path: str, version: Union[str, None
     return location_block
 
 
-def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.ndarray]:
+def extract_receiver_block(data: bytes, file_path: str) -> Union[list[tuple[bytes]], _np.ndarray]:
     """Extract the location block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :return List[Tuple[bytes]] or _np.ndarray: The receiver block of the data. Each list element specifies an receiver.
+    :return list[tuple[bytes]] or _np.ndarray: The receiver block of the data. Each list element specifies an receiver.
         If regex doesn't match, an empty numpy NDArray is returned instead.
     """
     receiver_block = _REGEX_REC.findall(data)
@@ -244,12 +244,12 @@ def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[byte
     return receiver_block
 
 
-def extract_antenna_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.ndarray]:
+def extract_antenna_block(data: bytes, file_path: str) -> Union[list[tuple[bytes]], _np.ndarray]:
     """Extract the antenna block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :return List[Tuple[bytes]] or _np.ndarray: The antenna block of the data. Each list element specifies an antenna.
+    :return list[tuple[bytes]] or _np.ndarray: The antenna block of the data. Each list element specifies an antenna.
         If regex doesn't match, an empty numpy NDArray is returned instead.
     """
     antenna_block = _REGEX_ANT.findall(data)
@@ -397,13 +397,13 @@ def translate_series(series: _pd.Series, translation: dict) -> _pd.Series:
 
 def gather_metadata(
     logs_glob_path: str = "/data/station_logs/station_logs_IGS/*/*.log", rnx_glob_path: str = None, num_threads: int = 1
-) -> List[_pd.DataFrame]:
+) -> list[_pd.DataFrame]:
     """Parses log files found with glob expressions into pd.DataFrames
 
     :param str logs_glob_path: A glob expression for log files, defaults to "/data/station_logs_IGS/*/*.log"
     :param str rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
     :param int num_threads: Number of threads to run, defaults to 1
-    :return List[_pd.DataFrame]: List of DataFrames with [ID, Receiver, Antenna] data
+    :return list[_pd.DataFrame]: List of DataFrames with [ID, Receiver, Antenna] data
     """
     parsed_filenames = find_recent_logs(logs_glob_path=logs_glob_path, rnx_glob_path=rnx_glob_path).values
 

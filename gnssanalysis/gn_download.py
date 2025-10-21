@@ -28,7 +28,7 @@ import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Any, Generator, List, Literal, Optional, Tuple, Union
+from typing import Any, Generator, Literal, Optional, Union
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError
 
@@ -391,7 +391,7 @@ def generate_product_filename(
     version: str = "0",
     project: str = "OPS",
     content_type: str = None,
-) -> Tuple[str, GPSDate, _datetime.datetime]:
+) -> tuple[str, GPSDate, _datetime.datetime]:
     """Given a reference datetime and extention of file, generate the IGS filename and GPSDate obj for use in download
 
     :param _datetime.datetime reference_start: Datetime of the start period of interest
@@ -405,7 +405,7 @@ def generate_product_filename(
     :param str version: Version of the file, defaults to "0"
     :param str project: IGS project descriptor, defaults to "OPS"
     :param str content_type: IGS content specifier - if None set automatically based on file_ext, defaults to None
-    :return _Tuple[str, GPSDate, _datetime.datetime]: Tuple of filename str, GPSDate and datetime obj (based on shift)
+    :return tuple[str, GPSDate, _datetime.datetime]: Tuple of filename str, GPSDate and datetime obj (based on shift)
     """
     reference_start += _datetime.timedelta(hours=shift)
     if type(reference_start == _datetime.date):
@@ -822,7 +822,7 @@ def download_product_from_cddis(
     project_type: str = "OPS",
     timespan: _datetime.timedelta = _datetime.timedelta(days=2),
     if_file_present: str = "prompt_user",
-) -> List[_Path]:
+) -> list[_Path]:
     """Download the file/s from CDDIS based on start and end epoch, to the download directory (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
@@ -838,7 +838,7 @@ def download_product_from_cddis(
     :param _datetime.timedelta timespan: Timespan of the file/s to download, defaults to _datetime.timedelta(days=2)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
-    :return List[_Path]: Return list of paths of downloaded files
+    :return list[_Path]: Return list of paths of downloaded files
     """
     # Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
@@ -1193,12 +1193,12 @@ def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = 
     return download_filepath
 
 
-def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> List[_Path]:
+def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> list[_Path]:
     """Download yaw rate / bias files needed to for Ginan's PEA
 
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return List[_Path]: Return list paths of downloaded files
+    :return list[_Path]: Return list paths of downloaded files
     """
     ensure_folders([download_dir])
     download_filepaths = []
