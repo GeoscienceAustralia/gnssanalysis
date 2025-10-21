@@ -266,3 +266,44 @@ class TestSpanCalculation(TestCase):
 
         with self.assertRaises(ValueError):
             filenames.convert_nominal_span("005M")
+
+    def test_nominal_span_string(self):
+
+        # Standard conversions
+
+        # 15 sec
+        self.assertEqual(filenames.nominal_span_string(15), "15S")
+
+        # 5 mins
+        self.assertEqual(filenames.nominal_span_string(300), "05M")
+        self.assertEqual(filenames.nominal_span_string(300.0), "05M")  # TODO float test
+
+        # 6 hours
+        self.assertEqual(filenames.nominal_span_string(60 * 60 * 6), "06H")
+
+        # One day
+        self.assertEqual(filenames.nominal_span_string(60 * 60 * 24), "01D")
+
+        # 36 hours must be expressed as hours not days, to preserve precision
+        self.assertEqual(filenames.nominal_span_string(60 * 60 * 36), "36H")
+
+        # 2 days
+        self.assertEqual(filenames.nominal_span_string(60 * 60 * 24 * 2), "02D")
+
+        # 1 week (we follow IGS' lead in expressing this as 07D, despite the IGS long filename spec saying it
+        # should be 01W)
+        # By default, IGS style weeks: 07D
+        self.assertEqual(filenames.nominal_span_string(60 * 60 * 24 * 7), "07D")
+
+        # Optionally, format compliant weeks: 01W
+        self.assertEqual(filenames.nominal_span_string(60 * 60 * 24 * 7, igs_week_as_days=False), "01W")
+
+        # 1 lunar cycle (28 days) # TODO note: currently unsupported. Will come out as '04W'
+        self.assertEqual(filenames.nominal_span_string(60 * 60 * 24 * 28), "04W")
+
+        # Ensure smaller unit is used to preserve presision when needed.
+        self.assertEqual(filenames.nominal_span_string(65), "65S")
+
+        # Up till the point it would be too big, then we 'up-shift' unit, and round up to the nearest value
+        # TODO this isn't currently supported
+        # self.assertEqual(filenames.nominal_span_string(110), "02M")
