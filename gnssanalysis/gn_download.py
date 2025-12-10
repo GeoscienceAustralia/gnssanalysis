@@ -28,9 +28,12 @@ import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Any, Generator, Literal, Optional, Union
+from typing import Any, Generator, Literal, Optional, Union, Tuple, List
 from urllib import request as _request
-from urllib.error import HTTPError as _HTTPError
+from urllib.error import HTTPError as _HTTPError, URLError as _URLError
+import requests as _requests
+import warnings as _warnings
+import netrc as _netrc
 
 import boto3
 import numpy as _np
@@ -43,6 +46,8 @@ from .gn_utils import ensure_folders
 MB = 1024 * 1024
 
 CDDIS_FTP = "gdc.cddis.eosdis.nasa.gov"
+CDDIS_HTTPS = "https://cddis.nasa.gov/archive"
+EARTHDATA_URL = "urs.earthdata.nasa.gov"
 PRODUCT_BASE_URL = "https://peanpod.s3.ap-southeast-2.amazonaws.com/aux/products/"
 IGS_FILES_URL = "https://files.igs.org/pub/"
 BERN_URL = "http://ftp.aiub.unibe.ch/"
@@ -87,6 +92,38 @@ class TransferCallback:
                 f"({(self._total_transferred / target) * 100:.2f}%)."
             )
             _sys.stdout.flush()
+
+
+
+def get_earthdata_credentials(username: str = None, password: str = None) -> Tuple[str, str]:
+    """
+    Get NASA Earthdata credentials from .netrc file or direct parameters.
+    :param str username: Directly provided username (highest priority)
+    :param str password: Directly provided password (highest priority)
+    :return Tuple[str, str]: Username and password tuple
+    :raises ValueError: If no credentials can be obtained
+    """
+    # Priority 1: Use directly provided credentials
+    if username and password:
+        logging.debug("Using directly provided NASA Earthdata credentials")
+        return username, password
+    # Priority 2: Try to read from .netrc file
+    try:
+        netrc_path = _Path.home() / '.netrc'
+        if netrc_path.exists():
+            logging.debug(f"Found .netrc at {netrc_path}")
+            netrc_auth = _netrc.netrc()
+            auth_info = netrc_auth.authenticators(EARTHDATA_URL)
+            if auth_info:
+                logging.debug("Successfully loaded credentials from .netrc")
+                return auth_info[0], auth_info[2]  # username, password
+            else:
+                logging.debug(f"No entry for '{EARTHDATA_URL}' found in .netrc")
+    except Exception as e:
+        logging.debug(f"Error reading .netrc: {e}")
+    # No credentials available
+    raise ValueError("No NASA Earthdata credentials available. Provide username/password directly "
+                     f"or set up .netrc file with entry for '{EARTHDATA_URL}'.")
 
 
 def upload_with_chunksize_and_meta(
@@ -737,75 +774,159 @@ def ftp_tls(url: str, **kwargs) -> Generator[Any, Any, Any]:
 
 def download_file_from_cddis(
     filename: str,
-    ftp_folder: str,
-    output_folder: _Path,
+    ftp_folder: Optional[str] = None,     # deprecated
+    url_folder: Optional[str] = None,     # preferred
+    output_folder: _Path = _Path("."),
     max_retries: int = 3,
     decompress: bool = True,
     if_file_present: str = "prompt_user",
+    username: str = None,
+    password: str = None,
     note_filetype: Optional[str] = None,
 ) -> Union[_Path, None]:
-    """Downloads a single file from the CDDIS ftp server
+    """ Download a single file from the CDDIS HTTPS archive using NASA Earthdata authentication
 
     :param str filename: Name of the file to download
-    :param str ftp_folder: Folder where the file is stored on the remote server
+    :param str ftp_folder: (Deprecated) Legacy folder path on the CDDIS FTP server. Use url_folder instead
+    :param str url_folder: Folder path (relative to CDDIS HTTPS archive root)
     :param _Path output_folder: Local folder to store the output file
     :param int max_retries: Number of retries before raising error, defaults to 3
     :param bool decompress: If true, decompresses files on download, defaults to True
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :param str note_filetype: How to label the file for STDOUT messages, defaults to None
-    :raises e: Raise any error that is run into by ftplib
-    :return _Path or None: The pathlib.Path of the downloaded file (or decompressed output of it). Returns None if the
-        file already existed and was skipped, or if the download failed.
+    :param str username: NASA Earthdata username (optional, will try .netrc if not provided).
+    :param str password: NASA Earthdata password (optional, will try .netrc if not provided).
+    :raises ValueError: If no credentials can be obtained.
+    :raises requests.RequestException: If the file cannot be downloaded after retries.
+    :return _Path or None: The pathlib.Path of the downloaded file (or decompressed output of it).
+                          Returns None if the file already existed and was skipped.
     """
-    with ftp_tls(CDDIS_FTP) as ftps:
-        ftps.cwd(ftp_folder)
-        retries = 0
-        while retries <= max_retries:
-            try:
-                download_filepath = attempt_ftps_download(
-                    download_dir=output_folder,
-                    ftps=ftps,
-                    filename=filename,
-                    type_of_file=note_filetype,
-                    if_file_present=if_file_present,
-                )
-                if download_filepath is None:  # File already existed and was skipped
-                    return None
-                # File was downloaded
-                logging.info(f"Downloaded {download_filepath.name}")
-                if decompress:  # Does it need unpacking?
-                    # Decompress, and return the path of the resultant file
-                    logging.info(f"Decompressing downloaded file {download_filepath.name}")
-                    return decompress_file(input_filepath=download_filepath, delete_after_decompression=True)
-                # File doesn't need unpacking, return downloaded path
+
+    if ftp_folder and url_folder:
+        raise ValueError("Use either 'ftp_folder' or 'url_folder', not both.")
+    folder = url_folder or ftp_folder
+    if ftp_folder is not None:
+        _warnings.warn(
+            "Argument 'ftp_folder' is deprecated; use 'url_folder' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    url = f"{CDDIS_HTTPS}/{folder}/{filename}"
+
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    # Check if file should be downloaded (handles if_file_present logic)
+    download_filepath = check_whether_to_download(
+        filename=filename, download_dir=output_folder, if_file_present=if_file_present
+    )
+    if download_filepath is None:
+        return None  # File exists and user chose not to replace
+
+    # Get NASA Earthdata credentials
+    try:
+        earthdata_username, earthdata_password = get_earthdata_credentials(
+            username=username, password=password
+        )
+    except ValueError as e:
+        logging.error(f"Failed to obtain NASA Earthdata credentials: {e}")
+        raise
+
+    retries = 0
+    while retries <= max_retries:
+        try:
+            logging.debug(f"Downloading {note_filetype or filename} from {url}")
+            # Use simple NASA Earthdata authentication approach
+            # Third example from: https://urs.earthdata.nasa.gov/documentation/for_users/data_access/python
+            with _requests.Session() as session:
+                session.auth = (earthdata_username, earthdata_password)
+                response = session.get(url, stream=True)
+
+                # Check if request was successful
+                response.raise_for_status()
+
+                # Download the file
+                with open(download_filepath, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=MB):
+                        if chunk:
+                            f.write(chunk)
+
+                logging.debug(f"Successfully downloaded {filename}")
+
+                if decompress:
+                    logging.debug(f"Decompressing {filename}")
+                    return decompress_file(download_filepath, delete_after_decompression=True)
+
                 return download_filepath
-            except _ftplib.all_errors as e:
-                retries += 1
-                if retries > max_retries:
-                    logging.error(f"Failed to download {filename} and reached maximum retry count ({max_retries}).", e)
-                    if (output_folder / filename).is_file():
-                        (output_folder / filename).unlink()
-                    raise e
 
-                logging.debug(f"Received an error ({e}) while try to download {filename}, retrying({retries}).")
-                # Add some backoff time (exponential random as it appears to be contention based?)
-                _time.sleep(_random.uniform(0.0, 2.0**retries))
+        except _requests.exceptions.RequestException as e:
+            retries += 1
+            if retries > max_retries:
+                logging.error(f"Failed to download {filename} after {max_retries} retries: {e}")
+                if download_filepath.is_file():
+                    download_filepath.unlink()
+                raise
+            backoff = _random.uniform(0.0, 2.0 ** retries)
+            logging.warning(f"Error downloading {filename}: {e} "
+                            f"(retry {retries}/{max_retries}, backoff {backoff:.1f}s)")
+            _time.sleep(backoff)
 
-    # Fell out of loop and context manager without returning a result or raising an exception.
-    # Shouldn't be possible, raise exception if it somehow happens.
-    raise Exception("Failed to download file or raise exception. Some logic is broken.")
+    raise Exception("Unexpected fallthrough in download_file_from_cddis.")
 
 
-def download_multiple_files_from_cddis(files: list[str], ftp_folder: str, output_folder: _Path) -> None:
-    """Downloads multiple files in a single folder from cddis in a thread pool.
-
-    :param files: List of str filenames
-    :ftp_folder: Folder where the file is stored on the remote
-    :output_folder: Folder to store the output files
+def download_multiple_files_from_cddis(
+    files: List[str],
+    ftp_folder: Optional[str] = None,     # deprecated
+    url_folder: Optional[str] = None,     # preferred
+    output_folder: _Path = _Path("."),
+    username: str = None,
+    password: str = None,
+) -> None:
     """
+    Download multiple files from the CDDIS HTTPS archive concurrently, using a thread pool.
+
+    :param List[str] files: List of filenames to download.
+    :param str ftp_folder: (Deprecated) Legacy folder path on the CDDIS FTP server. Use url_folder instead.
+    :param str url_folder: Folder path (relative to CDDIS HTTPS archive root).
+    :param _Path output_folder: Local folder to store the output files.
+    :param str username: NASA Earthdata username (optional, will try .netrc if not provided).
+    :param str password: NASA Earthdata password (optional, will try .netrc if not provided).
+    :raises ValueError: If both ftp_folder and url_folder are provided.
+    :return None: Runs downloads in parallel, does not return values. Each file is handled independently.
+    """
+
+    if ftp_folder and url_folder:
+        raise ValueError("Use either 'ftp_folder' or 'url_folder', not both.")
+    folder = url_folder or ftp_folder
+    if ftp_folder is not None:
+        _warnings.warn(
+            "Argument 'ftp_folder' is deprecated; use 'url_folder' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    # Get credentials once for all downloads
+    try:
+        earthdata_username, earthdata_password = get_earthdata_credentials(
+            username=username, password=password
+        )
+    except ValueError as e:
+        logging.error(f"Failed to obtain NASA Earthdata credentials: {e}")
+        raise
+
+    def download_one(filename):
+        return download_file_from_cddis(
+            filename,
+            ftp_folder=ftp_folder,
+            url_folder=url_folder,
+            output_folder=output_folder,
+            username=earthdata_username,
+            password=earthdata_password
+        )
+
     with _concurrent.futures.ThreadPoolExecutor() as executor:
         # Wrap this in a list to force iteration of results and so get the first exception if any were raised
-        list(executor.map(download_file_from_cddis, files, _repeat(ftp_folder), _repeat(output_folder)))
+        list(executor.map(download_one, files))
 
 
 def download_product_from_cddis(
@@ -822,7 +943,9 @@ def download_product_from_cddis(
     project_type: str = "OPS",
     timespan: _datetime.timedelta = _datetime.timedelta(days=2),
     if_file_present: str = "prompt_user",
-) -> list[_Path]:
+    username: str = None,
+    password: str = None,
+) -> List[_Path]:
     """Download the file/s from CDDIS based on start and end epoch, to the download directory (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
@@ -834,11 +957,15 @@ def download_product_from_cddis(
     :param str analysis_center: Which analysis center's files to download (e.g. COD, GFZ, WHU, etc), defaults to "IGS"
     :param str solution_type: Which solution type to download (e.g. ULT, RAP, FIN), defaults to "ULT"
     :param str sampling_rate: Sampling rate of file to download, defaults to "15M"
+    :param str version: Version identifier for the file, defaults to "0"
     :param str project_type: Project type of file to download (e.g. ), defaults to "OPS"
     :param _datetime.timedelta timespan: Timespan of the file/s to download, defaults to _datetime.timedelta(days=2)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
+    :param str username: NASA Earthdata username (optional, will try .netrc if not provided).
+    :param str password: NASA Earthdata password (optional, will try .netrc if not provided).
     :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
-    :return list[_Path]: Return list of paths of downloaded files
+    :raises Exception: If a file fails to download after all retries.
+    :return List[_Path]: List of pathlib.Path objects to downloaded (or decompressed) files.
     """
     # Download the correct IGS FIN ERP files
     if file_ext == "ERP" and analysis_center == "IGS" and solution_type == "FIN":  # get the correct start_epoch
@@ -852,7 +979,8 @@ def download_product_from_cddis(
     logging.info("Attempting CDDIS Product download/s")
     logging.info(f"Start Epoch - {start_epoch}")
     logging.info(f"End Epoch - {end_epoch}")
-    if long_filename == None:
+
+    if long_filename is None:
         long_filename = long_filename_cddis_cutoff(start_epoch)
 
     reference_start = _deepcopy(start_epoch)
@@ -873,16 +1001,20 @@ def download_product_from_cddis(
 
     ensure_folders([download_dir])
     download_filepaths = []
-    with ftp_tls(CDDIS_FTP) as ftps:
-        try:
-            ftps.cwd(f"gnss/products/{gps_date.gps_week}")
-        except _ftplib.all_errors as e:
-            logging.warning(f"{reference_start} too recent")
-            logging.warning(f"ftp_lib error: {e}")
+
+    # Shift so first loop iteration aligns correctly
+    reference_start -= _datetime.timedelta(hours=24)
+    count = 0
+    remain = end_epoch - reference_start
+
+    while remain.total_seconds() > timespan.total_seconds():
+        if count == limit:
+            remain = _datetime.timedelta(days=0)
+        else:
             product_filename, gps_date, reference_start = generate_product_filename(
                 reference_start,
                 file_ext,
-                shift=-6,
+                shift=24,  # Shift at the start of the loop - speeds up total download time
                 long_filename=long_filename,
                 analysis_center=analysis_center,
                 timespan=timespan,
@@ -891,49 +1023,32 @@ def download_product_from_cddis(
                 version=version,
                 project=project_type,
             )
-            ftps.cwd(f"gnss/products/{gps_date.gps_week}")
 
-            all_files = ftps.nlst()
-            if not (product_filename in all_files):
-                logging.warning(f"{product_filename} not in gnss/products/{gps_date.gps_week} - too recent")
-                raise FileNotFoundError
-
-        # reference_start will be changed in the first run through while loop below
-        reference_start -= _datetime.timedelta(hours=24)
-        count = 0
-        remain = end_epoch - reference_start
-        while remain.total_seconds() > timespan.total_seconds():
-            if count == limit:
-                remain = _datetime.timedelta(days=0)
-            else:
-                product_filename, gps_date, reference_start = generate_product_filename(
-                    reference_start,
-                    file_ext,
-                    shift=24,  # Shift at the start of the loop - speeds up total download time
-                    long_filename=long_filename,
-                    analysis_center=analysis_center,
-                    timespan=timespan,
-                    solution_type=solution_type,
-                    sampling_rate=sampling_rate,
-                    version=version,
-                    project=project_type,
-                )
-                download_filepath = check_whether_to_download(
-                    filename=product_filename, download_dir=download_dir, if_file_present=if_file_present
-                )
-                if download_filepath is not None:
-                    logging.info(f"Downloading {product_filename} from CDDIS")
-                    download_filepaths.append(
-                        download_file_from_cddis(
-                            filename=product_filename,
-                            ftp_folder=f"gnss/products/{gps_date.gps_week}",
-                            output_folder=download_dir,
-                            if_file_present=if_file_present,
-                            note_filetype=file_ext,
-                        )
+            download_filepath = check_whether_to_download(
+                filename=product_filename,
+                download_dir=download_dir,
+                if_file_present=if_file_present,
+            )
+            if download_filepath is not None:
+                logging.info(f"Downloading {product_filename} from CDDIS")
+                try:
+                    downloaded = download_file_from_cddis(
+                        filename=product_filename,
+                        url_folder=f"gnss/products/{gps_date.gpswk}",
+                        output_folder=download_dir,
+                        if_file_present=if_file_present,
+                        note_filetype=file_ext,
+                        username=username,
+                        password=password,
                     )
-                count += 1
-                remain = end_epoch - reference_start
+                    if downloaded:
+                        download_filepaths.append(downloaded)
+                except Exception as e:
+                    logging.error(f"Could not fetch {product_filename}: {e}")
+                    raise FileNotFoundError(f"Failed to download {product_filename} from CDDIS: {e}") from e
+
+            count += 1
+            remain = end_epoch - reference_start
 
     return download_filepaths
 
