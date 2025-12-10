@@ -28,7 +28,7 @@ import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Any, Generator, Literal, Optional, Union
+from typing import Any, Generator, Literal, Optional, Union, Tuple, List
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError, URLError as _URLError
 import requests as _requests
