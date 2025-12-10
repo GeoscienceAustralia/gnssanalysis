@@ -3,8 +3,9 @@ import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Callable, Literal, Mapping, Optional, Union, List, Tuple, overload
+from typing import Callable, Literal, Mapping, Optional, Union, overload
 from pathlib import Path
+import warnings
 
 import numpy as _np
 import pandas as _pd
@@ -66,6 +67,18 @@ _RE_SP3_HEAD_FDESCR = _re.compile(rb"\%c[ ]+(\w{1})[ ]+cc[ ](\w{3})")
 
 # Max width of SP3 lines
 _SP3_MAX_WIDTH: int = 80
+_SP3_DATA_LINE_WIDTH: int = 80
+# TODO note that our current parsing in _split_sp3_content() removes the '*' from epoch headers, making them 30 chars
+# not 31
+_SP3_EPOCH_HEADER_WIDTH: int = 31
+
+# Columns in SP3 we expect (by SP3 d spec) to be unused (contain a space).
+# Deviation from this can be used to detect column misalignment
+_SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER: list[int] = [3, 8, 11, 14, 17, 20]
+_SP3_UNUSED_COLUMN_INDEXES_POS_CLK: list[int] = [61, 64, 67, 70, 74, 77, 78]
+_SP3_UNUSED_COLUMN_INDEXES_VELOCITY: list[int] = [61, 64, 67, 70, 74, 75, 76, 77, 78, 79, 80]
+_SP3_UNUSED_COLUMN_INDEXES_EP: list[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
+_SP3_UNUSED_COLUMN_INDEXES_EV: list[int] = [3, 4, 9, 14, 19, 27, 36, 45, 54, 63, 72]
 
 _SP3_DEF_PV_WIDTH = [1, 3, 14, 14, 14, 14, 1, 2, 1, 2, 1, 2, 1, 3, 1, 1, 1, 2, 1, 1]
 _SP3_DEF_PV_NAME = [
@@ -298,7 +311,8 @@ def reflow_string_as_lines_for_comment_block(
 
 def get_sp3_comments(sp3_df: _pd.DataFrame) -> list[str]:
     """
-    Utility function to retrieve stored SP3 comment lines from the attributes of an SP3 DataFrame.
+    Utility function to retrieve stored SP3 comment lines from the attributes of an SP3 DataFrame. NOTE: this does not
+    validate comment lines for compliance with SP3 d spec.
     :return list[str]: List of comment lines, verbatim. Note that comment line lead-in of '/* ' is not removed.
     """
     return sp3_df.attrs["COMMENTS"]
@@ -478,13 +492,13 @@ def filter_by_svs(
     return sp3_df
 
 
-def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, float]:
+def mapparm(old: tuple[float, float], new: tuple[float, float]) -> tuple[float, float]:
     """
     Evaluate the offset and scale factor needed to map values from the old range to the new range.
 
-    :param Tuple[float, float] old: The range of values to be mapped from.
-    :param Tuple[float, float] new: The range of values to be mapped to.
-    :return Tuple[float, float]: The offset and scale factor for the mapping.
+    :param tuple[float, float] old: The range of values to be mapped from.
+    :param tuple[float, float] new: The range of values to be mapped to.
+    :return tuple[float, float]: The offset and scale factor for the mapping.
     """
     old_range = old[1] - old[0]
     new_range = new[1] - new[0]
@@ -493,11 +507,109 @@ def mapparm(old: Tuple[float, float], new: Tuple[float, float]) -> Tuple[float, 
     return offset, scale_factor
 
 
+def _check_column_alignment_of_sp3_block(
+    date: str,
+    data: str,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
+    ignore_short_data_lines: bool = True,
+) -> None:
+    """
+    Check an individual SP3 block (one epoch), for line length and column alignment
+    :param str date: Epoch start date/time, typically beginning with '*'
+    :param str data: Entries for the given epoch (multiple rows, not yet split on '\n')
+    :param type[StrictMode] strict_mode: Determines response to issues found. Ignore or don't run check / warning /
+        raise exception. Defaults to WARN.
+    :param bool ignore_short_data_lines: don't fail the check due to data lines which are < 80 chars,
+        even though this is technically not to spec under SP3 version d. Defaults to True.
+    :raises ValueError: if validation doesn't pass, and strict_mode is set to STRICT_RAISE.
+    """
+    # NOTE: we currently only run these checks on individual SP3 blocks, not the entire file.
+
+    # Check epoch header (date) and data lines (P/V/EP/EV) are the right length, and that all unused columns (by SP3d
+    # spec) are in fact blank (contain spaces). If this is not true, it probably indicates column misalignment which
+    # will lead to incorrect parsing.
+
+    # First check epoch header line
+
+    if len(date) not in (_SP3_EPOCH_HEADER_WIDTH, _SP3_EPOCH_HEADER_WIDTH - 1):
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(
+                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
+            )
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
+            )
+    epoch_header_offset = 0  # TODO remove this after fixing our block splitting logic to not remove the '*'
+    if len(date) == _SP3_EPOCH_HEADER_WIDTH - 1:  # Cut short by our block splitting logic. Adjust indexes accordingly.
+        epoch_header_offset = -1
+    # Check for polluted unused columns (indicating misalignment)
+    for col_num in _SP3_UNUSED_COLUMN_INDEXES_EPOCH_HEADER:
+        if date[(col_num + epoch_header_offset) - 1] != " ":  # Unused column (accoding to spec) was not blank
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
+            elif strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
+
+    # Now check each data line for this epoch
+
+    for line in data.splitlines():
+        line_length = len(line)
+        if line_length == 0:
+            continue  # Skip completely empty lines
+
+        if line_length > _SP3_DATA_LINE_WIDTH:  # Fatal, regardless of strict mode setting.
+            raise ValueError(f"Overlong data line ({line_length} chars long): '{line}'")
+
+        elif line_length < _SP3_DATA_LINE_WIDTH:  # Not compliant, but likely not serious
+            if not ignore_short_data_lines:
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(
+                        f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
+                    )
+                elif strict_mode == StrictModes.STRICT_WARN:
+                    logger.warning(
+                        f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
+                    )
+
+        # Line length is to spec (or short & we're ignoring that).
+
+        # What record type is this line (POS, VEL, EP, or EV record)?
+        if line[0] == "P":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_POS_CLK
+        elif line[0] == "V":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_VELOCITY
+        elif line[:2] == "EP":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EP
+        elif line[:2] == "EV":
+            unused_column_indexes = _SP3_UNUSED_COLUMN_INDEXES_EV
+        else:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
+            elif strict_mode == StrictModes.STRICT_WARN:
+                logger.warning(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
+            # Can't check column alignment for this line as we don't know which record type it is.
+            continue
+
+        # For each 'unused' column we expect in a line of the determined record type, check column is actually empty.
+        for col_num in unused_column_indexes:
+            # Index out of range due to (non-compliant) short line. Skip testing further columns of this line.
+            if col_num > (line_length - 1):
+                break
+            if line[col_num - 1] != " ":  # 'Unused' column wasn't empty!
+                if strict_mode == StrictModes.STRICT_RAISE:
+                    raise ValueError(f"Misaligned data line (unused column did not contain a space): '{line}'")
+                elif strict_mode == StrictModes.STRICT_WARN:
+                    logger.warning(f"Misaligned data line (unused column did not contain a space): '{line}'")
+
+
 def _process_sp3_block(
     date: str,
     data: str,
-    widths: List[int] = _SP3_DEF_PV_WIDTH,
-    names: List[str] = _SP3_DEF_PV_NAME,
+    widths: list[int] = _SP3_DEF_PV_WIDTH,
+    names: list[str] = _SP3_DEF_PV_NAME,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
+    ignore_short_data_lines: bool = True,
 ) -> _pd.DataFrame:
     """Process a single block of SP3 data.
     NOTE: this process creates a temporary DataFrame for *every epoch* of SP3 data read in, complete with indexes, etc.
@@ -507,12 +619,20 @@ def _process_sp3_block(
 
     :param    str date: The date of the SP3 data block.
     :param    str data: The SP3 data block.
-    :param    List[int] widths: The widths of the columns in the SP3 data block.
-    :param    List[str] names: The names of the columns in the SP3 data block.
+    :param    list[int] widths: The widths of the columns in the SP3 data block.
+    :param    list[str] names: The names of the columns in the SP3 data block.
+    :param    type[StrictMode] strict_mode: (default: WARN) level of strictness with which to check for SP3d
+        format compliance. StrictModes.STRICT_RAISE will raise an exception if a format issue is detected (except
+        if ignore_short_data_lines is enabled). Set to StrictModes.STRICT_OFF to neither warn nor raise.
+    :param    bool ignore_short_data_lines: (default: True) when checking SP3d format compliance, don't warn/raise
+        about lines which are too short (eg 60 chars instead of 80).
     :return    _pd.DataFrame: The processed SP3 data as a DataFrame.
     """
-    if not data or len(data) == 0:
+    if not data or len(data) == 0:  # No data in this epoch
         return _pd.DataFrame()
+
+    _check_column_alignment_of_sp3_block(date, data, strict_mode, ignore_short_data_lines)
+
     epochs_dt = _pd.to_datetime(_pd.Series(date).str.slice(2, 21).values.astype(str), format=r"%Y %m %d %H %M %S")
     # NOTE: setting dtype_backend="pyarrow" currently breaks parsing.
     temp_sp3 = _pd.read_fwf(_io.StringIO(data), widths=widths, names=names)
@@ -562,7 +682,7 @@ def check_epoch_counts_for_discrepancies(
     draft_sp3_df: _pd.DataFrame,
     parsed_sp3_header: _pd.Series,
     sp3_path_or_bytes: Union[Path, str, bytes, None] = None,
-    continue_on_error: bool = True,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
 ):
     """
     Utility function for use during SP3 parsing. Checks for discrepancies in the number of epochs the SP3 header
@@ -576,6 +696,7 @@ def check_epoch_counts_for_discrepancies(
         later in the SP3 reading process.
     :param Union[Path, str, bytes, None] sp3_path_or_bytes: representation of the source SP3 file path or binary data,
         used to determine whether a filename can be found, and extract it if so.
+    :param type[StrictMode] strict_mode: (Default: WARN) indicates whether to raise, warn, or ignore issues found.
     :raises ValueError: if discrepancies found in number of epochs indicated by SP3 filename/header/contents
     """
     sp3_filename: Union[str, None] = None
@@ -589,15 +710,16 @@ def check_epoch_counts_for_discrepancies(
     header_epoch_count = int(parsed_sp3_header.HEAD.N_EPOCHS)
 
     if content_unique_epoch_count != header_epoch_count:
-        if not continue_on_error:
+        if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(
                 f"Header says there should be {header_epoch_count} epochs, however there are "
                 f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
             )
-        logger.warning(
-            f"WARNING: Header says there should be {header_epoch_count} epochs, however there are "
-            f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
-        )
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Header says there should be {header_epoch_count} epochs, however there are "
+                f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
+            )
 
     if sp3_filename is None or len(sp3_filename) == 0:
         logger.info("SP3 filename not available to check for epoch count discrepancies, continuing")
@@ -608,41 +730,45 @@ def check_epoch_counts_for_discrepancies(
     filename_derived_epoch_count: Union[int, None] = None
 
     # Try extracting properties from filename
-    try:
-        filename_props: dict = filenames.determine_properties_from_filename(sp3_filename)
-        filename_timespan_timedelta = filename_props.get("timespan")
-        if not isinstance(filename_timespan_timedelta, timedelta):
-            raise KeyError(f"Failed to get timespan from filename '{sp3_filename}'")
-
-        filename_sample_rate = filename_props.get("sampling_rate")
-        if not isinstance(filename_sample_rate, str):
-            raise KeyError(f"Failed to get sampling_rate from filename '{sp3_filename}'")
-
-        filename_sample_rate_timedelta = filenames.convert_nominal_span(filename_sample_rate)
-        filename_derived_epoch_count = int(
-            timedelta(
-                seconds=filename_timespan_timedelta.total_seconds() / filename_sample_rate_timedelta.total_seconds()
-            ).total_seconds()
-        )
-    except Exception as e:
-        logger.warning("Failed to extract filename properties to validate against header / contents: ", e)
+    filename_props: dict = filenames.determine_properties_from_filename(sp3_filename)
+    filename_timespan_timedelta = filename_props.get("timespan")
+    if not isinstance(filename_timespan_timedelta, timedelta):
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(f"Failed to get timespan from filename '{sp3_filename}'")
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(f"Failed to get timespan from filename '{sp3_filename}'")
         return
+
+    filename_sample_rate = filename_props.get("sampling_rate")
+    if not isinstance(filename_sample_rate, str):
+        if strict_mode == StrictModes.STRICT_RAISE:
+            raise ValueError(f"Failed to get sampling_rate from filename '{sp3_filename}'")
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(f"Failed to get sampling_rate from filename '{sp3_filename}'")
+        return
+
+    filename_sample_rate_timedelta = filenames.convert_nominal_span(filename_sample_rate)
+    filename_derived_epoch_count = int(
+        timedelta(
+            seconds=filename_timespan_timedelta.total_seconds() / filename_sample_rate_timedelta.total_seconds()
+        ).total_seconds()
+    )
 
     # Now for the actual checks.
     # Check if the header states a number of epochs equal to (or one less than) the filename period implies
     # Note filename is allowed to indicate a period one epoch longer than the data. E.g. 01D can end at 23:55
     # if in 5 min epochs.
     if header_epoch_count not in (filename_derived_epoch_count, filename_derived_epoch_count - 1):
-        if not continue_on_error:
+        if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(
                 f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
                 f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
             )
-        logger.warning(
-            f"WARNING: Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
-            f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
-        )
-    # All good, validation passed.
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
+                f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
+            )
 
 
 def check_sp3_version(sp3_bytes: bytes, strict_mode: type[StrictMode] = StrictModes.STRICT_WARN) -> bool:
@@ -675,7 +801,7 @@ def check_sp3_version(sp3_bytes: bytes, strict_mode: type[StrictMode] = StrictMo
             raise ValueError(
                 f"Support for SP3 file version '{version_char_as_string}' is untested. Refusing to read as strict mode is on."
             )
-        if strict_mode == StrictModes.STRICT_WARN:
+        elif strict_mode == StrictModes.STRICT_WARN:
             logger.warning(
                 f"Reading an older SP3 file version '{version_char_as_string}'. This may not parse correctly!"
             )
@@ -744,7 +870,7 @@ def validate_sp3_comment_lines(
                 raise ValueError(
                     f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that"
                 )
-            if strict_mode == StrictModes.STRICT_WARN:
+            elif strict_mode == StrictModes.STRICT_WARN:
                 logger.warning(f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that")
 
         if attempt_fixes:
@@ -761,7 +887,7 @@ def validate_sp3_comment_lines(
             if (not attempt_fixes) or fail_on_fixed_issues:
                 if strict_mode == StrictModes.STRICT_RAISE:
                     raise ValueError(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
-                if strict_mode == StrictModes.STRICT_WARN:
+                elif strict_mode == StrictModes.STRICT_WARN:
                     logger.warning(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
 
             if attempt_fixes:
@@ -782,7 +908,7 @@ def validate_sp3_comment_lines(
                     "SP3 comment lines must not exceed 80 chars (including lead-in). "
                     f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
                 )
-            if strict_mode == StrictModes.STRICT_WARN:
+            elif strict_mode == StrictModes.STRICT_WARN:
                 logger.warning(
                     "SP3 comment lines must not exceed 80 chars (including lead-in). "
                     f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
@@ -801,12 +927,15 @@ def read_sp3(
     pOnly: bool = True,
     nodata_to_nan: bool = True,
     drop_offline_sats: bool = False,
-    continue_on_ep_ev_encountered: bool = True,
-    check_header_vs_filename_vs_content_discrepancies: bool = False,
-    # The following two apply when the above is enabled:
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
+    # Optionally override above strictness for specific checks:
+    strictness_content_discrepancy: Optional[type[StrictMode]] = None,
+    strictness_duped_epochs: Optional[type[StrictMode]] = StrictModes.STRICT_WARN,
+    strictness_comments: Optional[type[StrictMode]] = None,
+    # Selectively turn off parts of strict mode (and don't raise exceptions in RAISE mode if these checks fail):
     skip_filename_in_discrepancy_check: bool = False,
-    continue_on_discrepancies: bool = False,
-    format_check_strictness: type[StrictMode] = StrictModes.STRICT_WARN,
+    skip_short_line_check: bool = True,
+    skip_version_check: bool = False,
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
@@ -816,27 +945,34 @@ def read_sp3(
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
     :param bool drop_offline_sats: If True, drops satellites from the DataFrame if they have ANY missing (nodata)
             values in the SP3 POS column.
-    :param bool continue_on_ep_ev_encountered: If True, logs a warning and continues if EV or EP rows are found in
-            the input SP3. These are currently unsupported by this function and will be ignored. Set to false to
-            raise a NotImplementedError instead.
-    :param bool check_header_vs_filename_vs_content_discrepancies: enable discrepancy checks on SP3 content vs
-        header vs filename.
-    :param bool skip_filename_in_discrepancy_check: If discrepancy checks enabled (see above), this allows skipping
-        the filename part of the checks, even if filename is available.
-    :param bool continue_on_discrepancies: (Only applicable with check_header_vs_filename_vs_content_discrepancies)
-        If True, logs a warning and continues if major discrepancies are detected between the SP3 content, SP3 header,
-        and SP3 filename (if available). Set to false to raise a ValueError instead.
-    :param type[StrictMode] format_check_strictness: (work in progress) defines the response to things that are not
-        quite to SP3 spec: whether to ignore, warn, or raise. Default: warn.
+    :param type[StrictMode] strict_mode: defines the response to things that are not quite to SP3 spec, or that we do
+        not fully support yet. Options are STRICT_RAISE, STRICT_WARN, or STRICT_OFF. Default: STRICT_WARN.
         Current functionality influenced by this includes:
-         - trying to read an SP3 version b or c file (not officially supported)
+         - trying to read an SP3 version b or c file (not officially supported).
          - SP3 comment specification voilations including < 4 comment lines, overlong comment lines, and incorrect
            start sequence i.e. line didn't begin exactly '/* '.
+         - inconsistency between SP3 filename, header, and content.
+         - SP3 lines too short (too long is always considered fatal), or misaligned (unused columns != ' ')
         In future it could also impact things like:
          - less than min number of SV entries
         This parameter could be renamed to enforce_strict_format_compliance once more extensive checks are added.
+    :param type[StrictMode] | None strictness_content_discrepancy: Optional override for strictness setting applied to
+        filename vs header vs content discrepancy checks. If not set strict_mode will be used. Regardless,
+        skip_filename_in_discrepancy_check will apply.
+    :param type[StrictMode] | None strictness_duped_epochs: (default: WARN and dedupe duplicate epochs) optional
+        override for how to handle duplicate epochs.
+    :param type[StrictMode] | None strictness_comments: (default: None) allows setting comment handling strictness
+        separately to overall strict_mode.
+
+    *** OPTIONS to selectively turn off parts of strict mode, regardless of above settings ***:
+    :param bool skip_filename_in_discrepancy_check: (default False) in strict_mode WARN or RAISE, if an SP3 filename is
+        available, it is checked for consistency with header and content. Turn this ON to skip that check.
+    :param bool skip_short_line_check: (default True) regardless of strict_mode above, indicates whether to
+        skip raising / warning about lines which are too short according to the SP3d spec.
+    :param bool skip_version_check: (default False) for testing purposes, optionally turn off the SP3 version check.
     :return _pd.DataFrame: The SP3 data as a DataFrame.
     :raises FileNotFoundError: If the SP3 file specified by sp3_path_or_bytes does not exist.
+    :raises ValueError: For various errors extracting expected data
     :raises Exception: For other errors reading SP3 file/bytes
 
     :note: The SP3 file format is a standard format used for representing precise satellite ephemeris and clock data.
@@ -850,7 +986,8 @@ def read_sp3(
 
     # Extract and check version. Raises exception for completely unsupported versions.
     # For version b and c behaviour depends on strict_mode setting
-    check_sp3_version(sp3_bytes=content, strict_mode=format_check_strictness)
+    if not skip_version_check:
+        check_sp3_version(sp3_bytes=content, strict_mode=strict_mode)
 
     # NOTE: Judging by the spec for SP3-d (2016), there should only be 2 '%i' lines in the file, and they should be
     # immediately followed by the mandatory 4+ comment lines.
@@ -862,25 +999,32 @@ def read_sp3(
     # These will be written to DataFrame.attrs["COMMENTS"] for easy access (but please use get_sp3_comments())
     comment_lines: list[str] = [line.decode("utf-8", errors="ignore").rstrip("\n") for line in comment_lines_bytes]
     # Validate comment lines (but don't make changes)
-    validate_sp3_comment_lines(comment_lines, strict_mode=format_check_strictness)
+    comment_strictness = strictness_comments if strictness_comments is not None else strict_mode
+    validate_sp3_comment_lines(comment_lines, strict_mode=comment_strictness)
     # NOTE: The comment lines should be contiguous (not fragmented throughout the file), and they should be immediately
     # followed by the first Epoch Header Record.
     # Note: this interpretation is based on page 16 of the SP3d spec, which says 'The comment lines should be read in
     # until the first Epoch Header Record (i.e. the first time tag line) is encountered.'
     # For robustness we strip comments THROUGHOUT the data before continuing parsing.
 
-    # Check no (non-comment) line is overlong (>80 chars not counting \n)
-    sp3_lines: List[str] = content.decode("utf-8", errors="ignore").split("\n")
-    overlong_lines_found: int = 0
-    for line in sp3_lines:
-        if len(line) > _SP3_MAX_WIDTH:
-            overlong_lines_found += 1
-            logger.error(f"Line of SP3 input exceeded max width: '{line}'")
+    if strict_mode != StrictModes.STRICT_OFF:
+        # Check no (non-comment) line is overlong (>80 chars not counting \n)
+        sp3_lines: list[str] = content.decode("utf-8", errors="ignore").split("\n")
+        overlong_lines_found: int = 0
+        for line in sp3_lines:
+            if len(line) > _SP3_MAX_WIDTH:
+                overlong_lines_found += 1
+                if overlong_lines_found <= 5:  # Avoid printing out the whole file
+                    warnings.warn(f"Line of SP3 input exceeded max width: '{line}'")
 
-    if overlong_lines_found > 0:
-        raise ValueError(
-            f"{overlong_lines_found} SP3 epoch data lines were overlong and very likely to parse incorrectly."
-        )
+        if overlong_lines_found > 0:
+            if strict_mode == StrictModes.STRICT_RAISE:
+                raise ValueError(
+                    f"{overlong_lines_found} SP3 epoch data lines were overlong and very likely to parse incorrectly."
+                )
+            warnings.warn(
+                f"{overlong_lines_found} SP3 epoch data lines were overlong and very likely to parse incorrectly."
+            )
 
     # NOTE: We just stripped all comment lines from the input data, so the %i records are now the last thing in the
     # header before the first Epoch Header Record.
@@ -894,15 +1038,24 @@ def read_sp3(
     fline = header[fline_b : fline_b + 24].strip().split(b"  ")
     base_xyzc = _np.asarray([float(fline[0])] * 3 + [float(fline[1])])  # exponent base
     date_lines, data_blocks = _split_sp3_content(content)
-    sp3_df = _pd.concat([_process_sp3_block(date, data) for date, data in zip(date_lines, data_blocks)])
+    sp3_df = _pd.concat(
+        [
+            _process_sp3_block(date, data, strict_mode=strict_mode, ignore_short_data_lines=skip_short_line_check)
+            for date, data in zip(date_lines, data_blocks)
+        ]
+    )
     sp3_df = _reformat_df(sp3_df)
 
     # P/V/EP/EV flag handling is currently incomplete. The current implementation truncates to the first letter,
     # so can't parse nor differenitate between EP and EV!
     if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
-        if not continue_on_ep_ev_encountered:
+        if strict_mode == StrictModes.STRICT_RAISE:
             raise NotImplementedError("EP and EV flag rows are currently not supported")
-        logger.warning("EP / EV flag rows encountered. These are not yet supported. Dropping them from DataFrame...")
+        elif strict_mode == StrictModes.STRICT_WARN:
+            logger.warning(
+                "EP / EV flag rows encountered. These are not yet supported. Dropping them from DataFrame. "
+                "Switch to strict mode RAISE to raise an exception instead"
+            )
         # Filter out EV / EP records, before we trip ourselves up with them. Technically this is redundant as in the
         # next section we extract P and V records, then drop the PV_FLAG level.
         sp3_df = sp3_df.loc[sp3_df.index.get_level_values("PV_FLAG") != "E"]
@@ -923,8 +1076,8 @@ def read_sp3(
                 f"Unique PV flag values seen: {pv_flag_values}"
             )
 
-        position_df = sp3_df.xs("P", level="PV_FLAG")
-        velocity_df = sp3_df.xs("V", level="PV_FLAG")
+        position_df = sp3_df.xs("P", level="PV_FLAG").sort_index()
+        velocity_df = sp3_df.xs("V", level="PV_FLAG").sort_index()
 
         # NOTE: care must now be taken to ensure this split and merge operation does not duplicate the FLAGS columns!
 
@@ -934,7 +1087,7 @@ def read_sp3(
         # not drop all the data to which the column previously applied!)
         # We drop from pos rather than vel, because vel is on the right hand side, so the layout resembles the
         # layout of an SP3 file better. Functionally, this shouldn't make a difference.
-        position_df = position_df.drop(axis=1, columns="FLAGS")
+        position_df = position_df.drop(axis=1, columns="FLAGS", level=0)  # TODO double check this level is right
 
         velocity_df.columns = SP3_VELOCITY_COLUMNS
         # NOTE from the docs: pandas.concat copies attrs only if all input datasets have the same attrs.
@@ -961,21 +1114,26 @@ def read_sp3(
         # Convert 999999* (which indicates nodata in the SP3 CLK column) to NaN
         sp3_clock_nodata_to_nan(sp3_df)
 
+    # Use override strictness setting if set, otherwise use general strictness setting.
+    discrepancy_strictness = (
+        strictness_content_discrepancy if strictness_content_discrepancy is not None else strict_mode
+    )
     # Are we running discrepancy checks?
-    if check_header_vs_filename_vs_content_discrepancies:
+    if discrepancy_strictness != StrictModes.STRICT_OFF:
         # SV count discrepancy check
 
         content_sv_count = get_unique_svs(sp3_df).size
         # count() gives total of non-NA/null (vs shape, which gets dims of whole structure):
         header_sv_count = sp3_df.attrs["HEADER"].SV_INFO.count()
         if header_sv_count != content_sv_count:
-            if not continue_on_discrepancies:
+            if discrepancy_strictness == StrictModes.STRICT_RAISE:
                 raise ValueError(
                     f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
                 )
-            logger.warning(
-                f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
-            )
+            if discrepancy_strictness == StrictModes.STRICT_WARN:
+                logger.warning(
+                    f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
+                )
 
         # Epoch count discrepancy check
 
@@ -985,19 +1143,35 @@ def read_sp3(
             draft_sp3_df=sp3_df,
             parsed_sp3_header=parsed_header,
             sp3_path_or_bytes=path_bytes_to_pass,
-            continue_on_error=continue_on_discrepancies,
+            strict_mode=discrepancy_strictness,
         )
 
-    # Check for duplicate epochs, dedupe and log warning
+    strictness_dupes = strictness_duped_epochs if strictness_duped_epochs is not None else strict_mode
+    # NOTE: duplicates break things, so we still remove them even in STRICT_OFF mode
+    # Check for duplicate epochs, dedupe and (depending on config) silence, log warning, or raise
     if sp3_df.index.has_duplicates:  # a literaly free check
         # This typically runs in sub ms time. Marks all but first instance as duped:
         duplicated_indexes = sp3_df.index.duplicated()
         first_dupe = sp3_df.index.get_level_values(0)[duplicated_indexes][0]
-        logging.warning(
-            f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
-            f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
-            f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
-        )
+        if strictness_dupes == StrictModes.STRICT_RAISE:
+            raise ValueError(
+                f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
+                f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
+                f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'."
+            )
+        elif strictness_dupes == StrictModes.STRICT_WARN:
+            logger.warning(
+                f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
+                f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
+                f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
+            )
+        else:
+            logger.info(
+                f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
+                f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
+                f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be "
+                "removed, keeping first. NOTE: Not logged as a warning as dupe / global strictness was STRICT_OFF"
+            )
         # Now dedupe them, keeping the first of any clashes:
         sp3_df = sp3_df[~sp3_df.index.duplicated(keep="first")]
 
@@ -1030,16 +1204,16 @@ def _reformat_df(sp3_df: _pd.DataFrame) -> _pd.DataFrame:
     return sp3_df
 
 
-def _split_sp3_content(content: bytes) -> Tuple[List[str], _np.ndarray]:
+def _split_sp3_content(content: bytes) -> tuple[list[str], _np.ndarray]:
     """
     Split the content of an SP3 file into date lines and data blocks.
 
     :param bytes content: The content of the SP3 file.
-    :return Tuple[List[str], _np.ndarray]: The date lines and data blocks.
+    :return tuple[list[str], _np.ndarray]: The date lines and data blocks.
     """
     pattern = _re.compile(r"^\*(.+)$", _re.MULTILINE)
     blocks = pattern.split(content[: content.rfind(b"EOF")].decode())
-    date_lines = blocks[1::2]
+    date_lines = blocks[1::2]  # TODO this seems to be leaving out the "*" that it splits on
     data_blocks = _np.asarray(blocks[2::2])
     return date_lines, data_blocks
 
@@ -1275,7 +1449,10 @@ def get_unique_epochs(sp3_df: _pd.DataFrame) -> _pd.Index:
 
 
 def gen_sp3_header(
-    sp3_df: _pd.DataFrame, output_comments: bool = False, strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE
+    sp3_df: _pd.DataFrame,
+    output_comments: bool = False,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE,
+    strictness_comments: Optional[type[StrictMode]] = None,
 ) -> str:
     """
     Generate the header for an SP3 file based on the given DataFrame.
@@ -1286,6 +1463,8 @@ def gen_sp3_header(
     :param bool output_comment: Write the SP3 comment lines stored with the DataFrame, into the output. Off by default.
     :param type[StrictMode] strict_mode: Level of strictness with which to enforce SP3 specification rules (e.g.
         comments must have a leading space). Options defined by StrictModes, default STRICT_RAISE.
+    :param type[StrictMode] | None strictness_comments: Optional override on the level of strictness to apply to SP3
+        comment checks. If not set, strict_mode is used.
     :return str: The generated SP3 header as a string.
     """
     if output_comments and not "COMMENTS" in sp3_df.attrs:
@@ -1399,10 +1578,12 @@ def gen_sp3_header(
     if output_comments:
         # Use actual comments from the DataFrame, not placeholders
         sp3_comment_lines = get_sp3_comments(sp3_df)
+
+        comment_strictness = strictness_comments if strictness_comments is not None else strict_mode
         # Inspect incoming comments for validity, but don't change them.
-        if (strict_mode != StrictModes.STRICT_OFF) and not validate_sp3_comment_lines(
+        if (comment_strictness != StrictModes.STRICT_OFF) and not validate_sp3_comment_lines(
             sp3_comment_lines,
-            strict_mode=strict_mode,
+            strict_mode=comment_strictness,
             attempt_fixes=False,
             fail_on_fixed_issues=True,
         ):
@@ -1660,10 +1841,10 @@ def write_sp3(sp3_df: _pd.DataFrame, path: str) -> None:
         file.write(content)
 
 
-def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
+def merge_attrs(df_list: list[_pd.DataFrame]) -> _pd.Series:
     """Merges attributes of a list of sp3 dataframes into a single set of attributes.
 
-    :param List[pd.DataFrame] df_list: The list of sp3 dataframes.
+    :param list[pd.DataFrame] df_list: The list of sp3 dataframes.
     :return _pd.Series: The merged attributes.
     """
     df = _pd.concat(list(map(lambda obj: obj.attrs["HEADER"], df_list)), axis=1)
@@ -1707,18 +1888,21 @@ def merge_attrs(df_list: List[_pd.DataFrame]) -> _pd.Series:
 
 
 def sp3merge(
-    sp3paths: List[str],
-    clkpaths: Union[List[str], None] = None,
+    sp3paths: list[str],
+    clkpaths: Union[list[str], None] = None,
     nodata_to_nan: bool = False,
+    strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
 ) -> _pd.DataFrame:
     """Reads in a list of sp3 files and optional list of clk files and merges them into a single sp3 file.
 
-    :param List[str] sp3paths: The list of paths to the sp3 files.
-    :param Union[List[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
+    :param list[str] sp3paths: The list of paths to the sp3 files.
+    :param Union[list[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
+    :param type[StrictMode] strict_mode: (default: WARN) Strictness with which to check the SP3 files read in, for
+        compliance with the SP3 d spec.
     :return _pd.DataFrame: The merged SP3 DataFrame.
     """
-    sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan) for sp3_file in sp3paths]
+    sp3_dfs = [read_sp3(sp3_file, nodata_to_nan=nodata_to_nan, strict_mode=strict_mode) for sp3_file in sp3paths]
     # Create a new attrs dictionary to be used for the output DataFrame
     merged_attrs = merge_attrs(sp3_dfs)
     # If attrs of two DataFrames are different, pd.concat will fail - set them to empty dict instead

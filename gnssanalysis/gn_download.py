@@ -28,7 +28,7 @@ import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Any, Generator, List, Literal, Optional, Tuple, Union
+from typing import Any, Generator, Literal, Optional, Union
 from urllib import request as _request
 from urllib.error import HTTPError as _HTTPError, URLError as _URLError
 import requests as _requests
@@ -373,7 +373,7 @@ def generate_long_filename(
     start_epoch: _datetime.datetime,  # YYYYDDDHHMM
     end_epoch: _datetime.datetime = None,
     timespan: _datetime.timedelta = None,  # LEN
-    solution_type: str = "",  # TTT
+    solution_type: str = "",  # TTT # TODO look at updating to formalised SolutionType
     sampling_rate: str = "15M",  # SMP
     version: str = "0",  # V
     project: str = "EXP",  # PPP, e.g. EXP, OPS
@@ -428,7 +428,7 @@ def generate_product_filename(
     version: str = "0",
     project: str = "OPS",
     content_type: str = None,
-) -> Tuple[str, GPSDate, _datetime.datetime]:
+) -> tuple[str, GPSDate, _datetime.datetime]:
     """Given a reference datetime and extention of file, generate the IGS filename and GPSDate obj for use in download
 
     :param _datetime.datetime reference_start: Datetime of the start period of interest
@@ -442,7 +442,7 @@ def generate_product_filename(
     :param str version: Version of the file, defaults to "0"
     :param str project: IGS project descriptor, defaults to "OPS"
     :param str content_type: IGS content specifier - if None set automatically based on file_ext, defaults to None
-    :return _Tuple[str, GPSDate, _datetime.datetime]: Tuple of filename str, GPSDate and datetime obj (based on shift)
+    :return tuple[str, GPSDate, _datetime.datetime]: Tuple of filename str, GPSDate and datetime obj (based on shift)
     """
     reference_start += _datetime.timedelta(hours=shift)
     if type(reference_start == _datetime.date):
@@ -469,12 +469,15 @@ def generate_product_filename(
         )
     else:
         if file_ext.lower() == "snx":
-            product_filename = f"igs{gps_date.yr[2:]}P{gps_date.gpswk}.snx.Z"
+            product_filename = f"igs{gps_date.year[2:]}P{gps_date.gps_week}.snx.Z"
         else:
             hour = f"{reference_start.hour:02}"
             prefix = "igs" if solution_type == "FIN" else "igr" if solution_type == "RAP" else "igu"
-            product_filename = f"{prefix}{gps_date.gpswkD}_{hour}.{file_ext}.Z" if solution_type == "ULT" else \
-                f"{prefix}{gps_date.gpswkD}.{file_ext}.Z"
+            product_filename = (
+                f"{prefix}{gps_date.gps_week_and_day_of_week}_{hour}.{file_ext}.Z"
+                if solution_type == "ULT"
+                else f"{prefix}{gps_date.gps_week_and_day_of_week}.{file_ext}.Z"
+            )
     return product_filename, gps_date, reference_start
 
 
@@ -532,7 +535,7 @@ def attempt_ftps_download(
     download_dir: _Path,
     ftps: _ftplib.FTP_TLS,
     filename: str,
-    type_of_file: str = None,
+    type_of_file: Optional[str] = None,
     if_file_present: str = "prompt_user",
 ) -> Union[_Path, None]:
     """Attempt download of file (filename) given the ftps client object (ftps) to chosen location (download_dir)
@@ -777,9 +780,9 @@ def download_file_from_cddis(
     max_retries: int = 3,
     decompress: bool = True,
     if_file_present: str = "prompt_user",
-    note_filetype: str = None,
     username: str = None,
     password: str = None,
+    note_filetype: Optional[str] = None,
 ) -> Union[_Path, None]:
     """ Download a single file from the CDDIS HTTPS archive using NASA Earthdata authentication
 
@@ -970,7 +973,7 @@ def download_product_from_cddis(
         # We do this because the weekly files are released/dated as Sunday of each GPS week.
         start_epoch_as_gps_date = GPSDate(start_epoch)
         # Get GPS week number *without* DayOfWeek suffix (therefore start of the GPS Week), then convert back to datetime
-        start_epoch = gps_week_day_to_datetime(f"{start_epoch_as_gps_date.gpswk}")
+        start_epoch = gps_week_day_to_datetime(f"{start_epoch_as_gps_date.gps_week}")
         timespan = _datetime.timedelta(days=7)
 
     logging.info("Attempting CDDIS Product download/s")
@@ -993,7 +996,7 @@ def download_product_from_cddis(
         project=project_type,
     )
     logging.debug(
-        f"Generated filename: {product_filename}, with GPS Date: {gps_date.gpswkD} and reference: {reference_start}"
+        f"Generated filename: {product_filename}, with GPS Date: {gps_date.gps_week_and_day_of_week} and reference: {reference_start}"
     )
 
     ensure_folders([download_dir])
@@ -1305,12 +1308,12 @@ def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = 
     return download_filepath
 
 
-def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> List[_Path]:
+def download_yaw_files(download_dir: _Path, if_file_present: str = "prompt_user") -> list[_Path]:
     """Download yaw rate / bias files needed to for Ginan's PEA
 
     :param _Path download_dir: Where to download files (local directory)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :return List[_Path]: Return list paths of downloaded files
+    :return list[_Path]: Return list paths of downloaded files
     """
     ensure_folders([download_dir])
     download_filepaths = []

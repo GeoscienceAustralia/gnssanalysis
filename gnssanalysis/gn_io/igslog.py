@@ -4,7 +4,7 @@ import logging
 import glob as _glob
 import re as _re
 from multiprocessing import Pool as _Pool
-from typing import Union, List, Tuple
+from typing import Optional, Union
 
 import numpy as _np
 import pandas as _pd
@@ -121,14 +121,28 @@ class LogVersionError(Exception):
     pass
 
 
-def find_recent_logs(logs_glob_path: str, rnx_glob_path: Union[str, None] = None) -> _pd.DataFrame:
+def find_recent_logs(
+    logs_glob_path: str,
+    rnx_glob_path: Union[str, None] = None,
+    raise_if_no_logs: bool = True,
+    raise_if_no_rnx: bool = True,
+) -> _pd.DataFrame:
     """Takes glob expression to create list of logs, parses names into site and date and selects most recent ones
 
     :param str logs_glob_path: A glob expression for log files, e.g. /data/station_logs_IGS/*/*.log
-    :param Union[str, None] rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
+    :param Union[str, None] rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to
+        None. A list of station names can also be passed, though this is not officially supported. #TODO clean up.
+    :param bool raise_if_no_logs: raise ValueError if logs glob finds no files. On by default.
+    :param bool raise_if_no_rnx: raise ValueError if rnx glob specified, but finds no files. On by default.
     :return _pd.DataFrame: Returns a dataframe containing information from all station logs processed
+    :raises ValueError: if the relevant flag is set, and a glob returns no files
     """
-    paths = _pd.Series(_glob.glob(pathname=logs_glob_path, recursive=False), name="PATH")
+    glob_results = _glob.glob(pathname=logs_glob_path, recursive=False)
+    if len(glob_results) == 0:
+        if raise_if_no_logs:
+            raise ValueError(f"No recent IGS site logs matched glob: '{logs_glob_path}'")
+        logging.error(f"No recent IGS site logs matched glob: '{logs_glob_path}'")
+    paths = _pd.Series(glob_results, name="PATH")
 
     logs_df = paths.str.extract(expand=True, pat=_REGEX_LOGNAME)
     logs_df = _pd.concat([logs_df[0].str.upper(), logs_df.iloc[:, 1:].astype(float).sum(axis=1), paths], axis=1)
@@ -136,11 +150,17 @@ def find_recent_logs(logs_glob_path: str, rnx_glob_path: Union[str, None] = None
     logs_df = logs_df[~logs_df.CODE.isna()].sort_values(["CODE", "DATE"])
     recent_logs_df = logs_df[~logs_df.CODE.duplicated(keep="last")]
     if rnx_glob_path is not None:
-        if isinstance(rnx_glob_path, list):
+        if isinstance(rnx_glob_path, list):  # If a station list was passed instead of a path?
+            if len(rnx_glob_path) == 0:
+                raise ValueError("(Station) list passed instead of rnx glob, but list was empty")
             rnx_stations = rnx_glob_path
         if isinstance(rnx_glob_path, str):
             rnx_files = sorted(_glob.glob(rnx_glob_path))
             assert len(rnx_files) != 0, f"No rnx files were found using '{rnx_glob_path}'"
+            if len(rnx_files) == 0:
+                if raise_if_no_rnx:
+                    raise ValueError(f"No RNX files found using glob: '{rnx_glob_path}'")
+                logger.error(f"No RNX files found using glob: '{rnx_glob_path}'")
             rnx_stations = _pd.Series(rnx_files).str.extract(r"(\w{4})[^\/]+$", expand=False).to_list()
         return recent_logs_df[recent_logs_df.CODE.isin(rnx_stations).values]
     return recent_logs_df
@@ -169,7 +189,7 @@ def determine_log_version(data: bytes) -> str:
 
 def extract_id_block(
     data: bytes, file_path: str, file_code: str, version: Union[str, None] = None
-) -> Union[List[str], _np.ndarray]:
+) -> Union[list[str], _np.ndarray]:
     """Extract the site ID block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
@@ -229,12 +249,12 @@ def extract_location_block(data: bytes, file_path: str, version: Union[str, None
     return location_block
 
 
-def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.ndarray]:
+def extract_receiver_block(data: bytes, file_path: str) -> Union[list[tuple[bytes]], _np.ndarray]:
     """Extract the location block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :return List[Tuple[bytes]] or _np.ndarray: The receiver block of the data. Each list element specifies an receiver.
+    :return list[tuple[bytes]] or _np.ndarray: The receiver block of the data. Each list element specifies an receiver.
         If regex doesn't match, an empty numpy NDArray is returned instead.
     """
     receiver_block = _REGEX_REC.findall(data)
@@ -244,12 +264,12 @@ def extract_receiver_block(data: bytes, file_path: str) -> Union[List[Tuple[byte
     return receiver_block
 
 
-def extract_antenna_block(data: bytes, file_path: str) -> Union[List[Tuple[bytes]], _np.ndarray]:
+def extract_antenna_block(data: bytes, file_path: str) -> Union[list[tuple[bytes]], _np.ndarray]:
     """Extract the antenna block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
-    :return List[Tuple[bytes]] or _np.ndarray: The antenna block of the data. Each list element specifies an antenna.
+    :return list[tuple[bytes]] or _np.ndarray: The antenna block of the data. Each list element specifies an antenna.
         If regex doesn't match, an empty numpy NDArray is returned instead.
     """
     antenna_block = _REGEX_ANT.findall(data)
@@ -397,26 +417,41 @@ def translate_series(series: _pd.Series, translation: dict) -> _pd.Series:
 
 def gather_metadata(
     logs_glob_path: str = "/data/station_logs/station_logs_IGS/*/*.log", rnx_glob_path: str = None, num_threads: int = 1
-) -> List[_pd.DataFrame]:
+) -> list[_pd.DataFrame]:
     """Parses log files found with glob expressions into pd.DataFrames
 
     :param str logs_glob_path: A glob expression for log files, defaults to "/data/station_logs_IGS/*/*.log"
     :param str rnx_glob_path: A glob expression for rnx files, e.g. /data/pea/exs/data/*.rnx, defaults to None
     :param int num_threads: Number of threads to run, defaults to 1
-    :return List[_pd.DataFrame]: List of DataFrames with [ID, Receiver, Antenna] data
+    :return list[_pd.DataFrame]: List of DataFrames with [ID, Receiver, Antenna] data
     """
     parsed_filenames = find_recent_logs(logs_glob_path=logs_glob_path, rnx_glob_path=rnx_glob_path).values
 
     total = parsed_filenames.shape[0]
+    if total == 0:
+        raise ValueError("Failed to find recent IGS log files")
+
     if num_threads == 1:
         gather = []
         for file in parsed_filenames:
-            gather.append(parse_igs_log_file(file))
+            parsed_log = parse_igs_log_file(file)
+            if parsed_log is None:
+                logger.error(f"IGS log failed to parse (may be unsupported version): '{str(file)}'")
+            else:
+                gather.append(parsed_log)
     else:
         with _Pool(processes=num_threads) as pool:
             gather = list(pool.imap_unordered(parse_igs_log_file, parsed_filenames))
+            if None in gather:
+                logger.error(
+                    "(Multithreaded mode) One or more IGS log files in the following list did not parse (e.g. "
+                    f"version unsupported): {str(parsed_filenames)}"
+                )
+                gather = [i for i in gather if i is not None]
 
-    gather_raw = _np.concatenate(gather)
+    if len(gather) == 0:
+        raise ValueError("No IGS log data parsed from log files!")
+    gather_raw = _np.concatenate(gather)  # type: ignore (None removal conditional on presence, confuses linter)
 
     rec_ant_mask = gather_raw[:, 0] != 0  # id_loc = 0, rec = 1, ant = 2
     gather_id_loc = gather_raw[~rec_ant_mask][:, 1:]
@@ -702,7 +737,7 @@ def write_meta_gather_master(
     frame_snx_path: str,
     frame_soln_path: str,
     frame_psd_path: str,
-    frame_datetime: _np.datetime64 = None,
+    frame_datetime: Optional[_np.datetime64] = None,
     out_path: str = "/data/meta_gather.snx",
     num_threads: int = 1,
 ) -> None:
