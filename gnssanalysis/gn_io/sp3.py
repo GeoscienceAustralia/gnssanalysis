@@ -1330,6 +1330,9 @@ def clean_sp3_orb(sp3_df: _pd.DataFrame, use_offline_sat_removal: bool) -> _pd.D
            nodata position values.
     :return _pd.DataFrame: A cleaned version of the SP3 DataFrame
     """
+    if sp3_df.size == 0:
+        raise ValueError("Bad input data: can't clean an empty SP3 DataFrame")
+
     # Trim DataFrame to position estimate columns
     sp3_df_updated: _pd.DataFrame = sp3_df.filter(items=[("EST", "X"), ("EST", "Y"), ("EST", "Z")])
 
@@ -1338,6 +1341,8 @@ def clean_sp3_orb(sp3_df: _pd.DataFrame, use_offline_sat_removal: bool) -> _pd.D
 
     # Trim the leading and ending epochs that are empty (i.e. all values are NaN) to avoid dropping all data
     valid_rows = sp3_df_updated.dropna(how="all")
+    if valid_rows.size == 0:
+        raise ValueError("Bad input data: no rows left in SP3 DataFrame after dropping NaN data")
     first_valid_epoch = valid_rows.index[0][0]
     last_valid_epoch = valid_rows.index[-1][0]
     sp3_df_updated = sp3_df_updated.loc[first_valid_epoch:last_valid_epoch]
