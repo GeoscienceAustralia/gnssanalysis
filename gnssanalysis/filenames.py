@@ -743,6 +743,8 @@ def determine_sp3_name_props(
             # TODO old code, ensure this still works:
             name_props["analysis_center"] = sp3_df.attrs["HEADER"].HEAD.AC[0:3].upper().ljust(3, "X")
         else:
+            if "analysis_center" not in props_from_existing_name:
+                raise ValueError("analysis_centre not in extracted properties from name!")
             name_props["analysis_center"] = props_from_existing_name["analysis_center"]
 
         # SP3 files always ORB
