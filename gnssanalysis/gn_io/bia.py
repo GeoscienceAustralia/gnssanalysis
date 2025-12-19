@@ -75,7 +75,7 @@ def bias_B_to_cB(bia_df: _pd.DataFrame) -> _pd.DataFrame:
 
 
 def get_IF_pairs(
-    IF_bias_1: _pd.DataFrame, IF_bias_2: __pd.DataFrame | None = None, force_C_L: Literal["C", "L", False] = False
+    IF_bias_1: _pd.DataFrame, IF_bias_2: _pd.DataFrame | None = None, force_C_L: Literal["C", "L", False] = False
 ) -> _pd.Index:
     """Analyses the provided bias DataFrames (bias_B_to_cB output) and provides index with signal pairs to use for IF bias summation.
 

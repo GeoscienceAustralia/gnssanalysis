@@ -5,7 +5,7 @@ import pathlib
 
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections.abc import Callable, Iterable
-from typing import Callable, Iterable
+from typing import Callable, Iterable, TextIO
 from io import BytesIO as _BytesIO
 from urllib import request as _rqs
 

@@ -4,6 +4,7 @@ import logging
 import glob as _glob
 import re as _re
 from multiprocessing import Pool as _Pool
+from typing import Optional
 
 import numpy as _np
 import pandas as _pd
