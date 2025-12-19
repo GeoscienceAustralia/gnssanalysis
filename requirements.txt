@@ -10,6 +10,7 @@ plotly
 pyfakefs
 pymongo
 pytest
+requests
 scipy
 tqdm
 unlzw3
