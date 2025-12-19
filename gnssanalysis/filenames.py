@@ -7,7 +7,7 @@ import traceback
 
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections import Iterable
-from typing import Iterable, Literal, Mapping, Any, Optional, Union, overload
+from typing import Iterable, Literal, Mapping, Any, Optional, overload
 import warnings
 
 import click
@@ -262,7 +262,7 @@ def generate_IGS_long_filename(
     start_epoch: datetime.datetime,
     *,
     end_epoch: datetime.datetime,
-    timespan: Union[datetime.timedelta, str, None] = ...,
+    timespan: datetime.timedelta | str | None = ...,
     solution_type: str = ...,
     sampling_rate: str = ...,
     sampling_rate_seconds: Optional[int] = ...,
@@ -280,7 +280,7 @@ def generate_IGS_long_filename(
     start_epoch: datetime.datetime,
     *,
     end_epoch: None = ...,
-    timespan: Union[datetime.timedelta, str],
+    timespan: datetime.timedelta | str,
     solution_type: str = ...,
     sampling_rate: str = ...,
     sampling_rate_seconds: Optional[int] = ...,
@@ -297,7 +297,7 @@ def generate_IGS_long_filename(
     start_epoch: datetime.datetime,
     *,
     end_epoch: Optional[datetime.datetime] = None,
-    timespan: Union[datetime.timedelta, str, None] = None,
+    timespan: datetime.timedelta | str | None = None,
     solution_type: str = "",  # TTT
     sampling_rate: str = "15M",  # SMP
     sampling_rate_seconds: Optional[int] = None,  # Not used here, but passed for structural consistency
@@ -321,7 +321,7 @@ def generate_IGS_long_filename(
     :param str format_type: File extension
     :param datetime.datetime start_epoch: datetime representing initial epoch in file
     :param Optional[datetime.datetime] end_epoch: datetime representing final epoch in file, defaults to None
-    :param timespan: Union[datetime.timedelta, str, None] timespan: timedelta representing time range of data in file,
+    :param timespan: datetime.timedelta | str | None timespan: timedelta representing time range of data in file,
         defaults to None
     :param str solution_type: Three letter solution type identifier, defaults to ""
     :param str sampling_rate: Three letter sampling rate string, defaults to "15M"
@@ -437,7 +437,7 @@ def nominal_span_string(span_seconds: float) -> str:
 def convert_nominal_span(
     nominal_span: str,
     non_timed_span_output: Literal["none", "timedelta"] = "timedelta",
-) -> Union[datetime.timedelta, None]:
+) -> datetime.timedelta | None:
     """Effectively invert :func: `filenames.generate_nominal_span`, turn a span string into a timedelta
 
     :param str nominal_span: Three-character span string in IGS format (e.g. 01D, 15M, 01L ?)
@@ -729,7 +729,7 @@ def determine_sp3_name_props(
 
     # Next, properties from the filename:
     try:
-        props_from_existing_name: Union[dict, None] = determine_properties_from_filename(
+        props_from_existing_name: dict | None = determine_properties_from_filename(
             file_path.name, strict_mode=strict_mode
         )
         logging.debug(f"props_from_existing_name =\n{str(props_from_existing_name)}")

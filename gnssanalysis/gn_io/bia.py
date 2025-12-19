@@ -1,7 +1,6 @@
 import logging as _logging
 from io import BytesIO as _BytesIO
 from pathlib import Path as _Path
-from typing import Union as _Union
 
 import pandas as _pd
 from typing_extensions import Literal
@@ -12,10 +11,10 @@ from .common import path2bytes
 from .sinex import _snx_extract_blk
 
 
-def read_bia(path: _Union[_Path, str, bytes]) -> _pd.DataFrame:
+def read_bia(path: _Path | str | bytes) -> _pd.DataFrame:
     """Reads (Parses already read bytes) .bia/.bsx file at the path provided into a pandas DataFrame
 
-    :param _Union[_Path, str] path: path to bia/bsx file to read, could also be a bytes object that path2bytes will pass through
+    :param _Path | str | bytes path: path to bia/bsx file to read, could also be a bytes object that path2bytes will pass through
     :return _pd.DataFrame: bia_df DataFrame with bias values
     """
     bia_bytes = path2bytes(path)
@@ -76,12 +75,12 @@ def bias_B_to_cB(bia_df: _pd.DataFrame) -> _pd.DataFrame:
 
 
 def get_IF_pairs(
-    IF_bias_1: _pd.DataFrame, IF_bias_2: _Union[_pd.DataFrame, None] = None, force_C_L: Literal["C", "L", False] = False
+    IF_bias_1: _pd.DataFrame, IF_bias_2: __pd.DataFrame | None = None, force_C_L: Literal["C", "L", False] = False
 ) -> _pd.Index:
     """Analyses the provided bias DataFrames (bias_B_to_cB output) and provides index with signal pairs to use for IF bias summation.
 
     :param _pd.DataFrame IF_bias_1: bias_B_to_cB output DataFrame
-    :param _Union[_pd.DataFrame, None] IF_bias_2: bias_B_to_cB output DataFrame 2 if two files are used, e.g. for comparison. Ensures common indices, defaults to None
+    :param __pd.DataFrame | None IF_bias_2: bias_B_to_cB output DataFrame 2 if two files are used, e.g. for comparison. Ensures common indices, defaults to None
     :param Literal[C, L, False] force_C_L: whether to force Code (C) signals or Phase (C), defaults to False
     :return _pd.Index: index with selected signal pairs only
     """
@@ -98,12 +97,12 @@ def get_IF_pairs(
 
 
 def bias_to_IFbias(
-    bia_df1: _pd.DataFrame, bia_df2: _Union[_pd.DataFrame, None] = None, force_C_L: Literal["C", "L", False] = False
+    bia_df1: _pd.DataFrame, bia_df2: _pd.DataFrame | None = None, force_C_L: Literal["C", "L", False] = False
 ) -> _pd.Series:
     """Converts bias DataFrame (output of read_bia) or DataFrames to a set of IF bias DataFrames to use for clk values correction
 
     :param _pd.DataFrame bia_df1: a DataFrame from read_bia function
-    :param _Union[_pd.DataFrame, None] bia_df2: a second DataFrame from read_bia function, defaults to None
+    :param __pd.DataFrame | None bia_df2: a second DataFrame from read_bia function, defaults to None
     :param Literal[C, L, False] force_C_L: whether to force Code (C) signals or Phase (C), defaults to False
     :return _pd.Series: a pandas series with IF bias values computed via combination of a pair of signals
     """

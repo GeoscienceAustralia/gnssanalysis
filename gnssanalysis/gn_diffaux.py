@@ -1,6 +1,5 @@
 import logging as _logging
 from pathlib import Path as _Path
-from typing import Literal, Union
 
 import numpy as _np
 import pandas as _pd
@@ -24,7 +23,7 @@ def _valvar2diffstd(valvar1, valvar2, std_coeff=1):
     return df_combo
 
 
-def _diff2msg(diff, tol=None, dt_as_gpsweek: Union[bool, None] = False):
+def _diff2msg(diff, tol=None, dt_as_gpsweek: bool | None = False):
     _pd.set_option("display.max_colwidth", 10000)
     from_valvar = _np.all(_np.isin(["DIFF", "STD"], diff.columns.get_level_values(0).values))
 
@@ -103,13 +102,13 @@ def _diff2msg(diff, tol=None, dt_as_gpsweek: Union[bool, None] = False):
     return msg
 
 
-def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, None] = None, plot: bool = False) -> int:
+def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: float | None = None, plot: bool = False) -> int:
     """_summary_
 
     Args:
         diffstd (_pd.DataFrame): a difference DataFrame to assess
         log_lvl (int): logging level of the produced messages
-        tol (_Union[float, None], optional): Either a float threshold or None to use the present STD values. Defaults to None.
+        tol (float, optional): Either a float threshold or None to use the present STD values. Defaults to None.
         plot (bool, optional): So you want a simple plot to terminal? Defaults to False.
 
     Returns:
@@ -142,13 +141,13 @@ def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, None
     return 0
 
 
-def _compare_residuals(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, None] = None):
+def _compare_residuals(diffstd: _pd.DataFrame, log_lvl: int, tol: float | None = None):
     """Compares extracted POSTFIT residuals from the trace file and generates a comprehensive statistics on the present differences. Alternatively logs an OK message.
 
     Args:
         diffstd (_pd.DataFrame): a difference DataFrame to assess
         log_lvl (int): logging level of the produced messages
-        tol (_Union[float, None], optional): Either a float threshold or None to use the present STD values. Defaults to None.
+        tol (float, optional): Either a float threshold or None to use the present STD values. Defaults to None.
 
     Returns:
         int: status (0 means differences within threshold)
@@ -310,8 +309,8 @@ def compare_clk(
     clk_a: _pd.DataFrame,
     clk_b: _pd.DataFrame,
     norm_types: list[str] = ["daily", "epoch"],
-    ext_dt: Union[_np.ndarray, _pd.Index, None] = None,
-    ext_svs: Union[_np.ndarray, _pd.Index, None] = None,
+    ext_dt: _np.ndarray | _pd.Index | None = None,
+    ext_svs: _np.ndarray | _pd.Index | None = None,
 ) -> _pd.DataFrame:
     """
     DEPRECATED Please use diff_clk() instead.
@@ -333,8 +332,8 @@ def diff_clk(
     clk_baseline: _pd.DataFrame,
     clk_test: _pd.DataFrame,
     norm_types: list = ["daily", "epoch"],
-    ext_dt: Union[_np.ndarray, _pd.Index, None] = None,
-    ext_svs: Union[_np.ndarray, _pd.Index, None] = None,
+    ext_dt: _np.ndarray | _pd.Index | None = None,
+    ext_svs: _np.ndarray | _pd.Index | None = None,
 ) -> _pd.DataFrame:
     """Compares clock dataframes, removed common mode.
 
@@ -343,8 +342,8 @@ def diff_clk(
     :param _pd.DataFrame clk_baseline: clk dataframe 2 / b
     :param _pd.DataFrame clk_test: clk dataframe 1 / a
     :param list[str] norm_types: normalization to apply, defaults to ["daily", "epoch"]
-    :param _Union[_np.ndarray, _pd.Index, None] ext_dt: external datetime values to filter the clk dfs, defaults to None
-    :param _Union[_np.ndarray, _pd.Index, None] ext_svs: external satellites to filter the clk dfs, defaults to None
+    :param _np.ndarray | _pd.Index | None ext_dt: external datetime values to filter the clk dfs, defaults to None
+    :param _np.ndarray | _pd.Index | None ext_svs: external satellites to filter the clk dfs, defaults to None
     :raises ValueError: if no common epochs between clk_a and external datetime were found
     :raises ValueError: if no common epochs between files were found
     :return _pd.DataFrame: clk differences in the same units as input clk dfs (usually seconds)
@@ -412,12 +411,12 @@ def diff_clk(
 def sisre(
     sp3_a: _pd.DataFrame,
     sp3_b: _pd.DataFrame,
-    clk_a: Union[_pd.DataFrame, None] = None,
-    clk_b: Union[_pd.DataFrame, None] = None,
+    clk_a: _pd.DataFrame | None = None,
+    clk_b: _pd.DataFrame | None = None,
     norm_types: list[str] = ["daily", "epoch"],
     output_mode: str = "rms",
     clean: bool = True,
-    cutoff: Union[int, float, None] = None,
+    cutoff: int | float | None = None,
     use_rms: bool = False,
     hlm_mode=None,
     plot: bool = False,
@@ -450,12 +449,12 @@ def sisre(
 def calculate_sisre(
     sp3_baseline: _pd.DataFrame,
     sp3_test: _pd.DataFrame,
-    clk_baseline: Union[_pd.DataFrame, None] = None,  # Clk b
-    clk_test: Union[_pd.DataFrame, None] = None,  # Clk a
+    clk_baseline: _pd.DataFrame | None = None,  # Clk b
+    clk_test: _pd.DataFrame | None = None,  # Clk a
     norm_types: list[str] = ["daily", "epoch"],
     output_mode: str = "rms",
     clean: bool = True,
-    cutoff: Union[int, float, None] = None,
+    cutoff: int | float | None = None,
     use_rms: bool = False,
     hlm_mode=None,
     plot: bool = False,

@@ -8,7 +8,6 @@ import zlib as _zlib
 from io import BytesIO as _BytesIO
 from typing import Any as _Any
 from typing import Iterable as _Iterable
-from typing import Union as _Union
 
 import numpy as _np
 import pandas as _pd
@@ -59,7 +58,7 @@ def _get_snx_header(path_or_bytes):
 
 # This is in tension with the existing above function but is what was used by
 # the filenames functionality and so is ported here for now.
-def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> dict[str, _Any]:
+def get_header_dict(file_path: str | bytes | _os.PathLike) -> dict[str, _Any]:
     """Extract the data contained in the header of a sinex file
 
     The extracted data is returned in a dictionary containing:
@@ -72,7 +71,7 @@ def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> dict[str, _A
      - "estimate_count": str
      - "contents": list[str]
 
-    :param _Union[str, bytes, _os.PathLike] file_path: sinex file from which to read header
+    :param str | bytes | _os.PathLike file_path: sinex file from which to read header
     :return dict[str, _Any]: dictionary containing the properties extracted from the header
     """
     with open(file_path, mode="r", encoding="utf-8") as f:
@@ -105,10 +104,10 @@ def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> dict[str, _A
             return {}
 
 
-def get_available_blocks(file_path: _Union[str, bytes, _os.PathLike]) -> list[str]:
+def get_available_blocks(file_path: str | bytes | _os.PathLike) -> list[str]:
     """Return the blocks available within a sinex file
 
-    :param _Union[str, bytes, _os.PathLike] file_path: sinex file to read for blocks
+    :param str | bytes | _os.PathLike file_path: sinex file to read for blocks
     :return list[str]: list of names of blocks available in sinex file
     """
     with open(file_path, "r", encoding="utf-8") as f:
@@ -157,10 +156,10 @@ def all_notnan(iterable: _Iterable) -> bool:
 
 
 # TODO: Generalise to handle a path or bytes object?
-def read_sinex_comment_block(filename: _Union[str, bytes, _os.PathLike]) -> list[str]:
+def read_sinex_comment_block(filename: str | bytes | _os.PathLike) -> list[str]:
     """Extract comments from a provided sinex file
 
-    :param Union[str, bytes, os.PathLike] filename: path to sinex file
+    :param str | bytes | os.PathLike filename: path to sinex file
     :return list[str]: list containing all lines in sinex comment block
     """
     with open(filename, "r", encoding="utf-8") as f:
@@ -275,7 +274,7 @@ def extract_mincon_from_comments(comment_block: _Iterable[str]) -> dict[str, _An
 
 
 # TODO: Generalise to handle a path or bytes object?
-def read_sinex_mincon(filename: _Union[str, bytes, _os.PathLike]) -> dict[str, _Any]:
+def read_sinex_mincon(filename: str | bytes | _os.PathLike) -> dict[str, _Any]:
     """Extract PEA-style minimum constraints data from sinex file
 
     PEA can place information about the minimum constraint solution applied into a sinex
@@ -293,7 +292,7 @@ def read_sinex_mincon(filename: _Union[str, bytes, _os.PathLike]) -> dict[str, _
      - "unused": list[str], list of unused stations
     The entries will only be included if complete data is extracted for them.
 
-    :param _Union[str, bytes, _os.PathLike] filename: sinex file from which to read minimum constraints data
+    :param str | bytes | _os.PathLike filename: sinex file from which to read minimum constraints data
     :return dict[str, _Any]: dictionary containing extracted minimum constraints information
     """
     return extract_mincon_from_comments(read_sinex_comment_block(filename))
@@ -321,7 +320,7 @@ def snx_soln_int_to_str(soln: _pd.Series, nan_as_dash=True) -> _pd.Series:
     return soln_str
 
 
-def _get_valid_stypes(stypes: _Union[list[str], set[str]]) -> list[str]:
+def _get_valid_stypes(stypes: list[str] | set[str]) -> list[str]:
     """Returns only stypes in allowed list
     Fastest if stypes size is small"""
     allowed_stypes = ["EST", "APR", "NEQ"]
@@ -475,14 +474,14 @@ def _get_snx_matrix(path_or_bytes, stypes=("APR", "EST"), verbose=True, snx_head
     return output, stypes_content
 
 
-def snxdf2xyzdf(snx_df: _pd.DataFrame, unstack: bool = True, keep_all_soln: _Union[bool, None] = None) -> _pd.DataFrame:
+def snxdf2xyzdf(snx_df: _pd.DataFrame, unstack: bool = True, keep_all_soln: bool | None = None) -> _pd.DataFrame:
     """Provides simple functionality to preprocess different variations of the
     sinex vector dataframe for further processing and analysis.
 
     Args:
         snxdf (_pd.DataFrame): 'raw' vector dataframe (see _get_snx_vector's format)
         unstack (bool, optional): whether to unstack TYPE to columns (STAX, STAY and STAZ) or keep as in sinex file. Defaults to True.
-        keep_all_soln (_Union, optional): drops all the extra solutions if False, leaving just last one (max SOLN for each parameter). If None - keeps all solutions but drops the SOLN index TODO potentially remove the None option. Defaults to None.
+        keep_all_soln (bool, optional): drops all the extra solutions if False, leaving just last one (max SOLN for each parameter). If None - keeps all solutions but drops the SOLN index TODO potentially remove the None option. Defaults to None.
 
     Returns:
         _pd.DataFrame: a formatted sinex dataframe filtered by STAX, STAY and STAZ types, optionally unstacked by TYPE
@@ -512,21 +511,21 @@ def snxdf2xyzdf(snx_df: _pd.DataFrame, unstack: bool = True, keep_all_soln: _Uni
 
 
 def _get_snx_vector(
-    path_or_bytes: _Union[str, bytes],
-    stypes: _Union[set[str], list[str]] = set(["EST", "APR"]),
+    path_or_bytes: str | bytes,
+    stypes: set[str] | list[str] = set(["EST", "APR"]),
     format: str = "long",
-    keep_all_soln: _Union[bool, None] = None,
+    keep_all_soln: bool | None = None,
     verbose: bool = True,
     recenter_epochs: bool = False,
     snx_header: dict = {},
-) -> _Union[_pd.DataFrame, None]:
+) -> _pd.DataFrame | None:
     """Main function of reading vector data from sinex file. Doesn't support sinex files from EMR AC as APRIORI and ESTIMATE indices are not in sync (APRIORI params might not even exist in he ESTIMATE block). While will parse the file, the alignment of EST and APR values might be wrong. No easy solution was found for the issue thus unsupported for now. TODO parse header and add a warning if EMR agency
 
     Args:
-        path_or_bytes (_Union): _description_
+        path_or_bytes (str | bytes): _description_ TODO
         stypes (tuple, optional): Specifies which blocks to extract: APRIORI, ESTIMATE, NORMAL_EQUATION. Could contain any from "APR","EST" and "NEQ". Defaults to ("EST", "APR").
         format (str, optional): format of the output dataframe: one of 'raw', 'wide' and 'long. Defaults to "long". TODO. shall the keys be all-caps and how about creating a pandas subclass (bad idea?) or similar
-        keep_all_soln (_Union, optional): whether to keep all solutions of each parameter or just keep the one with max SOLN. If None then keeps all but drops SOLN index. Defaults to None. TODO do we need None option?
+        keep_all_soln (bool, optional): whether to keep all solutions of each parameter or just keep the one with max SOLN. If None then keeps all but drops SOLN index. Defaults to None. TODO do we need None option?
         verbose (bool, optional): logs extra information which might be useful for debugging. Defaults to True.
         recenter_epochs (bool, optional): overrides the read-in time values with _gn_const.SEC_IN_DAY // 2 so same-day values from different sinex files will align as the actual timestamps could be close to 43200 but not exactly. Defaults to False.
 

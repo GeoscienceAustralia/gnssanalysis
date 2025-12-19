@@ -12,7 +12,6 @@ yaw
 import concurrent as _concurrent
 from contextlib import contextmanager as _contextmanager
 import datetime as _datetime
-from itertools import repeat as _repeat
 import logging
 import os as _os
 from copy import deepcopy as _deepcopy
@@ -28,9 +27,9 @@ import hatanaka as _hatanaka
 import ftplib as _ftplib
 from ftplib import FTP_TLS as _FTP_TLS
 from pathlib import Path as _Path
-from typing import Any, Generator, Literal, Optional, Union, Tuple, List
+from typing import Any, Generator, Literal, Optional, Tuple, List
 from urllib import request as _request
-from urllib.error import HTTPError as _HTTPError, URLError as _URLError
+from urllib.error import HTTPError as _HTTPError
 import requests as _requests
 import warnings as _warnings
 import netrc as _netrc
@@ -92,7 +91,6 @@ class TransferCallback:
                 f"({(self._total_transferred / target) * 100:.2f}%)."
             )
             _sys.stdout.flush()
-
 
 
 def get_earthdata_credentials(username: str = None, password: str = None) -> Tuple[str, str]:
@@ -188,7 +186,7 @@ def request_metadata(url: str, max_retries: int = 5, metadata_header: str = "x-a
 
 
 def download_url(
-    url: str, destfile: Union[str, _os.PathLike], max_retries: int = 5, raise_on_failure: bool = False
+    url: str, destfile: str | _os.PathLike, max_retries: int = 5, raise_on_failure: bool = False
 ) -> Optional[_Path]:
     """
     TODO finish docstring
@@ -481,9 +479,7 @@ def generate_product_filename(
     return product_filename, gps_date, reference_start
 
 
-def check_whether_to_download(
-    filename: str, download_dir: _Path, if_file_present: str = "prompt_user"
-) -> Union[_Path, None]:
+def check_whether_to_download(filename: str, download_dir: _Path, if_file_present: str = "prompt_user") -> _Path | None:
     """Determine whether to download given file (filename) to the desired location (download_dir) based on whether it is
     already present and what action to take if it is (if_file_present)
 
@@ -537,7 +533,7 @@ def attempt_ftps_download(
     filename: str,
     type_of_file: Optional[str] = None,
     if_file_present: str = "prompt_user",
-) -> Union[_Path, None]:
+) -> _Path | None:
     """Attempt download of file (filename) given the ftps client object (ftps) to chosen location (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
@@ -698,7 +694,7 @@ def decompress_file(input_filepath: _Path, delete_after_decompression: bool = Fa
         return output_file
 
 
-def check_n_download_url(url: str, dwndir, filename: Union[str, None] = None):
+def check_n_download_url(url: str, dwndir, filename: str | None = None):
     """
     Download single file given URL to download from.
     Optionally provide filename if different from url name
@@ -774,8 +770,8 @@ def ftp_tls(url: str, **kwargs) -> Generator[Any, Any, Any]:
 
 def download_file_from_cddis(
     filename: str,
-    ftp_folder: Optional[str] = None,     # deprecated
-    url_folder: Optional[str] = None,     # preferred
+    ftp_folder: Optional[str] = None,  # deprecated
+    url_folder: Optional[str] = None,  # preferred
     output_folder: _Path = _Path("."),
     max_retries: int = 3,
     decompress: bool = True,
@@ -783,7 +779,7 @@ def download_file_from_cddis(
     username: str = None,
     password: str = None,
     note_filetype: Optional[str] = None,
-) -> Union[_Path, None]:
+) -> _Path | None:
     """ Download a single file from the CDDIS HTTPS archive using NASA Earthdata authentication
 
     :param str filename: Name of the file to download
@@ -1057,7 +1053,7 @@ def download_iau2000_variant(
     download_dir: _Path,
     iau2000_file_variant: Literal["standard", "daily"],
     if_file_present: str = "prompt_user",
-) -> Union[_Path, None]:
+) -> _Path | None:
     """
     Downloads IAU2000 file based on the variant requested ("daily" or "standard" file).
     Added in approximately version 0.0.58
@@ -1067,7 +1063,7 @@ def download_iau2000_variant(
         download the recent "daily" file, or the historical "standard" file.
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :raises Exception: On download failures. In some cases the underlying exception will be wrapped in the one raised.
-    :return Union[_Path, None]: _Path to the downloaded file, or None if not downloaded (based on if_file_present
+    :return _Path | None: _Path to the downloaded file, or None if not downloaded (based on if_file_present
         setting).
     """
     ensure_folders([download_dir])
@@ -1128,8 +1124,8 @@ def download_iau2000_variant(
 
 
 def get_iau2000_file_variants_for_dates(
-    start_epoch: Union[_datetime.datetime, None] = None,
-    end_epoch: Union[_datetime.datetime, None] = None,
+    start_epoch: _datetime.datetime | None = None,
+    end_epoch: _datetime.datetime | None = None,
     preferred_variant: Literal["standard", "daily"] = "daily",
     legacy_mode: bool = False,  # TODO remove once wrapper function (download_iau2000_file()) is removed.
 ) -> set[Literal["standard", "daily"]]:
@@ -1145,8 +1141,8 @@ def get_iau2000_file_variants_for_dates(
     finals.data https://datacenter.iers.org/versionMetadata.php?filename=latestVersionMeta/10_FINALS.DATA_IAU2000_V2013_0110.txt
     finals.daily https://datacenter.iers.org/versionMetadata.php?filename=latestVersionMeta/13_FINALS.DAILY_IAU2000_V2013_0113.txt
 
-    :param Union[_datetime.datetime, None] start_epoch: Start of date range. Optional if end_epoch is provided.
-    :param Union[_datetime.datetime, None] end_epoch: End of date range. Optional if start_epoch is provided.
+    :param _datetime.datetime | None start_epoch: Start of date range. Optional if end_epoch is provided.
+    :param _datetime.datetime | None end_epoch: End of date range. Optional if start_epoch is provided.
     :param set[Literal["standard", "daily"] preferred_variant: For date ranges that don't require us to use a specific
         variant, which variant should we fall back on as a tie-breaker. Defaults to the 'daily' file.
     :param bool legacy_mode: (Deprecated) for backwards compatibility only: limit to only the variant we definately
@@ -1231,7 +1227,7 @@ def download_iau2000_file(
     download_dir: _Path,
     start_epoch: _datetime.datetime,
     if_file_present: str = "prompt_user",
-) -> Union[_Path, None]:
+) -> _Path | None:
     """
     Compatibility wrapper around new functions
     DEPRECATED since approximately version 0.0.58
@@ -1251,7 +1247,7 @@ def download_iau2000_file(
 
 def download_atx(
     download_dir: _Path, reference_frame: str = "IGS20", if_file_present: str = "prompt_user"
-) -> Union[_Path, None]:
+) -> _Path | None:
     """Download the ATX file necessary for running the PEA provided the download directory (download_dir)
 
     :param _Path download_dir: Where to download files (local directory)
@@ -1290,7 +1286,7 @@ def download_atx(
     return download_filepath
 
 
-def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = "prompt_user") -> Union[_Path, None]:
+def download_satellite_metadata_snx(download_dir: _Path, if_file_present: str = "prompt_user") -> _Path | None:
     """Download the most recent IGS satellite metadata file
 
     :param _Path download_dir: Where to download files (local directory)
