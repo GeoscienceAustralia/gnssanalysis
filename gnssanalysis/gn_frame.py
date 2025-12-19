@@ -1,7 +1,6 @@
 """frame of day generation module"""
 
 import logging
-from typing import Union
 
 import numpy as _np
 import pandas as _pd
@@ -28,10 +27,10 @@ def _get_core_list(core_list_path):
 
 def get_frame_of_day(
     date_or_j2000,
-    itrf_path_or_df: Union[_pd.DataFrame, str],
-    discon_path_or_df: Union[_pd.DataFrame, str],
-    psd_path_or_df: Union[None, _pd.DataFrame, str] = None,
-    list_path_or_df: Union[None, _pd.DataFrame, str, _np.ndarray] = None,
+    itrf_path_or_df: _pd.DataFrame | str,
+    discon_path_or_df: _pd.DataFrame | str,
+    psd_path_or_df: None | _pd.DataFrame | str = None,
+    list_path_or_df: None | _pd.DataFrame | str | _np.ndarray = None,
 ):
     """Main function to propagate frame into datetime of interest"""
 

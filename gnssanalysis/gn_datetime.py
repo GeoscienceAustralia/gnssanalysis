@@ -6,7 +6,7 @@ from datetime import datetime as _datetime
 from datetime import date as _date
 from datetime import timedelta as _timedelta
 from io import StringIO as _StringIO
-from typing import Optional, overload, Union
+from typing import Optional, overload
 
 import numpy as _np
 import pandas as _pd
@@ -17,7 +17,7 @@ from . import gn_const as _gn_const
 logger = logging.getLogger(__name__)
 
 
-def derive_gps_week(year: Union[int, str], day_of_year: Union[int, str], weekday_suffix: bool = False) -> str:
+def derive_gps_week(year: int | str, day_of_year: int | str, weekday_suffix: bool = False) -> str:
     """
     Convert year, day-of-year to GPS week format: WWWWD or WWWW
     Based on code from Kristine Larson's gps.py
@@ -78,7 +78,7 @@ class GPSDate:
     # For compatibility, we have accessors called 'ts' and 'timestamp'.
     _internal_dt64: _np.datetime64
 
-    def __init__(self, time: Union[_np.datetime64, _datetime, _date, str]):
+    def __init__(self, time: _np.datetime64 | _datetime | _date | str):
         if isinstance(time, _np.datetime64):
             self._internal_dt64 = time
         elif isinstance(time, (_datetime, _date, str)):
@@ -172,7 +172,7 @@ def datetime_to_gps_week(dt: _datetime, wkday_suff: bool = False) -> str:
     return derive_gps_week(yr, doy, weekday_suffix=wkday_suff)
 
 
-def dt2gpswk(dt: _datetime, wkday_suff: bool = False, both: bool = False) -> Union[str, tuple[str, str]]:
+def dt2gpswk(dt: _datetime, wkday_suff: bool = False, both: bool = False) -> str | tuple[str, str]:
     """
     TODO DEPRECATED. Please use datetime_to_gps_week()
     """
@@ -222,7 +222,7 @@ def gpswkD2dt(gpswkD: str) -> _datetime:
 
 
 def yydoysec2datetime(
-    arr: Union[_np.ndarray, _pd.Series, list], recenter: bool = False, as_j2000: bool = True, delimiter: str = ":"
+    arr: _np.ndarray | _pd.Series | list, recenter: bool = False, as_j2000: bool = True, delimiter: str = ":"
 ) -> _np.ndarray:
     """Converts snx YY:DOY:SSSSS [snx] or YYYY:DOY:SSSSS [bsx/bia] object Series/ndarray to datetime64.
     recenter overrides day seconds value to midday
@@ -241,7 +241,7 @@ def yydoysec2datetime(
     return datetime2j2000(datetime64) if as_j2000 else datetime64
 
 
-def datetime2yydoysec(datetime: Union[_np.ndarray, _pd.Series]) -> _np.ndarray:
+def datetime2yydoysec(datetime: _np.ndarray | _pd.Series) -> _np.ndarray:
     """datetime64[s] -> yydoysecond
     The '2000-01-01T00:00:00' (-43200 J2000 for 00:000:00000) datetime becomes 00:000:00000 as it should,
     No masking and overriding with year 2100 is needed"""
@@ -270,7 +270,7 @@ def gpsweeksec2datetime(gps_week: _np.ndarray, tow: _np.ndarray, as_j2000: bool 
     return datetime
 
 
-def datetime2gpsweeksec(array: _np.ndarray, as_decimal=False) -> Union[tuple, _np.ndarray]:
+def datetime2gpsweeksec(array: _np.ndarray, as_decimal=False) -> tuple | _np.ndarray:
     if array.dtype == int:
         ORIGIN = _gn_const.J2000_ORIGIN.astype("int64") - _gn_const.GPS_ORIGIN.astype("int64")
         gps_time = array + ORIGIN  # need int conversion for the case of datetime64
@@ -523,10 +523,10 @@ def round_timedelta(delta, roundto, *, tol=0.5, abs_tol=None):
 
     :delta:, :roundto:, and :abs_tol: (if used) must all have the same type.
 
-    :param Union[datetime.timedelta, numpy.timedelta64] delta: timedelta to round
-    :param Union[datetime.timedelta, numpy.timedelta64] roundto: "measuring stick", :delta: is rounded to integer multiples of this value
+    :param datetime.timedelta | numpy.timedelta64 delta: timedelta to round
+    :param datetime.timedelta | numpy.timedelta64 roundto: "measuring stick", :delta: is rounded to integer multiples of this value
     :param float tol: relative tolerance to use for the measure of "near"
-    :param Union[datetime.timedelta, numpy.timedelta64] abs_tol: absolute tolerance to use for the measure of "near"
+    :param datetime.timedelta | numpy.timedelta64 abs_tol: absolute tolerance to use for the measure of "near"
     """
     # TODO: Test this with numpy timedeltas, it was written for datetime.timedelta but should work
     if abs_tol is not None:

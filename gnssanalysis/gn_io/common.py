@@ -10,12 +10,11 @@ from pathlib import Path as _Path
 
 import unlzw3 as _unlzw3
 from typing_extensions import Literal as _Literal
-from typing import Union as _Union
 
 MB = 1024 * 1024
 
 
-def path2bytes(path_or_bytes: _Union[_Path, str, bytes]) -> bytes:
+def path2bytes(path_or_bytes: _Path | str | bytes) -> bytes:
     """Main file reading function. Checks file extension and calls appropriate reading function.
     Passes through bytes if given, thus one may not routinely leave it in the top of the specific
      file reading function and be able to call it with bytes or str path without additional modifications.

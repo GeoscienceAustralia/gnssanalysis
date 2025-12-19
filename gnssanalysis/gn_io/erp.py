@@ -5,9 +5,8 @@ import pathlib
 
 # The collections.abc (rather than typing) versions don't support subscripting until 3.9
 # from collections.abc import Callable, Iterable
-from typing import Callable, Iterable
+from typing import Callable, Iterable, TextIO
 from io import BytesIO as _BytesIO
-from typing import TextIO, Union
 from urllib import request as _rqs
 
 import numpy as _np
@@ -162,7 +161,7 @@ def get_canonical_header(header: str) -> str:
             return header
 
 
-def get_erp_scaling(normalised_header: str, original_header: str) -> Union[int, float]:
+def get_erp_scaling(normalised_header: str, original_header: str) -> int | float:
     """Get scaling factor to go from ERP stored data to "SI units"
 
     Scare quotes around "SI units" because rates are still per day, but in general converts to
@@ -170,7 +169,7 @@ def get_erp_scaling(normalised_header: str, original_header: str) -> Union[int, 
 
     :param str normalised_header: Normalised ERP column header
     :param str original_header: Original ERP column header (needed for correlation data)
-    :return Union[int, float]: Scaling factor to (multiplicatively) go from ERP-file data to "SI units"
+    :return int | float: Scaling factor to (multiplicatively) go from ERP-file data to "SI units"
     """
     if normalised_header in ["Xpole", "Xsig", "Ypole", "Ysig", "Xrt", "Xrtsig", "Yrt", "Yrtsig"]:
         return 1e-6
@@ -220,11 +219,11 @@ def get_erp_unit_string(normalised_header: str, original_header: str) -> str:
 
 
 def read_erp(
-    erp_path: Union[str, bytes, os.PathLike], normalise_header_names: bool = True, convert_units: bool = True
+    erp_path: str | bytes | os.PathLike, normalise_header_names: bool = True, convert_units: bool = True
 ) -> _pd.DataFrame:
     """Read an ERP file from disk into a pandas DataFrame
 
-    :param Union[str, bytes, os.PathLike] erp_path: Path to ERP file on disk
+    :param str | bytes | os.PathLike erp_path: Path to ERP file on disk
     :param bool normalise_header_names: If True, change header names to canonical versions, defaults to True
     :param bool convert_units: Convert natural ERP file units to "SI units", forces `normalise_header_names`, defaults to True
     :raises RuntimeError: Raised if the start of the column headers can't be found and the file can't be parsed
@@ -316,11 +315,11 @@ def format_erp_column(column_series: _pd.Series, mjd_precision: int = 2) -> _pd.
     return column_series.apply(formatter)
 
 
-def write_erp(erp_df: _pd.DataFrame, path: Union[str, bytes, os.PathLike], mjd_precision: int = 2):
+def write_erp(erp_df: _pd.DataFrame, path: str | bytes | os.PathLike, mjd_precision: int = 2):
     """Write an ERP DataFrame to a file on disk
 
     :param _pd.DataFrame erp_df: DataFrame of ERP data to write to disk
-    :param Union[str, bytes, os.PathLike] path: Path to output file
+    :param str | bytes | os.PathLike path: Path to output file
     :param int mjd_precision: Number of decimal places to user for MJD column, defaults to 2
     """
     with open(path, "w") as file:
@@ -362,14 +361,14 @@ def write_erp_to_stream(erp_df: _pd.DataFrame, stream: TextIO, mjd_precision: in
         stream.write("\n")
 
 
-def read_iau2000(iau2000_path: Union[str, bytes, os.PathLike], use_erp_style_headers: bool = True) -> _pd.DataFrame:
+def read_iau2000(iau2000_path: str | bytes | os.PathLike, use_erp_style_headers: bool = True) -> _pd.DataFrame:
     """Read an IAU2000 file from disk into a pandas DataFrame
 
     All columns of data are preserved, included the IERS/Predicted markers. Where data is absent in the IAU2000 file
     a NaN is placed into the pandas DataFrame. The returned DataFrame can either be provided with ERP style headers,
     eg. Xpole for polar motion, or titles that align closer to the IERS description of the data, eg. PM-x.
 
-    :param Union[str, bytes, os.PathLike] iau2000_path: Path to IAU2000 file to read
+    :param str | bytes | os.PathLike iau2000_path: Path to IAU2000 file to read
     :param bool use_erp_style_headers: Use headers that align with ERP column names, defaults to True
     :return _pd.DataFrame: A pandas DataFrame containing the data in the IAU2000 file
     """
@@ -532,14 +531,14 @@ def get_iau2000_to_erp_scaling(column_header: str, erp_units: bool) -> float:
     return iau2000_scaling / erp_scaling
 
 
-def get_iau2000_scaling(column_header: str) -> Union[int, float]:
+def get_iau2000_scaling(column_header: str) -> int | float:
     """Given an IAU2000 column header, return the scaling factor from IAU2000 data to "SI units"
 
     Namely the scaling shifts LOD properties from milliseconds to seconds and polar motion rate properties
     from milliarcseconds to arcseconds.
 
     :param str column_header: IAU2000 column header in either ERP-style or IERS-style
-    :return Union[int, float]: Scaling factor to go from IAU2000 units to "SI units"
+    :return int | float: Scaling factor to go from IAU2000 units to "SI units"
     """
     if column_header in ["PM-x", "Xpole", "PM-y", "Ypole", "PM-x-B", "Xpole-B", "PM-y-B", "Ypole-B"]:
         return 1

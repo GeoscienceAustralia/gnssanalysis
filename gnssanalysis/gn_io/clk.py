@@ -3,7 +3,6 @@
 import logging as _logging
 import re as _re
 from io import BytesIO as _BytesIO
-from typing import Union as _Union
 
 import numpy as _np
 import pandas as _pd
@@ -105,7 +104,7 @@ def rm_daily_sv_bias(clk_df_unst: _pd.DataFrame):
     clk_df_unst -= per_day_mean
 
 
-def rm_sv_bias(clk_df_unst: _pd.DataFrame, sv: _Union[list, str, _np.ndarray]):
+def rm_sv_bias(clk_df_unst: _pd.DataFrame, sv: list | str | _np.ndarray):
     """Takes an unstacked clk_df and normalizes satellite data (AS) by \
     a set satellite clk offsets, specific to constellation - G01 for GPS, R01 per GLONASS etc that are taken from the per_gnss_svs list
     
