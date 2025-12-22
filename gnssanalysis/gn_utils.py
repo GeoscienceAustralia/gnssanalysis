@@ -435,6 +435,7 @@ def sp3merge(sp3paths, clkpaths, output, nodata_to_nan):
 @_click.command()
 @_click.option("-l", "--logglob", required=True, type=str, help="logs glob path")
 @_click.option("-r", "--rnxglob", type=str, help="rinex glob path")
+@_click.option("-s", "--sitelist", type=str, help="list of site IDs")
 @_click.option("-o", "--output", type=str, help="output sinex filepath", default="./metagather.snx")
 @_click.option(
     "-fs",
@@ -470,7 +471,7 @@ def sp3merge(sp3paths, clkpaths, output, nodata_to_nan):
     help="number of threads to run in parallel",
     default=None,
 )
-def log2snx(logglob, rnxglob, outfile, frame_snx, frame_dis, frame_psd, datetime, num_threads):
+def log2snx(logglob, rnxglob, site_list, outfile, frame_snx, frame_dis, frame_psd, datetime, num_threads):
     """
     IGS log files parsing utility. Globs over log files using LOGGLOB expression
      and outputs SINEX metadata file. If provided with frame and frame discontinuity files (soln),
@@ -518,14 +519,12 @@ def log2snx(logglob, rnxglob, outfile, frame_snx, frame_dis, frame_psd, datetime
     from .gn_io import igslog
 
     if isinstance(rnxglob, list):
-        if (len(rnxglob) == 1) and (
-            rnxglob[0].find("*") != -1
-        ):  # it's rnx_glob expression (may be better to check if star is present)
-            rnxglob = rnxglob[0]
+        raise ValueError("rnxglob should be a string, not a list. To pass a site list, use site_list instead")
 
     igslog.write_meta_gather_master(
         logs_glob_path=logglob,
         rnx_glob_path=rnxglob,
+        site_list=site_list,
         out_path=outfile,
         frame_snx_path=frame_snx,
         frame_soln_path=frame_dis,
