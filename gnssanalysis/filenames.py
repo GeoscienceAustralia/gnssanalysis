@@ -370,12 +370,20 @@ def generate_IGS_nominal_span(start_epoch: datetime.datetime, end_epoch: datetim
     return nominal_span_string(span)
 
 
-def nominal_span_string(span_seconds: float) -> str:
+def nominal_span_string(span_seconds: float, igs_week_as_days: bool = True) -> str:
     """Generate the 3 character LEN or SMP string for IGS filenames based on total span seconds
 
     :param float span_seconds: Number of seconds in span of interest
+    :param bool igs_week_as_days: Use IGS common convention of expressing 1 week as 07D rather than 01W (in contrast
+        to IGS long filename spec which says to use the largest unit, i.e. 01W). Default: True (07D)
     :return str: 3 character span string as per IGS standard
     """
+
+    if span_seconds is None or span_seconds == 0:
+        return "00U"
+
+    if span_seconds < 0:
+        raise ValueError(f"Span seconds can't be negative: {span_seconds}")
     # A year is ambiguous, for our purposes we want 365 (not 365.25 or 366) days, as we
     # use it as a lower bound
     sec_in_year = 365 * gn_const.SEC_IN_DAY
@@ -397,7 +405,13 @@ def nominal_span_string(span_seconds: float) -> str:
         num_weeks = int(span_seconds // gn_const.SEC_IN_WEEK)
         # IGS uses 07D to represent a week
         # TODO: Handle JPL - uses 01W for a week
-        if (span_seconds % gn_const.SEC_IN_WEEK) < gn_const.SEC_IN_DAY and num_weeks > 1:
+        # We stick to outputting in weeks if either:
+        #  - there are >=14 days (>1 week with int division) or
+        #  - there are >=7 days (>0 weeks with int division), but ONLY if we are NOT applying IGS (inconsistent)
+        #    convention of outputting 1 week as 07D
+        if (span_seconds % gn_const.SEC_IN_WEEK) < gn_const.SEC_IN_DAY and (
+            num_weeks > 1 or (num_weeks > 0 and igs_week_as_days == False)
+        ):
             unit = "W"
             span_unit_counts = num_weeks
         else:
@@ -440,7 +454,7 @@ def convert_nominal_span(
 ) -> Union[datetime.timedelta, None]:
     """Effectively invert :func: `filenames.generate_nominal_span`, turn a span string into a timedelta
 
-    :param str nominal_span: Three-character span string in IGS format (e.g. 01D, 15M, 01L ?)
+    :param str nominal_span: Three-character span string in IGS format (e.g. 01D, 15M, 01L)
     :param Literal["none", "timedelta"] non_timed_span_output: when a non-timed span e.g. '00U' is encountered,
         return a zero-length timedelta (default), or return None.
         instead of raising / warning / returning zero-length timedelta.
