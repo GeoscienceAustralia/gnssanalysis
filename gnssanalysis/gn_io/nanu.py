@@ -1,8 +1,7 @@
 import glob
 import logging as _logging
 import os as _os
-from typing import Union as _Union
-from datetime import datetime
+from datetime import date, datetime
 
 import numpy as _np
 import pandas as _pd
@@ -75,21 +74,40 @@ def collect_nanus_to_df(glob_expr: str) -> _pd.DataFrame:
 
 
 def get_bad_sv_from_nanu_df(
-    nanu_df: _pd.DataFrame, up_to_epoch: _Union[_np.datetime64, datetime, str], offset_days: int
+    nanu_df: _pd.DataFrame,
+    processing_start_date: _np.datetime64 | datetime | date | str,
+    processing_end_date: _np.datetime64 | datetime | date | str,
+    approx_date_scope_unparsable_nanus: bool = True,
 ) -> list:
     """A simple function that analyses an input dataframe NANU collection and outputs a list of SVs that should be
     excluded for the entered epoch+offset
 
     :param _pd.DataFrame nanu_df: a dataframe returned by the collect_nanus_to_df, effectively a _pd.DataFrame call on
         a list of parsed dicts or a parsed dict
-    :param _Union[_np.datetime64, datetime, str] up_to_epoch: epoch to analyse NANUs up to
-    :param int offset_days: an offset or a length of a planned processing session in days
-    :return list[str]: a list of SVs that should not be used for the specified timeperiod. FIXME Potentially needs to
+    :param _np.datetime64 | datetime | date | str processing_start_date: start of time period of interest. Currently
+        only date component is used.
+    :param _np.datetime64 | datetime | date | str processing_end_date: end of time period of interest. Currently
+        only date component is used.
+    :param bool approx_date_scope_unparsable_nanus: (default: True) shorten the list of unparsable NANUs logged,
+        through a very approximate (and fraught) method of date scoping. This scopes to NANU file indexes which fall
+        between the lowest and highest indexes of parsable NANUs which met interest criteria (e.g. may not include all
+        Initially Usable notices).
+    :return list[str]: a list of SVs that should not be used for the specified time period. FIXME Potentially needs to
         be int?
     """
-    up_to_epoch_datetime64: _np.datetime64 = (
-        up_to_epoch if isinstance(up_to_epoch, _np.datetime64) else _np.datetime64(up_to_epoch)
-    )
+
+    # For now, we only extract dates from NANUs (not datetime). Doing comparisons between a date and a datetime gets
+    # confusing.
+    # I.e. 2022-02-24 21:30 >= 2022-02-24 06:00: False (WRONG), because what we actually compare
+    # is   2022-02-24 00:00 >= 2022-02-24 06:00... which honestly IS False.
+    # It's safer to throw away times across the board until we implement full support for them.
+
+    # Get just the date component, as a datetime64
+    # This is not the most efficient but avoids a bunch of conditionals. It's also more convoluted because datetime64
+    # has no date() function.
+    # Steps: ensure datetime64 > convert to datetime > convert to just date > convert back to datetime64
+    processing_start_dt64 = _np.datetime64(_np.datetime64(processing_start_date).astype(datetime).date())
+    processing_end_dt64 = _np.datetime64(_np.datetime64(processing_end_date).astype(datetime).date())
 
     columns_new = [
         "FILEPATH",
@@ -121,10 +139,12 @@ def get_bad_sv_from_nanu_df(
     dates = nanu_df_reindexed[columns_date].astype("datetime64[s]")
     time = nanu_df_reindexed[columns_time]
 
+    # Gather launch events (in JDays, convert these to calendar dates, fill new collum with NaT, then replace)
     launch_events = nanu_df_reindexed[
         nanu_df_reindexed["LAUNCH JDAY"].notna()
     ]  # first launch entry on 2012062 so no non-YYYYDOY nanu names exist
     launch_years = launch_events["NANU NUMBER"].str[:4].values.astype("datetime64[Y]")
+    # NOTE: timedelta64[D] -1 has the effect of subtracting 1 day from the existing delta as its unit is days.
     launch_dates = launch_years + (launch_events["LAUNCH JDAY"].values.astype("timedelta64[D]") - 1)
 
     dates["LAUNCH START CALENDAR DATE"] = _pd.NaT
@@ -138,43 +158,83 @@ def get_bad_sv_from_nanu_df(
     nd.fill(_np.timedelta64("nat"))
     nd[na_time_mask] = hhmm[:, 0].astype("timedelta64[h]") + hhmm[:, 1].astype("timedelta64[m]")
 
+    # Drop existing date columns, add back in the copy including converted launch dates
     date_converted_nanus = _pd.concat([nanu_df_reindexed.drop(labels=columns_date, axis=1), dates], axis=1)
 
-    events_already_started = (
-        (date_converted_nanus["START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
-        | (date_converted_nanus["UNUSABLE START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
-        | (date_converted_nanus["LAUNCH START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
-    )
-    applicable_nanus_df = date_converted_nanus[events_already_started]
+    # Mask to dates in range
+    # Reasoning: exclude any PRN for which an NANU is active at any time during our processing window.
+    # This means NANUs which:
+    # - Started prior to or DURING our processing window (NANU start date <= processing end date), AND:
+    # - Stopped during or continue after our processing window, AND:
+    #   This means: (processing start date <= NANU end date) OR (NANU has no end date)
+    # - Are NOT new to service (Initialy Usable) messages, or unparsable messages.
+    # OR:
+    # - Are a new to service (Initialy Usable) message, AND:
+    # - Occur during our processing window. (processing start date <= NANU [start] date <= processing end date)
 
+    # If a satellite newly enters service 'Initially Usable' during our processing window, we exclude it. Otherwise
+    # we ignore this message type.
+
+    # Note: these are only the dates of NANUs that parsed successfully. Unparsable must be checked manually.
+    # NOTE: We use NANU order to *approximately* filter which unparsable messages are logged. TODO This runs the risk
+    # that some unparsable notices will be missed!
+    events_in_range = (
+        (  # A NANU that goes into effect before, or during our window of interest
+            (date_converted_nanus["START CALENDAR DATE"] <= processing_end_dt64)
+            | (date_converted_nanus["UNUSABLE START CALENDAR DATE"] <= processing_end_dt64)
+            | (date_converted_nanus["LAUNCH START CALENDAR DATE"] <= processing_end_dt64)
+        )
+        & (  # ... And which remains in effect until a date within our window or some time in the future...
+            (date_converted_nanus["STOP CALENDAR DATE"] >= processing_start_dt64)
+            | date_converted_nanus["STOP CALENDAR DATE"].isna()  # ...or an unspecified date / perpetual.
+        )  # And... not unparsable, or an Initialy Usable notice (handled later)
+        & (date_converted_nanus["NANU TYPE"] != "USABINIT")  # Initialy Usable notice
+        & (date_converted_nanus["NANU TYPE"] != "UNKN")  # Unparsable NANU / general message
+    ) | (  # Historic Initially Usable notices aren't relevant, but a new sat during our processing is an issue.
+        (date_converted_nanus["NANU TYPE"] == "USABINIT")  # Initialy Usable notice
+        & (date_converted_nanus["START CALENDAR DATE"] >= processing_start_dt64)  # After start of our window
+        & (date_converted_nanus["START CALENDAR DATE"] <= processing_end_dt64)  # And before end of our window
+    )
+
+    # Filter dataframe to those events.
+    # NOTE: dates rely on successful parsing. NANUs which do not parse are marked as type "UNKN"
+    applicable_nanus_df = date_converted_nanus[events_in_range]
+
+    # Get index of all impacted PRNs (satellites), pointing to the most recent NANU to impact that PRN, if there is more than one in range.
+    # TODO: work out why this PRN is being converted to a *float* to facilitate deduping (surely int or str?!)
     prn_most_recent_nanu_index = applicable_nanus_df.PRN.astype(float).drop_duplicates(keep="last").index
 
+    # Filter the original DataFrame by that index to get the most recent applicable NANU for each sat
     most_recent_nanu_by_prn = date_converted_nanus.loc[prn_most_recent_nanu_index]
 
-    # Filter maneuver related NANU messages down to those with an end date in the future, or no end date at all:
-    last_selected = most_recent_nanu_by_prn[
-        (
-            (most_recent_nanu_by_prn["STOP CALENDAR DATE"] >= up_to_epoch_datetime64)
-            | most_recent_nanu_by_prn["STOP CALENDAR DATE"].isna()
-        )
-        & (most_recent_nanu_by_prn["NANU TYPE"] != "USABINIT")
-    ]
-
-    if last_selected.empty:
+    if most_recent_nanu_by_prn.empty:
         return []  # No NANUs currently in effect
 
-    _logging.info(msg="NANUs in effect are:\n" + "\n".join(last_selected.FILEPATH.to_list()))
+    # Note this excludes anything that didn't parse
+    _logging.info(msg="NANUs in effect are:\n" + "\n".join(most_recent_nanu_by_prn.FILEPATH.to_list()))
 
-    sel_idx = last_selected.index.values
-    messages_in_scope = date_converted_nanus.loc[sel_idx.min() : sel_idx.max()]
-    if not messages_in_scope[messages_in_scope["NANU TYPE"] == "UNKN"].empty:
+    # The verbose and more accurate name of this option would be:
+    # scope_unparsable_nanus_to_index_range_of_most_recent_impacts
+    if approx_date_scope_unparsable_nanus == True:
+        # NOTE: the following is approximate only, as there could be a relevant / in date GENERAL NANU which is prior
+        # to all the parsable ones, so gets left out of the logged list.
+        # This isn't trivial to solve. We could scan back and forward for the next NANU we can parse, and include
+        # general messages till then. But there's always the risk of an older NANU with longstanding effect.
 
-        _logging.warning(msg="Below are the unparsed NANU messages that could be important")
-        [
+        parsable_nanus_in_range = applicable_nanus_df.index.values
+        messages_in_scope = date_converted_nanus.loc[parsable_nanus_in_range.min() : parsable_nanus_in_range.max()]
+    else:
+        messages_in_scope = date_converted_nanus  # Don't scope
+
+    unparsable_nanus_index = messages_in_scope[messages_in_scope["NANU TYPE"] == "UNKN"].index
+    if unparsable_nanus_index.size > 0:
+        _logging.warning(
+            msg=f"Below are the unparsed NANU messages that could be important "
+            f"(approx date filtering: {'on' if approx_date_scope_unparsable_nanus else 'off'})"
+        )
+        for idx in unparsable_nanus_index:
             _logging.warning(
-                msg=f"{messages_in_scope.loc[idx].FILEPATH}\n{messages_in_scope.loc[idx].CONTENT.decode()}\n"
+                msg=f"{date_converted_nanus.loc[idx].FILEPATH}\n{date_converted_nanus.loc[idx].CONTENT.decode()}\n"
             )
-            for idx in messages_in_scope[messages_in_scope["NANU TYPE"] == "UNKN"].index
-        ]
 
-    return last_selected.PRN.str.zfill(0).to_list()
+    return most_recent_nanu_by_prn.PRN.str.zfill(0).to_list()
