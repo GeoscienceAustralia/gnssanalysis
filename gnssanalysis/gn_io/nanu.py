@@ -117,16 +117,18 @@ def get_bad_sv_from_nanu_df(
     columns_date = ["START CALENDAR DATE", "STOP CALENDAR DATE", "UNUSABLE START CALENDAR DATE"]
     columns_time = ["START TIME ZULU", "STOP TIME ZULU", "UNUSABLE START TIME ZULU", "LAUNCH TIME ZULU"]
 
-    df = nanu_df.reindex(columns=columns_new)
-    dates = df[columns_date].astype("datetime64[s]")
-    time = df[columns_time]
+    nanu_df_reindexed = nanu_df.reindex(columns=columns_new)
+    dates = nanu_df_reindexed[columns_date].astype("datetime64[s]")
+    time = nanu_df_reindexed[columns_time]
 
-    launch = df[df["LAUNCH JDAY"].notna()]  # first launch entry on 2012062 so no non-YYYYDOY nanu names exist
-    launch_year = launch["NANU NUMBER"].str[:4].values.astype("datetime64[Y]")
-    launch_date = launch_year + (launch["LAUNCH JDAY"].values.astype("timedelta64[D]") - 1)
+    launch_events = nanu_df_reindexed[
+        nanu_df_reindexed["LAUNCH JDAY"].notna()
+    ]  # first launch entry on 2012062 so no non-YYYYDOY nanu names exist
+    launch_years = launch_events["NANU NUMBER"].str[:4].values.astype("datetime64[Y]")
+    launch_dates = launch_years + (launch_events["LAUNCH JDAY"].values.astype("timedelta64[D]") - 1)
 
     dates["LAUNCH START CALENDAR DATE"] = _pd.NaT
-    dates.loc[launch.index, "LAUNCH START CALENDAR DATE"] = launch_date
+    dates.loc[launch_events.index, "LAUNCH START CALENDAR DATE"] = launch_dates
 
     np_time = time.values
     na_time_mask = ~time.isna().values
@@ -136,26 +138,26 @@ def get_bad_sv_from_nanu_df(
     nd.fill(_np.timedelta64("nat"))
     nd[na_time_mask] = hhmm[:, 0].astype("timedelta64[h]") + hhmm[:, 1].astype("timedelta64[m]")
 
-    dt_df = _pd.concat([df.drop(labels=columns_date, axis=1), dates], axis=1)
+    date_converted_nanus = _pd.concat([nanu_df_reindexed.drop(labels=columns_date, axis=1), dates], axis=1)
 
     events_already_started = (
-        (dt_df["START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
-        | (dt_df["UNUSABLE START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
-        | (dt_df["LAUNCH START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
+        (date_converted_nanus["START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
+        | (date_converted_nanus["UNUSABLE START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
+        | (date_converted_nanus["LAUNCH START CALENDAR DATE"] <= (up_to_epoch_datetime64 + offset_days))
     )
-    dt_valid_df = dt_df[events_already_started]
+    applicable_nanus_df = date_converted_nanus[events_already_started]
 
-    prns_last_nanu_to_date = dt_valid_df.PRN.astype(float).drop_duplicates(keep="last").index
+    prn_most_recent_nanu_index = applicable_nanus_df.PRN.astype(float).drop_duplicates(keep="last").index
 
-    all_the_last_msgs = dt_df.loc[prns_last_nanu_to_date]
+    most_recent_nanu_by_prn = date_converted_nanus.loc[prn_most_recent_nanu_index]
 
     # Filter maneuver related NANU messages down to those with an end date in the future, or no end date at all:
-    last_selected = all_the_last_msgs[
+    last_selected = most_recent_nanu_by_prn[
         (
-            (all_the_last_msgs["STOP CALENDAR DATE"] >= up_to_epoch_datetime64)
-            | all_the_last_msgs["STOP CALENDAR DATE"].isna()
+            (most_recent_nanu_by_prn["STOP CALENDAR DATE"] >= up_to_epoch_datetime64)
+            | most_recent_nanu_by_prn["STOP CALENDAR DATE"].isna()
         )
-        & (all_the_last_msgs["NANU TYPE"] != "USABINIT")
+        & (most_recent_nanu_by_prn["NANU TYPE"] != "USABINIT")
     ]
 
     if last_selected.empty:
@@ -164,13 +166,15 @@ def get_bad_sv_from_nanu_df(
     _logging.info(msg="NANUs in effect are:\n" + "\n".join(last_selected.FILEPATH.to_list()))
 
     sel_idx = last_selected.index.values
-    msg_gaps = dt_df.loc[sel_idx.min() : sel_idx.max()]
-    if not msg_gaps[msg_gaps["NANU TYPE"] == "UNKN"].empty:
+    messages_in_scope = date_converted_nanus.loc[sel_idx.min() : sel_idx.max()]
+    if not messages_in_scope[messages_in_scope["NANU TYPE"] == "UNKN"].empty:
 
         _logging.warning(msg="Below are the unparsed NANU messages that could be important")
         [
-            _logging.warning(msg=f"{msg_gaps.loc[idx].FILEPATH}\n{msg_gaps.loc[idx].CONTENT.decode()}\n")
-            for idx in msg_gaps[msg_gaps["NANU TYPE"] == "UNKN"].index
+            _logging.warning(
+                msg=f"{messages_in_scope.loc[idx].FILEPATH}\n{messages_in_scope.loc[idx].CONTENT.decode()}\n"
+            )
+            for idx in messages_in_scope[messages_in_scope["NANU TYPE"] == "UNKN"].index
         ]
 
     return last_selected.PRN.str.zfill(0).to_list()
