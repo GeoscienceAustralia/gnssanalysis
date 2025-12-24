@@ -1,7 +1,7 @@
 import glob
 import logging as _logging
 import os as _os
-from datetime import datetime, date
+from datetime import datetime, date as dt_date
 import warnings
 
 import numpy as _np
@@ -76,8 +76,8 @@ def collect_nanus_to_df(glob_expr: str) -> _pd.DataFrame:
 
 def get_bad_sv_from_nanu_df(
     nanu_df: _pd.DataFrame,
-    processing_start_date: _np.datetime64 | datetime | date | str,
-    processing_end_date: _np.datetime64 | datetime | date | str,
+    processing_start_date: _np.datetime64 | datetime | dt_date | str,
+    processing_end_date: _np.datetime64 | datetime | dt_date | str,
     approx_date_scope_unparsable_nanus: bool = True,
 ) -> list:
     """A simple function that analyses an input dataframe NANU collection and outputs a list of SVs that should be
@@ -107,8 +107,21 @@ def get_bad_sv_from_nanu_df(
     # This is not the most efficient but avoids a bunch of conditionals. It's also more convoluted because datetime64
     # has no date() function.
     # Steps: ensure datetime64 > convert to datetime > convert to just date > convert back to datetime64
-    processing_start_dt64 = _np.datetime64(_np.datetime64(processing_start_date).astype(datetime).date())
-    processing_end_dt64 = _np.datetime64(_np.datetime64(processing_end_date).astype(datetime).date())
+
+    start_date = _np.datetime64(processing_start_date).astype(dt_date)
+    if isinstance(start_date, dt_date) == False:
+        raise ValueError(f"Numpy is misbehaving. datetime64.astype(date) did not return a date: {type(start_date)}")
+    processing_start_dt64 = _np.datetime64(start_date)
+
+    end_date = _np.datetime64(processing_end_date).astype(dt_date)
+    if isinstance(end_date, dt_date) == False:
+        raise ValueError(f"Numpy is misbehaving. datetime64.astype(date) did not return a date: {type(end_date)}")
+    processing_end_dt64 = _np.datetime64(end_date)
+
+    # Original implementation, based on impression that astype(date) was not an option, and astype(datetime)
+    # appearing to work:
+    # processing_start_dt64 = _np.datetime64(_np.datetime64(processing_start_date).astype(datetime).date())
+    # processing_end_dt64 = _np.datetime64(_np.datetime64(processing_end_date).astype(datetime).date())
 
     columns_new = [
         "FILEPATH",
