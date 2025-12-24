@@ -1,7 +1,8 @@
 import glob
 import logging as _logging
 import os as _os
-from datetime import date, datetime
+from datetime import datetime, date
+import warnings
 
 import numpy as _np
 import pandas as _pd
@@ -228,13 +229,13 @@ def get_bad_sv_from_nanu_df(
 
     unparsable_nanus_index = messages_in_scope[messages_in_scope["NANU TYPE"] == "UNKN"].index
     if unparsable_nanus_index.size > 0:
-        _logging.warning(
-            msg=f"Below are the unparsed NANU messages that could be important "
+        warnings.warn(
+            f"Below are the unparsed NANU messages that could be important "
             f"(approx date filtering: {'on' if approx_date_scope_unparsable_nanus else 'off'})"
         )
         for idx in unparsable_nanus_index:
-            _logging.warning(
-                msg=f"{date_converted_nanus.loc[idx].FILEPATH}\n{date_converted_nanus.loc[idx].CONTENT.decode()}\n"
+            warnings.warn(
+                f"{date_converted_nanus.loc[idx].FILEPATH}\n{date_converted_nanus.loc[idx].CONTENT.decode()}\n"
             )
 
     return most_recent_nanu_by_prn.PRN.str.zfill(0).to_list()
