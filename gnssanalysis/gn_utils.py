@@ -6,8 +6,6 @@ from time import perf_counter
 
 import click as _click
 
-from typing import Union
-
 from gnssanalysis.enum_meta_properties import EnumMetaProperties
 
 
@@ -104,7 +102,7 @@ def get_filetype(path):
     return suffix
 
 
-def configure_logging(verbose: bool, output_logger: bool = False) -> Union[_logging.Logger, None]:
+def configure_logging(verbose: bool, output_logger: bool = False) -> _logging.Logger | None:
     """Configure the logger object with the level of verbosity requested and output if desired
 
     :param bool verbose: Verbosity of logger object to use for encoding logging strings, True: DEBUG, False: INFO

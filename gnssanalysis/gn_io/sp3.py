@@ -3,7 +3,7 @@ import logging
 import io as _io
 import os as _os
 import re as _re
-from typing import Callable, Literal, Mapping, Optional, Union, overload
+from typing import Callable, Literal, Mapping, Optional, overload
 from pathlib import Path
 import warnings
 
@@ -320,8 +320,8 @@ def get_sp3_comments(sp3_df: _pd.DataFrame) -> list[str]:
 
 def update_sp3_comments(
     sp3_df: _pd.DataFrame,
-    comment_lines: Union[list[str], None] = None,
-    comment_string: Union[str, None] = None,
+    comment_lines: list[str] | None = None,
+    comment_string: str | None = None,
     ammend: bool = True,
     strict_mode: type[StrictMode] = StrictModes.STRICT_RAISE,
 ) -> None:
@@ -344,9 +344,9 @@ def update_sp3_comments(
     will be no comments).
 
     :param _pd.DataFrame sp3_df: SP3 DataFrame on which to update / replace comments (in place).
-    :param Union[list[str], None] comment_lines: List of comment lines to ammend / overwrite with. SP3 comment line
+    :param list[str] | None comment_lines: List of comment lines to ammend / overwrite with. SP3 comment line
         lead-in ('/* ') is optional and will be added if missing.
-    :param Union[str, None] comment_string: Arbitrary length string to be broken into lines and formatted as SP3
+    :param str | None comment_string: Arbitrary length string to be broken into lines and formatted as SP3
         comments. This should NOT have SP3 comment line lead-in ('/* ') on it; that will be added.
     :param bool ammend: Whether to ammend (specifically add additional) comment lines, or delete existing lines and
         replace with the provided input. Defaults to True.
@@ -651,19 +651,19 @@ def _process_sp3_block(
     return temp_sp3
 
 
-def description_for_path_or_bytes(path_or_bytes: Union[str, Path, bytes]) -> Optional[str]:
+def description_for_path_or_bytes(path_or_bytes: str | Path | bytes) -> Optional[str]:
     if isinstance(path_or_bytes, (str, Path)):
         return str(path_or_bytes)
     else:
         return "Data passed as bytes: no path available"
 
 
-def try_get_sp3_filename(path_or_bytes: Union[str, Path, bytes]) -> Union[str, None]:
+def try_get_sp3_filename(path_or_bytes: str | Path | bytes) -> str | None:
     """
     Utility for validation during parsing. Attempts to pull the filename from the path or bytes SP3 source.
 
-    :param Union[str, Path, bytes] path_or_bytes: path or bytes SP3 source to try and get filename from
-    :return Union[str, None]: filename if able to extract, otherwise `None`
+    :param str | Path | bytes path_or_bytes: path or bytes SP3 source to try and get filename from
+    :return str | None: filename if able to extract, otherwise `None`
     """
     if isinstance(path_or_bytes, bytes):
         return None
@@ -681,7 +681,7 @@ def try_get_sp3_filename(path_or_bytes: Union[str, Path, bytes]) -> Union[str, N
 def check_epoch_counts_for_discrepancies(
     draft_sp3_df: _pd.DataFrame,
     parsed_sp3_header: _pd.Series,
-    sp3_path_or_bytes: Union[Path, str, bytes, None] = None,
+    sp3_path_or_bytes: Path | str | bytes | None = None,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
 ):
     """
@@ -694,12 +694,12 @@ def check_epoch_counts_for_discrepancies(
         indexes. Header is not added till late in parsing, so it is passed in separately.
     :param _pd.Series parsed_sp3_header: draft SP3 header, passed in separately as it gets added to the DataFrame
         later in the SP3 reading process.
-    :param Union[Path, str, bytes, None] sp3_path_or_bytes: representation of the source SP3 file path or binary data,
+    :param Path | str | bytes | None sp3_path_or_bytes: representation of the source SP3 file path or binary data,
         used to determine whether a filename can be found, and extract it if so.
     :param type[StrictMode] strict_mode: (Default: WARN) indicates whether to raise, warn, or ignore issues found.
     :raises ValueError: if discrepancies found in number of epochs indicated by SP3 filename/header/contents
     """
-    sp3_filename: Union[str, None] = None
+    sp3_filename: str | None = None
     if sp3_path_or_bytes is not None:
         sp3_filename = try_get_sp3_filename(sp3_path_or_bytes)
 
@@ -727,7 +727,7 @@ def check_epoch_counts_for_discrepancies(
     # Filename available to validate
     # Derive epoch count from filename period(as timedelta) / filename sampeleRate(as timedelta).
     # We shouldn't need sample rate to check for off by one as we're working in epochs this time.
-    filename_derived_epoch_count: Union[int, None] = None
+    filename_derived_epoch_count: int | None = None
 
     # Try extracting properties from filename
     filename_props: dict = filenames.determine_properties_from_filename(sp3_filename)
@@ -923,7 +923,7 @@ def validate_sp3_comment_lines(
 
 
 def read_sp3(
-    sp3_path_or_bytes: Union[str, Path, bytes],
+    sp3_path_or_bytes: str | Path | bytes,
     pOnly: bool = True,
     nodata_to_nan: bool = True,
     drop_offline_sats: bool = False,
@@ -939,7 +939,7 @@ def read_sp3(
 ) -> _pd.DataFrame:
     """Reads an SP3 file and returns the data as a pandas DataFrame.
 
-    :param Union[str, Path, bytes] sp3_path_or_bytes: SP3 file path (as str or Path) or SP3 data as bytes object.
+    :param str | Path | bytes sp3_path_or_bytes: SP3 file path (as str or Path) or SP3 data as bytes object.
     :param bool pOnly: If True, only P* values (positions) are included in the DataFrame. Defaults to True.
     :param bool nodata_to_nan: If True, converts 0.000000 (indicating nodata) to NaN in the SP3 POS column
             and converts 999999* (indicating nodata) to NaN in the SP3 CLK column. Defaults to True.
@@ -1630,17 +1630,17 @@ def gen_sp3_content(
 
 def gen_sp3_content(
     sp3_df: _pd.DataFrame,
-    in_buf: Union[None, _io.StringIO] = None,
+    in_buf: None | _io.StringIO = None,
     sort_outputs: bool = False,
     continue_on_unhandled_velocity_data: bool = True,
-) -> Union[str, None]:
+) -> str | None:
     """
     Organises, formats (including nodata values), then writes out SP3 content to a buffer if provided, or returns
     it otherwise.
 
     :param pandas.DataFrame sp3_df: The DataFrame containing the SP3 data.
     :param bool sort_outputs: Whether to sort the outputs. Defaults to False.
-    :param Union[_io.StringIO, None] in_buf: The buffer to write the SP3 content to. Defaults to None.
+    :param _io.StringIO | None in_buf: The buffer to write the SP3 content to. Defaults to None.
     :param bool continue_on_unhandled_velocity_data: If (currently unsupported) velocity data exists in the DataFrame,
         log a warning and skip velocity data, but write out position data. Set to false to raise an exception instead.
     :return str or None: Return SP3 content as a string if `in_buf` is None, otherwise write SP3 content to `in_buf`,
@@ -1903,14 +1903,14 @@ def merge_attrs(df_list: list[_pd.DataFrame]) -> _pd.Series:
 
 def sp3merge(
     sp3paths: list[str],
-    clkpaths: Union[list[str], None] = None,
+    clkpaths: list[str] | None = None,
     nodata_to_nan: bool = False,
     strict_mode: type[StrictMode] = StrictModes.STRICT_WARN,
 ) -> _pd.DataFrame:
     """Reads in a list of sp3 files and optional list of clk files and merges them into a single sp3 file.
 
     :param list[str] sp3paths: The list of paths to the sp3 files.
-    :param Union[list[str], None] clkpaths: The list of paths to the clk files, or None if no clk files are provided.
+    :param list[str] | None clkpaths: The list of paths to the clk files, or None if no clk files are provided.
     :param bool nodata_to_nan: Flag indicating whether to convert nodata values to NaN.
     :param type[StrictMode] strict_mode: (default: WARN) Strictness with which to check the SP3 files read in, for
         compliance with the SP3 d spec.
