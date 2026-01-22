@@ -1,0 +1,33 @@
+[project]
+name = "gnssanalysis"
+version = "0.1.0"
+description = "basic python module for gnss analysis"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "boto3",
+    "click",
+    "hatanaka",
+    "jinja2",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "plotext==4.2",
+    "plotly",
+    "pymongo",
+    "requests",
+    "scipy",
+    "tqdm",
+    "unlzw3",
+    "typing-extensions",
+]
+
+[build-system]
+requires = ["setuptools>=45", "wheel", "versioneer"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pyfakefs",
+]
