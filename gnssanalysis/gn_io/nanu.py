@@ -1,8 +1,8 @@
 import glob
 import logging as _logging
 import os as _os
-from typing import Union as _Union
-from datetime import datetime
+from datetime import datetime, date as dt_date
+import warnings
 
 import numpy as _np
 import pandas as _pd
@@ -10,15 +10,37 @@ import pandas as _pd
 from .. import gn_io as _gn_io
 
 
-def nanu_path_to_id(nanu_path: str) -> str:
-    # TODO some examples would be good here.
+def nanu_path_to_id(nanu_path: str, reject_old_format: bool = True) -> str:
+    """
+    Extracts a NANU ID from a NANU path or filename.
+    E.g.
+     - 2022001.nnu: standard naming convention, first NANU of 2022
+     - nanu.2022001.txt: CelesTrak convention, first NANU of 2022
+     - (rejected by default!) nanu.001-96003.txt: CelesTrak convention, first NANU of 1996, occurring on DOY 3 (?)
+    Note: the numbering is sequential, not day-of-year.
+
+    Beginning 1997111, the format appears to change. This is the beginning of a machine readable format for
+    message block 1.
+
+    CelesTrak archive can be found here:
+    https://celestrak.org/GPS/NANU/2019/ (cert alt name is broken on www.celestrak.org)
+
+    :param str nanu_path: path or filename of a NANU file, e.g. nanu/2022/2022001.nnu or nanu/2022/nanu.2022001.txt
+    :param bool reject_old_format: (on by default) raise exception if old NANU encountered (not machine readable)
+    :returns str: the NANU ID, e.g 2022001
+    :raises ValueError: if reject_old_format is True and a NANU < 25th Nov 1997 is encountered (not machine readable)
+    """
 
     dir, _, filename = nanu_path.rpartition(_os.sep)
-    nanu_id, _, extension = filename.partition(".")  # get filename without extension
-    if nanu_id == "nanu":  # celestrak naming convention
-        nanu_id, _, extension = extension.partition(".")
-        if "-" in nanu_id:  # 199X file
+    nanu_id, _, extension = filename.partition(".")  # get name (no extension) e.g. 2022001 or nanu.2022001)
+    if nanu_id == "nanu":  # celestrak naming convention E.g. 'nanu.2022001.txt': the bit we want was in the 'extension'
+        nanu_id, _, extension = extension.partition(".")  # E.g. 2022001.txt -> 2022001, txt
+        if "-" in nanu_id:  # 199X file. E.g. 001-91002: first NANU of 1991 regarding?/published? DOY 2 (2nd Jan)
+            # While we can determine the ID of this file, the content is not machine readable!
+            if reject_old_format:  # Below date inferred from 'DTG: 250256Z NOV 97'
+                raise ValueError(f"NANUs prior to 1997111 (25th Nov 1997) are not machine readable. Got: {filename}")
             nanu_id = nanu_id[4:6] + nanu_id[:3]  # last one might be a letter but we skip for id
+            # Recombine short year '91' with sequence number '001'. TODO shouldn't we be padding that with '19'?
     return nanu_id
 
 
@@ -48,30 +70,40 @@ def parse_nanu(nanu_bytes: bytes) -> dict:
     return output_dict
 
 
-def read_nanu(path: str) -> dict:
+def read_nanu(path: str, reject_old_format: bool = True) -> dict:
     """A parser for Notice Advisory to Navstar Users (NANU) files.
     Assumes there is only one message per file, that starts with '1.'
 
-    :param _Union[str, bytes] path_or_bytes: path to nanu file or a bytes object
+    NOTE: machine readable NANUs started on 25th Nov 1997. NANUs prior to this
+    are by default rejected by nanu_path_to_id(): a ValueError is raised.
+
+    :param str path: path to nanu file
+    :param bool reject_old_format: (on by default) raise exception if old NANU encountered (not machine readable)
     :return dict: nanu values with parameter names as keys
+    :raises ValueError: if an old NANU is encountered which is not machine readable (prior to 1997-11-25)
     """
     nanu_bytes = _gn_io.common.path2bytes(path)
     output_dict = {}
     output_dict["FILEPATH"] = path  # TODO change to pathlib
-    output_dict["NANU ID"] = nanu_path_to_id(path)
+    output_dict["NANU ID"] = nanu_path_to_id(path, reject_old_format=reject_old_format)
     output_dict["CONTENT"] = nanu_bytes
     output_dict.update(parse_nanu(nanu_bytes))
     return output_dict
 
 
-def collect_nanus_to_df(glob_expr: str) -> _pd.DataFrame:
-    """Parses all the globbed files
+def collect_nanus_to_df(glob_expr: str, reject_old_format: bool = True) -> _pd.DataFrame:
+    """Runs the provided glob expression, parsing all the files it matches as NANUs, and loading them into a
+    Pandas DataFrame ready for further processing.
 
-    :param str glob_expr: a glob expression
+    :param str glob_expr: a glob expression to match NANU files, e.g. 'nanu/**/*.nnu' or
+        'nanu/**/*.{nnu,txt}' or 'nanu/**/nanu.*.txt'
+    :param bool reject_old_format: (on by default) raise exception if old NANU encountered (not machine readable)
     :return _pd.DataFrame: a dataframe of NANU data
+    :raises ValueError: if an old NANU is encountered which is not machine readable (prior to 1997-11-25). Depends on
+        reject_old_format=True.
     """
-    nanus_list = sorted(glob.glob(glob_expr))
-    return _pd.DataFrame(read_nanu(n) for n in nanus_list if n is not None)
+    nanu_file_paths = sorted(glob.glob(glob_expr))
+    return _pd.DataFrame(read_nanu(n, reject_old_format=reject_old_format) for n in nanu_file_paths if n is not None)
 
 
 def get_bad_sv_from_nanu_df(
