@@ -867,8 +867,9 @@ def download_file_from_cddis(
                     download_filepath.unlink()
                 raise
             backoff = _random.uniform(0.0, 2.0 ** retries)
-            logging.warning(f"Error downloading {filename}: {e} "
-                            f"(retry {retries}/{max_retries}, backoff {backoff:.1f}s)")
+            _warnings.warn(
+                f"Error downloading {filename}: {e} " f"(retry {retries}/{max_retries}, backoff {backoff:.1f}s)"
+            )
             _time.sleep(backoff)
 
     raise Exception("Unexpected fallthrough in download_file_from_cddis.")
