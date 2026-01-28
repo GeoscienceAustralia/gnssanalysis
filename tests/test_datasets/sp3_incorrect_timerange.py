@@ -4,6 +4,7 @@
 # speed. NOTE: at the time of writing the main bottleneck in reading seems to be the fact each epoch is parsed into a
 # temporary DataFrame, so without significantly overhauling that code, number of epochs appears to be the main
 # determiner of speed.
+# NOTE: Edited to have technically correct SP3 comment lines (trailing space on '/* ').
 sp3_test_inconsistent_timerange = b"""#dP2024  1 27  0  0  0.0000000      289 ORBIT IGS14 FIT  GAA
 ## 2298 518400.00000000   300.00000000 60336 0.0000000000000
 +    1   G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
@@ -22,10 +23,10 @@ sp3_test_inconsistent_timerange = b"""#dP2024  1 27  0  0  0.0000000      289 OR
 %f  0.0000000  0.000000000  0.00000000000  0.000000000000000
 %i    0    0    0    0      0      0      0      0         0
 %i    0    0    0    0      0      0      0      0         0
-/*
-/*
+/* 
+/* 
 /* ---- FILE NOT FOR OPERATIONAL USE ---- EXPERIMENTAL ---- 
-/*
+/* 
 *  2024  1 27  0  0  0.00000000
 PG02  20022.878477  10575.933444  14581.906269   -494.899674                    
 *  2024  1 27  0  5  0.00000000
