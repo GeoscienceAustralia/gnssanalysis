@@ -42,17 +42,42 @@ class TestPropsFromNameAndContent(TestCase):
         sp3_compliant_filename = Path(path_string_compliant)
 
         # Run
-        # TODO we don't test for this warning apart from with SP3 for now.
-        with self.assertWarns(Warning):
-            # Temporary, until we confirm warnings are appearing in standard logs. Then logging.warning() call can go.
-            logging.disable(logging.WARNING)
+        # TODO For now, we only test this with SP3 files.
+        with self.assertWarns(Warning) as warning_assessor:
+
             # NOTE: this only meaningfully tests determine_sp3_name_props(), and only really the filename
             # (not content) based parts of this:
+
+            # Should raise a warning about the non-compliant filename:
             derived_from_noncompliant = filenames.determine_properties_from_contents_and_filename(
                 sp3_noncompliant_filename
             )
-            logging.disable(logging.NOTSET)
-        derived_from_compliant = filenames.determine_properties_from_contents_and_filename(sp3_compliant_filename)
+
+            # Should raise a warning about the epoch count mismatch (filename otherwise valid)
+            derived_from_compliant = filenames.determine_properties_from_contents_and_filename(sp3_compliant_filename)
+
+        captured_warnings = warning_assessor.warnings
+        self.assertIn(
+            "Filename failed overly permissive regex for IGS short format",
+            str(captured_warnings[0].message),
+        )
+        self.assertEqual(
+            "Failed to get timespan from filename 'file1.sp3'",
+            str(captured_warnings[1].message),
+        )
+
+        # TODO warning 3 (index 2), is a duplicate of the first warning. Check the stack to see if this makes sense for
+        # the call order.
+
+        self.assertEqual(
+            "Header says there should be 2 epochs, however filename 'COD0OPSFIN_20242010000_01D_05M_ORB.SP3' implies there should be 288 (or 287 at minimum).",
+            str(captured_warnings[-1].message),
+        )
+        self.assertEqual(
+            len(captured_warnings),
+            4,
+            "Expected 4 warnings. Check what other warnings are being raised!",
+        )
 
         # Verify
         # These are computed values at time of wrting:

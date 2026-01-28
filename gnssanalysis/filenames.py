@@ -134,7 +134,7 @@ def determine_file_name_main(
             else:
                 print(new_name)
         except NotImplementedError:
-            logging.warning(f"Skipping {f.name} as {f.suffix} files are not yet supported.")
+            warnings.warn(f"Skipping {f.name} as {f.suffix} files are not yet supported.")
 
 
 def determine_file_name(
@@ -542,8 +542,8 @@ def determine_clk_name_props(file_path: pathlib.Path) -> dict[str, Any]:
     except Exception as e:
         # TODO: Work out what exceptions read_clk can actually throw when given a non-CLK file
         # At the moment we will also swallow errors we really shouldn't
-        logging.warning(f"{file_path.name} can't be read as an CLK file. Defaulting properties.")
-        logging.warning(f"Exception {e}, {type(e)}")
+        warnings.warn(f"{file_path.name} can't be read as an CLK file. Defaulting properties.")
+        warnings.warn(f"Exception {e}, {type(e)}")
         logging.info(traceback.format_exc())
         return {}
     return name_props
@@ -597,8 +597,8 @@ def determine_erp_name_props(file_path: pathlib.Path) -> dict[str, Any]:
     except Exception as e:
         # TODO: Work out what exceptions read_erp can actually throw when given a non-ERP file
         # At the moment we will also swallow errors we really shouldn't
-        logging.warning(f"{file_path.name} can't be read as an ERP file. Defaulting properties.")
-        logging.warning(f"Exception {e}, {type(e)}")
+        warnings.warn(f"{file_path.name} can't be read as an ERP file. Defaulting properties.")
+        warnings.warn(f"Exception {e}, {type(e)}")
         logging.info(traceback.format_exc())
         return {}
     return name_props
@@ -689,8 +689,8 @@ def determine_snx_name_props(file_path: pathlib.Path) -> dict[str, Any]:
     except Exception as e:
         # TODO: Work out what exceptions _get_snx_vector can actually throw when given a non-SNX file
         # At the moment we will also swallow errors we really shouldn't
-        logging.warning(f"{file_path.name} can't be read as an SNX file. Defaulting properties.")
-        logging.warning(f"Exception {e}, {type(e)}")
+        warnings.warn(f"{file_path.name} can't be read as an SNX file. Defaulting properties.")
+        warnings.warn(f"Exception {e}, {type(e)}")
         logging.info(traceback.format_exc())
         return {}
     return name_props
@@ -1015,7 +1015,7 @@ def check_filename_and_contents_consistency(
     # If parsing of a long filename fails, Project will not be present. In this case we have with minimal (and
     # maybe incorrect) properties to compare. So we raise a warning.
     if "project" not in file_name_properties:
-        logging.warning(
+        warnings.warn(
             f"Failed to parse filename according to the long filename format: '{input_file.name}'. "
             "As a result few useful properties are available to compare with the file contents, so the "
             "detailed consistency check will be skipped!"
@@ -1027,7 +1027,7 @@ def check_filename_and_contents_consistency(
 
     contents_epoch_interval = file_content_properties.get("sampling_rate_seconds", None)
     if contents_epoch_interval is None:
-        logging.warning(
+        warnings.warn(
             f"Sampling rate couldn't be inferred from file contents '{input_file.name}'. "
             "Cannot allow for timespan discrepancies of one epoch interval, so an error may follow."
         )
@@ -1035,7 +1035,7 @@ def check_filename_and_contents_consistency(
     discrepancies = {}
     # Check for keys only present on one side
     orphan_keys = set(file_name_properties.keys()).symmetric_difference((set(file_content_properties.keys())))
-    logging.warning(
+    warnings.warn(
         "The following properties can't be compared, as they were extracted only from file content or "
         f"name (not both): {str(orphan_keys)}"
     )
