@@ -239,8 +239,19 @@ def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]) -> N
     """
     num_to_remove: int = len(sats_to_remove)
 
-    # Update header SV count (bunch of type conversion because header is stored as strings)
-    sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED = str(int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove)
+    # As of Pandas 3, you can't do chained assignments.
+    # Trying to assign to a highly nested structure like this, does not apply the change to the higher level structures:
+    # sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED = <some value>
+
+    # So we have to get a reference to the lower-level strucutre, modify it, then explicitly update the higher-level
+    # structure with it.
+
+    # Get ref to lower-level structure
+    header_head: _pd.Series = sp3_df.attrs["HEADER"].HEAD
+    # Update
+    header_head.SV_COUNT_STATED = str(int(header_head.SV_COUNT_STATED) - num_to_remove)
+    # Explicitly update higher-level structure
+    sp3_df.attrs["HEADER"].HEAD = header_head
 
     # Remove sats from the multi-index which contains SV_INFO and HEAD. This does both SV list and accuracy code list.
     sp3_df.attrs["HEADER"].drop(level=1, labels=sats_to_remove, inplace=True)
@@ -1085,7 +1096,9 @@ def read_sp3(
         # not drop all the data to which the column previously applied!)
         # We drop from pos rather than vel, because vel is on the right hand side, so the layout resembles the
         # layout of an SP3 file better. Functionally, this shouldn't make a difference.
-        position_df = position_df.drop(axis=1, columns="FLAGS", level=0)  # TODO double check this level is right
+        position_df = position_df.drop(columns="FLAGS", level=0)
+        # As of Pandas 3:
+        # ValueError: Cannot specify both 'axis' and 'index'/'columns'
 
         velocity_df.columns = SP3_VELOCITY_COLUMNS
         # NOTE from the docs: pandas.concat copies attrs only if all input datasets have the same attrs.
@@ -1878,8 +1891,10 @@ def merge_attrs(df_list: list[_pd.DataFrame]) -> _pd.Series:
     values_if_mixed = _np.asarray(
         [version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX", None]
     )
-    head = df[0].loc["HEAD"].values
+    head = _np.array(df[0].loc["HEAD"].values)
+    # As of Pandas 3, assigning to this requires an explicit copy first
     head[mask_mixed] = values_if_mixed[mask_mixed]
+
     # total_num_epochs needs to be assigned manually - length can be the same but have different epochs in each file
     # Determine number of epochs combined DataFrame will contain) - N_EPOCHS in heads[3]:
     first_set_of_epochs = set(df_list[0].index.get_level_values("J2000"))

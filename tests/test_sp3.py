@@ -1296,6 +1296,7 @@ class TestMergeSP3(TestCase):
         self.assertEqual(result.attrs["HEADER"].HEAD.VERSION, "d")
         self.assertEqual(result.attrs["HEADER"].HEAD.AC, "AIES")
         self.assertEqual(result.attrs["HEADER"].HEAD.COORD_SYS, None)
+        # If we have a P and a V, the output is the lowest common, which is P:
         self.assertEqual(result.attrs["HEADER"].HEAD.PV_FLAG, "P")
         self.assertEqual(
             int(result.attrs["HEADER"].HEAD.SV_COUNT_STATED),

@@ -398,8 +398,12 @@ def igslogdate2datetime64(stacked_rec_ant_dt: _np.ndarray) -> _np.datetime64:
         + df_dt_valid[3].str.zfill(2)
         + ":"
         + df_dt_valid[4].str.zfill(2)
-    ).values.astype("datetime64")
-    return dt_datetime64
+    ).values.astype("datetime64[s]")
+    # TODO check if the above (datetime64 precision) needs to be higher than line 188 above, to ensure zero values for
+    # those fields?
+    # Pandas 3 requirement:
+    # ValueError: Passing in 'datetime64' dtype with no precision is not allowed. Please pass in 'datetime64[ns]' instead.
+    return dt_datetime64  # TODO fix return type hint
 
 
 def translate_series(series: _pd.Series, translation: dict) -> _pd.Series:

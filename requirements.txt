@@ -4,7 +4,7 @@ hatanaka
 jinja2
 matplotlib
 numpy
-pandas==2.3.3 # Temporarily pinned in Jan 2026, while fixing our compatibility issues with Pandas 3
+pandas==3.0.0 # For compatibility testing. TODO: unpin
 plotext==4.2
 plotly
 pyfakefs
