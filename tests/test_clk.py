@@ -47,15 +47,29 @@ class TestClk(TestCase):
         clk_df_gfz = clk.read_clk(clk_path=file_paths[1])
 
         # Deprecated version
-        result_default = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz)
-        result_daily_only = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["daily"])
-        result_epoch_only = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["epoch"])
-        result_sv_only = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["sv"])  # G01 ref
-        result_G06 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["G06"])
-        result_daily_epoch_G04 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["daily", "epoch", "G04"])
-        result_epoch_G07 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["epoch", "G07"])
-        result_daily_G08 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["daily", "G08"])
-        result_G09_G11 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["G09", "G11"])
+        # Ensure depreciation warnings are raised, but don't print them.
+        with self.assertWarns(Warning) as warning_assessor:
+            result_default = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz)
+            result_daily_only = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["daily"])
+            result_epoch_only = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["epoch"])
+            result_sv_only = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["sv"])  # G01 ref
+            result_G06 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["G06"])
+            result_daily_epoch_G04 = gn_diffaux.compare_clk(
+                clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["daily", "epoch", "G04"]
+            )
+            result_epoch_G07 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["epoch", "G07"])
+            result_daily_G08 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["daily", "G08"])
+            result_G09_G11 = gn_diffaux.compare_clk(clk_a=clk_df_igs, clk_b=clk_df_gfz, norm_types=["G09", "G11"])
+        captured_warnings = warning_assessor.warnings
+        self.assertEqual(
+            "compare_clk() is deprecated. Please use diff_clk() and note that the clk inputs are in opposite order",
+            str(captured_warnings[0].message),
+        )
+        self.assertEqual(
+            len(captured_warnings),
+            9,
+            "Expected exactly 9 warnings. Check what other warnings are being raised!",
+        )
 
         # Test index is as expected
         self.assertEqual(result_default.index[0], 760708800)
