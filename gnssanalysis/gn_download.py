@@ -823,14 +823,8 @@ def download_file_from_cddis(
     if download_filepath is None:
         return None  # File exists and user chose not to replace
 
-    # Get NASA Earthdata credentials
-    try:
-        earthdata_username, earthdata_password = get_earthdata_credentials(
-            username=username, password=password
-        )
-    except ValueError as e:
-        logging.error(f"Failed to obtain NASA Earthdata credentials: {e}")
-        raise
+    # Get NASA Earthdata credentials (raises ValueError on failure)
+    earthdata_username, earthdata_password = get_earthdata_credentials(username=username, password=password)
 
     retries = 0
     while retries <= max_retries:
@@ -862,6 +856,7 @@ def download_file_from_cddis(
         except _requests.exceptions.RequestException as e:
             retries += 1
             if retries > max_retries:
+                # TODO consider wrapping the RequestException with this, and raising that, rather than logging an error
                 logging.error(f"Failed to download {filename} after {max_retries} retries: {e}")
                 if download_filepath.is_file():
                     download_filepath.unlink()
