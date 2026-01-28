@@ -94,12 +94,11 @@ class TransferCallback:
             _sys.stdout.flush()
 
 
-
-def get_earthdata_credentials(username: str = None, password: str = None) -> Tuple[str, str]:
+def get_earthdata_credentials(username: Optional[str] = None, password: Optional[str] = None) -> Tuple[str, str]:
     """
     Get NASA Earthdata credentials from .netrc file or direct parameters.
-    :param str username: Directly provided username (highest priority)
-    :param str password: Directly provided password (highest priority)
+    :param Optional[str] username: Directly provided username (highest priority)
+    :param Optional[str] password: Directly provided password (highest priority)
     :return Tuple[str, str]: Username and password tuple
     :raises ValueError: If no credentials can be obtained
     """
@@ -774,17 +773,17 @@ def ftp_tls(url: str, **kwargs) -> Generator[Any, Any, Any]:
 
 def download_file_from_cddis(
     filename: str,
-    ftp_folder: Optional[str] = None,     # deprecated
-    url_folder: Optional[str] = None,     # preferred
+    ftp_folder: Optional[str] = None,  # deprecated
+    url_folder: Optional[str] = None,  # preferred
     output_folder: _Path = _Path("."),
     max_retries: int = 3,
     decompress: bool = True,
     if_file_present: str = "prompt_user",
-    username: str = None,
-    password: str = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
     note_filetype: Optional[str] = None,
 ) -> Union[_Path, None]:
-    """ Download a single file from the CDDIS HTTPS archive using NASA Earthdata authentication
+    """Download a single file from the CDDIS HTTPS archive using NASA Earthdata authentication
 
     :param str filename: Name of the file to download
     :param str ftp_folder: (Deprecated) Legacy folder path on the CDDIS FTP server. Use url_folder instead
@@ -794,8 +793,8 @@ def download_file_from_cddis(
     :param bool decompress: If true, decompresses files on download, defaults to True
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
     :param str note_filetype: How to label the file for STDOUT messages, defaults to None
-    :param str username: NASA Earthdata username (optional, will try .netrc if not provided).
-    :param str password: NASA Earthdata password (optional, will try .netrc if not provided).
+    :param Optional[str] username: NASA Earthdata username (optional, will try .netrc if not provided).
+    :param Optional[str] password: NASA Earthdata password (optional, will try .netrc if not provided).
     :raises ValueError: If no credentials can be obtained.
     :raises requests.RequestException: If the file cannot be downloaded after retries.
     :return _Path or None: The pathlib.Path of the downloaded file (or decompressed output of it).
@@ -872,11 +871,11 @@ def download_file_from_cddis(
 
 def download_multiple_files_from_cddis(
     files: List[str],
-    ftp_folder: Optional[str] = None,     # deprecated
-    url_folder: Optional[str] = None,     # preferred
+    ftp_folder: Optional[str] = None,  # deprecated
+    url_folder: Optional[str] = None,  # preferred
     output_folder: _Path = _Path("."),
-    username: str = None,
-    password: str = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
 ) -> None:
     """
     Download multiple files from the CDDIS HTTPS archive concurrently, using a thread pool.
@@ -885,8 +884,8 @@ def download_multiple_files_from_cddis(
     :param str ftp_folder: (Deprecated) Legacy folder path on the CDDIS FTP server. Use url_folder instead.
     :param str url_folder: Folder path (relative to CDDIS HTTPS archive root).
     :param _Path output_folder: Local folder to store the output files.
-    :param str username: NASA Earthdata username (optional, will try .netrc if not provided).
-    :param str password: NASA Earthdata password (optional, will try .netrc if not provided).
+    :param Optional[str] username: NASA Earthdata username (optional, will try .netrc if not provided).
+    :param Optional[str] password: NASA Earthdata password (optional, will try .netrc if not provided).
     :raises ValueError: If both ftp_folder and url_folder are provided.
     :return None: Runs downloads in parallel, does not return values. Each file is handled independently.
     """
@@ -939,8 +938,8 @@ def download_product_from_cddis(
     project_type: str = "OPS",
     timespan: _datetime.timedelta = _datetime.timedelta(days=2),
     if_file_present: str = "prompt_user",
-    username: str = None,
-    password: str = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
 ) -> List[_Path]:
     """Download the file/s from CDDIS based on start and end epoch, to the download directory (download_dir)
 
@@ -957,8 +956,8 @@ def download_product_from_cddis(
     :param str project_type: Project type of file to download (e.g. ), defaults to "OPS"
     :param _datetime.timedelta timespan: Timespan of the file/s to download, defaults to _datetime.timedelta(days=2)
     :param str if_file_present: What to do if file already present: "replace", "dont_replace", defaults to "prompt_user"
-    :param str username: NASA Earthdata username (optional, will try .netrc if not provided).
-    :param str password: NASA Earthdata password (optional, will try .netrc if not provided).
+    :param Optional[str] username: NASA Earthdata username (optional, will try .netrc if not provided).
+    :param Optional[str] password: NASA Earthdata password (optional, will try .netrc if not provided).
     :raises FileNotFoundError: Raise error if the specified file cannot be found on CDDIS
     :raises Exception: If a file fails to download after all retries.
     :return List[_Path]: List of pathlib.Path objects to downloaded (or decompressed) files.
