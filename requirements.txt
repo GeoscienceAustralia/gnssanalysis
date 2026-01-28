@@ -4,7 +4,7 @@ hatanaka
 jinja2
 matplotlib
 numpy
-pandas==3.0.0 # For compatibility testing. TODO: unpin
+pandas # Pandas 3+ requires Python >=3.11, has some breaking changes. Left unpinned to allow both Python 3.10, and 3.11+ to use separate versions.
 plotext==4.2
 plotly
 pyfakefs
