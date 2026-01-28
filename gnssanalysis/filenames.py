@@ -1035,9 +1035,11 @@ def check_filename_and_contents_consistency(
     discrepancies = {}
     # Check for keys only present on one side
     orphan_keys = set(file_name_properties.keys()).symmetric_difference((set(file_content_properties.keys())))
+    orphan_keys_sorted = list(orphan_keys)
+    orphan_keys_sorted.sort()
     warnings.warn(
         "The following properties can't be compared, as they were extracted only from file content or "
-        f"name (not both): {str(orphan_keys)}"
+        f"name (not both): {str(orphan_keys_sorted)}"
     )
     if output_orphan_prop_names:
         # Output properties found only in content OR filename.
