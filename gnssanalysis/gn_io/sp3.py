@@ -368,7 +368,7 @@ def update_sp3_comments(
     if not validate_sp3_comment_lines(
         new_lines, strict_mode=strict_mode, attempt_fixes=True, fail_on_fixed_issues=False
     ):
-        logger.warning("SP3 comment validation identified unfixable issues while writing comments!")
+        warnings.warn("SP3 comment validation identified unfixable issues while writing comments!")
 
     # Write updated lines back to the DataFrame attributes
     sp3_df.attrs["COMMENTS"] = new_lines
@@ -537,9 +537,7 @@ def _check_column_alignment_of_sp3_block(
                 f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
             )
         elif strict_mode == StrictModes.STRICT_WARN:
-            logger.warning(
-                f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'"
-            )
+            warnings.warn(f"Epoch header should be {_SP3_EPOCH_HEADER_WIDTH} chars long, but was {len(date)}: '{date}'")
     epoch_header_offset = 0  # TODO remove this after fixing our block splitting logic to not remove the '*'
     if len(date) == _SP3_EPOCH_HEADER_WIDTH - 1:  # Cut short by our block splitting logic. Adjust indexes accordingly.
         epoch_header_offset = -1
@@ -549,7 +547,7 @@ def _check_column_alignment_of_sp3_block(
             if strict_mode == StrictModes.STRICT_RAISE:
                 raise ValueError(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
             elif strict_mode == StrictModes.STRICT_WARN:
-                logger.warning(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
+                warnings.warn(f"Misaligned epoch header line (unused column didn't contain a space): '{date}'")
 
     # Now check each data line for this epoch
 
@@ -568,7 +566,7 @@ def _check_column_alignment_of_sp3_block(
                         f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
                     )
                 elif strict_mode == StrictModes.STRICT_WARN:
-                    logger.warning(
+                    warnings.warn(
                         f"Data lines should be {_SP3_DATA_LINE_WIDTH} chars. Got one {line_length} chars long: '{line}'"
                     )
 
@@ -587,7 +585,7 @@ def _check_column_alignment_of_sp3_block(
             if strict_mode == StrictModes.STRICT_RAISE:
                 raise ValueError(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
             elif strict_mode == StrictModes.STRICT_WARN:
-                logger.warning(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
+                warnings.warn(f"Data line should start with P/V/EP/EV. First two chars were: '{line[:2]}'")
             # Can't check column alignment for this line as we don't know which record type it is.
             continue
 
@@ -600,7 +598,7 @@ def _check_column_alignment_of_sp3_block(
                 if strict_mode == StrictModes.STRICT_RAISE:
                     raise ValueError(f"Misaligned data line (unused column did not contain a space): '{line}'")
                 elif strict_mode == StrictModes.STRICT_WARN:
-                    logger.warning(f"Misaligned data line (unused column did not contain a space): '{line}'")
+                    warnings.warn(f"Misaligned data line (unused column did not contain a space): '{line}'")
 
 
 def _process_sp3_block(
@@ -674,7 +672,7 @@ def try_get_sp3_filename(path_or_bytes: Union[str, Path, bytes]) -> Union[str, N
     if isinstance(path_or_bytes, str):
         return path_or_bytes.rsplit("/")[-1]
 
-    logger.warning("sp3_path_or_bytes was of an unexpected type. Filename not extracted")
+    warnings.warn("sp3_path_or_bytes was of an unexpected type. Filename not extracted")
     return None
 
 
@@ -716,7 +714,7 @@ def check_epoch_counts_for_discrepancies(
                 f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
             )
         elif strict_mode == StrictModes.STRICT_WARN:
-            logger.warning(
+            warnings.warn(
                 f"Header says there should be {header_epoch_count} epochs, however there are "
                 f"{content_unique_epoch_count} (unique) epochs in the content (duplicate epoch check comes later)."
             )
@@ -736,7 +734,7 @@ def check_epoch_counts_for_discrepancies(
         if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(f"Failed to get timespan from filename '{sp3_filename}'")
         elif strict_mode == StrictModes.STRICT_WARN:
-            logger.warning(f"Failed to get timespan from filename '{sp3_filename}'")
+            warnings.warn(f"Failed to get timespan from filename '{sp3_filename}'")
         return
 
     filename_sample_rate = filename_props.get("sampling_rate")
@@ -744,7 +742,7 @@ def check_epoch_counts_for_discrepancies(
         if strict_mode == StrictModes.STRICT_RAISE:
             raise ValueError(f"Failed to get sampling_rate from filename '{sp3_filename}'")
         elif strict_mode == StrictModes.STRICT_WARN:
-            logger.warning(f"Failed to get sampling_rate from filename '{sp3_filename}'")
+            warnings.warn(f"Failed to get sampling_rate from filename '{sp3_filename}'")
         return
 
     filename_sample_rate_timedelta = filenames.convert_nominal_span(filename_sample_rate)
@@ -765,7 +763,7 @@ def check_epoch_counts_for_discrepancies(
                 f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
             )
         elif strict_mode == StrictModes.STRICT_WARN:
-            logger.warning(
+            warnings.warn(
                 f"Header says there should be {header_epoch_count} epochs, however filename '{sp3_filename}' implies "
                 f"there should be {filename_derived_epoch_count} (or {filename_derived_epoch_count-1} at minimum)."
             )
@@ -802,7 +800,7 @@ def check_sp3_version(sp3_bytes: bytes, strict_mode: type[StrictMode] = StrictMo
                 f"Support for SP3 file version '{version_char_as_string}' is untested. Refusing to read as strict mode is on."
             )
         elif strict_mode == StrictModes.STRICT_WARN:
-            logger.warning(
+            warnings.warn(
                 f"Reading an older SP3 file version '{version_char_as_string}'. This may not parse correctly!"
             )
         return False
@@ -871,7 +869,7 @@ def validate_sp3_comment_lines(
                     f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that"
                 )
             elif strict_mode == StrictModes.STRICT_WARN:
-                logger.warning(f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that")
+                warnings.warn(f"SP3 files must have at least 4 comment lines! File is {short_by_lines} short of that")
 
         if attempt_fixes:
             sp3_comment_lines.extend([SP3_COMMENT_START] * short_by_lines)
@@ -888,7 +886,7 @@ def validate_sp3_comment_lines(
                 if strict_mode == StrictModes.STRICT_RAISE:
                     raise ValueError(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
                 elif strict_mode == StrictModes.STRICT_WARN:
-                    logger.warning(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
+                    warnings.warn(f"SP3 comments must begin with '/* ' (note space). Line: '{sp3_comment_lines[i]}'")
 
             if attempt_fixes:
                 if sp3_comment_lines[i][0:2] == "/*":
@@ -909,7 +907,7 @@ def validate_sp3_comment_lines(
                     f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
                 )
             elif strict_mode == StrictModes.STRICT_WARN:
-                logger.warning(
+                warnings.warn(
                     "SP3 comment lines must not exceed 80 chars (including lead-in). "
                     f"Line (length {len(sp3_comment_lines[i])}): '{sp3_comment_lines[i]}'"
                 )
@@ -1052,7 +1050,7 @@ def read_sp3(
         if strict_mode == StrictModes.STRICT_RAISE:
             raise NotImplementedError("EP and EV flag rows are currently not supported")
         elif strict_mode == StrictModes.STRICT_WARN:
-            logger.warning(
+            warnings.warn(
                 "EP / EV flag rows encountered. These are not yet supported. Dropping them from DataFrame. "
                 "Switch to strict mode RAISE to raise an exception instead"
             )
@@ -1131,7 +1129,7 @@ def read_sp3(
                     f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
                 )
             if discrepancy_strictness == StrictModes.STRICT_WARN:
-                logger.warning(
+                warnings.warn(
                     f"Number of SVs in SP3 header ({header_sv_count}) did not match file contents ({content_sv_count})!"
                 )
 
@@ -1160,7 +1158,7 @@ def read_sp3(
                 f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'."
             )
         elif strictness_dupes == StrictModes.STRICT_WARN:
-            logger.warning(
+            warnings.warn(
                 f"Duplicate epoch(s) found in SP3 ({duplicated_indexes.sum()} additional entries, potentially non-unique). "
                 f"First duplicate (as J2000): {first_dupe} (as date): {first_dupe + _gn_const.J2000_ORIGIN} "
                 f"SP3 path is: '{description_for_path_or_bytes(sp3_path_or_bytes)}'. Duplicates will be removed, keeping first."
@@ -1236,7 +1234,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     if len(sv_regex_matches) != 0:  # Result found
         head_sv_expected_count = int(sv_regex_matches[0][0])  # Line 1, group 1
     else:
-        logger.warning("Failed to extract count of expected SVs from SP3 header.")
+        warnings.warn("Failed to extract count of expected SVs from SP3 header.")
 
     # Get second capture group from each match, concat into byte string. These are the actual SVs. i.e. 'G02G03G04'...
     sv_id_matches = b"".join([x[1] for x in sv_regex_matches])
@@ -1246,7 +1244,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     # Sanity check that the number of SVs the regex found, matches what the header said should be there.
     found_sv_count = head_svs.shape[0]  # Effectively len() of the SVs array. Note this could include null/NA/NaN
     if head_sv_expected_count is not None and found_sv_count != head_sv_expected_count:
-        logger.warning(
+        warnings.warn(
             "Number of Satellite Vehicle (SV) entries extracted from the SP3 header, did not match the "
             "number of SVs the header said were there! This might be a header writer or header parser bug! "
             f"SVs extracted: {found_sv_count}, SV count given by header: {head_sv_expected_count} "
@@ -1269,7 +1267,7 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
     sv_tbl = _pd.Series(head_svs_std, index=head_svs)
 
     if warn_on_negative_sv_acc_values and any(acc < 0 for acc in head_svs_std):
-        logger.warning(
+        warnings.warn(
             "SP3 header contained orbit accuracy codes which were negative! These values represent "
             "error expressed as 2^x mm, so negative values are unrealistic and likely an error. "
             f"Parsed SVs and ACCs: {sv_tbl}"
@@ -1306,11 +1304,11 @@ def parse_sp3_header(header: bytes, warn_on_negative_sv_acc_values: bool = True)
 
         header_version = str(header_array[0])
         if header_version in ("a", "b"):
-            logger.warning(f"SP3 file is old version: '{header_version}', you may experience parsing issues")
+            warnings.warn(f"SP3 file is old version: '{header_version}', you may experience parsing issues")
         elif header_version in ("c", "d"):
             logger.info(f"SP3 header states SP3 file version is: {header_array[0]}")
         else:
-            logger.warning(
+            warnings.warn(
                 f"SP3 header is of an unknown version, or failed to parse! Version appears to be: '{header_version}'"
             )
 
@@ -1335,7 +1333,7 @@ def clean_sp3_orb(sp3_df: _pd.DataFrame, use_offline_sat_removal: bool) -> _pd.D
     try:
         filename = _os.path.basename(sp3_df.attrs["path"])
     except Exception as e:
-        logger.error(f"Failed to grab filename from sp3 dataframe for error output purposes: {str(e)}")
+        warnings.warn(f"Failed to grab filename from sp3 dataframe for error output purposes: {str(e)}")
 
     if sp3_df.size == 0:
         raise ValueError(f"Bad input data: can't clean an empty SP3 DataFrame. Source filename: '{filename}'")
@@ -1440,7 +1438,7 @@ def get_unique_svs(sp3_df: _pd.DataFrame) -> _pd.Index:
     # -> In this case the PV_FLAG index level will have been dropped.
     if "PV_FLAG" in sp3_df.index.names:
         if "E" in sp3_df.index.get_level_values("PV_FLAG").unique():
-            logger.warning(
+            warnings.warn(
                 "EV/EP record found late in SP3 processing. Until we actually support them, "
                 "they should be removed by the EV/EP check earlier on! Filtering out while determining unique SVs."
             )
@@ -1492,7 +1490,7 @@ def gen_sp3_header(
     sv_tbl = header.SV_INFO
 
     if head.VERSION != "d":
-        logger.warning(
+        warnings.warn(
             f"Stored SP3 header indicates version '{head.VERSION}'. Changing to version 'd' for "
             "write-out given that's the version this implementation is designed to create"
         )
@@ -1601,7 +1599,7 @@ def gen_sp3_header(
             attempt_fixes=False,
             fail_on_fixed_issues=True,
         ):
-            logger.warning("SP3 comments failed validation while being read in. Please see above logs for details.")
+            warnings.warn("SP3 comments failed validation while being read in. Please see above logs for details.")
 
     # Put the newlines back on the end of each comment line, before merging into the output header
     sp3_comment_lines = [line + "\n" for line in sp3_comment_lines]
@@ -1659,7 +1657,7 @@ def gen_sp3_content(
             raise NotImplementedError("Output of SP3 velocity data not currently supported")
 
         # Drop any of the defined velocity columns that are present, so it doesn't mess up the output.
-        logger.warning("SP3 velocity output not currently supported! Dropping velocity columns before writing out.")
+        warnings.warn("SP3 velocity output not currently supported! Dropping velocity columns before writing out.")
         # Remove any defined velocity column we have, don't raise exceptions for defined vel columns we may not have:
         out_df = out_df.drop(columns=SP3_VELOCITY_COLUMNS[1], errors="ignore")
 
@@ -2082,7 +2080,7 @@ def diff_sp3_rac(
     sp3_test = clean_sp3_orb(sp3_test, use_offline_sat_removal)
 
     if use_cubic_spline and not use_offline_sat_removal:
-        logger.warning(
+        warnings.warn(
             "Caution: use_cubic_spline is enabled, but use_offline_sat_removal is not. If there are any nodata "
             "position values, the cubic interpolator will crash!"
         )
