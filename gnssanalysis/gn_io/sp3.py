@@ -239,19 +239,35 @@ def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]) -> N
     """
     num_to_remove: int = len(sats_to_remove)
 
-    # As of Pandas 3, you can't do chained assignments.
-    # Trying to assign to a highly nested structure like this, does not apply the change to the higher level structures:
+    # NOTE: As of Pandas 3, you can't do chained assignments.
+    # Trying to assign to a highly nested structure like this, does NOT apply the change to the higher level structures:
     # sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED = <some value>
+    #
+    # The recommended approach is to use .loc, specifying the full heirarchy of the DataFrame or Series.
+    # I.e.
+    # Use this: header.loc["HEAD", "SV_COUNT_STATED"]
+    # NOT this: header["HEAD"]["SV_COUNT_STATED"]
+    #
+    # In the below statement, we get a reference to the Series object in the DataFrame attrs dict (dict key = "HEADER").
+    # "HEAD" is a column of the Series object: if we request that instead, we get a view or copy, NOT the actual
+    # Series object we can modify.
 
-    # So we have to get a reference to the lower-level strucutre, modify it, then explicitly update the higher-level
-    # structure with it.
+    # Get stable reference to HEADER Series within dataframe attributes dict:
+    header: _pd.Series = sp3_df.attrs["HEADER"]
 
-    # Get ref to lower-level structure
-    header_head: _pd.Series = sp3_df.attrs["HEADER"].HEAD
-    # Update
-    header_head.SV_COUNT_STATED = str(int(header_head.SV_COUNT_STATED) - num_to_remove)
-    # Explicitly update higher-level structure
-    sp3_df.attrs["HEADER"].HEAD = header_head
+    # Update nested structures explicitly with loc (chained assignments are disallowed under Pandas3's CoW scheme)
+    header.loc["HEAD", "SV_COUNT_STATED"] = str(int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove)
+
+    # NOTE: data structures here are roughly: sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED
+    #                                DataFrame^  dict^   key^ Series^  ^MultiIndex  ^Row(str)
+
+    # NOTE: We could assign the Series back to the attrs dict, but that's unnecessary as we got a reference to the
+    # Series object, not a copy of it.
+
+    # The most succinct Pandas3 compatible option so far is this, but it's a lot clearer to do it in two lines as above.
+    # sp3_df.attrs["HEADER"].loc["HEAD", "SV_COUNT_STATED"] = str(
+    #     int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove
+    # )
 
     # Remove sats from the multi-index which contains SV_INFO and HEAD. This does both SV list and accuracy code list.
     sp3_df.attrs["HEADER"].drop(level=1, labels=sats_to_remove, inplace=True)
