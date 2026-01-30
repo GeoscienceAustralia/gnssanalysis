@@ -1,6 +1,7 @@
 import logging as _logging
 from pathlib import Path as _Path
 from typing import Literal, Union
+import warnings
 
 import numpy as _np
 import pandas as _pd
@@ -118,7 +119,7 @@ def _compare_states(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, None
     diff_states = diffstd.unstack(["TYPE", "SITE", "SAT", "BLK", "NUM"])
     # we remove the '.droplevel("NUM", axis=0)' due to ORBIT_PTS non-uniqueness. Changing to ORBIT_PTS_blah might be a better solution
     if diff_states.empty:
-        _logging.warning(msg=f":diffutil states not present. Skipping")
+        warnings.warn(f":diffutil states not present. Skipping")
         return 0
     if plot:
         # a standard scatter plot
@@ -157,7 +158,7 @@ def _compare_residuals(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, N
     idx_names_to_unstack.remove("TIME")  # all but TIME: ['SITE', 'TYPE', 'SAT', 'NUM', 'It', 'BLK']
     diff_residuals = diffstd.unstack(idx_names_to_unstack)
     if diff_residuals.empty:
-        _logging.warning(f":diffutil residuals not present. Skipping")
+        warnings.warn(f":diffutil residuals not present. Skipping")
         return 0
     bad_residuals = _diff2msg(diff_residuals, tol=tol)
     if bad_residuals is not None:
@@ -176,7 +177,7 @@ def _compare_residuals(diffstd: _pd.DataFrame, log_lvl: int, tol: Union[float, N
 def _compare_stec(diffstd, log_lvl, tol=None):
     stec_diff = diffstd.unstack(level=("SITE", "SAT", "LAYER"))
     if stec_diff.empty:
-        _logging.warning(f":diffutil stec states not present. Skipping")
+        warnings.warn(f":diffutil stec states not present. Skipping")
         return 0
     bad_sv_states = _diff2msg(stec_diff, tol, dt_as_gpsweek=True)
     if bad_sv_states is not None:
@@ -323,7 +324,7 @@ def compare_clk(
     clk_b: baseline (normally b is test)
     """
 
-    _logging.warning(
+    warnings.warn(
         "compare_clk() is deprecated. Please use diff_clk() and note that the clk inputs are in opposite order"
     )
     return diff_clk(clk_baseline=clk_b, clk_test=clk_a, norm_types=norm_types, ext_dt=ext_dt, ext_svs=ext_svs)
@@ -428,7 +429,7 @@ def sisre(
     DEPRECATED
     """
 
-    _logging.warning(
+    warnings.warn(
         "sisre() is deprecated, please use calculate_sisre() instead. Note that input arg test/baseline orders are flipped"
     )
     return calculate_sisre(

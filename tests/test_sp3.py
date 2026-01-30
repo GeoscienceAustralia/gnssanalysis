@@ -1,6 +1,5 @@
 from datetime import timedelta
 import unittest
-from unittest.mock import patch, mock_open
 from pyfakefs.fake_filesystem_unittest import TestCase
 
 import numpy as np
@@ -73,16 +72,35 @@ class TestSP3(unittest.TestCase):
             sp3.check_sp3_version(fake_header_version_e)
 
         # Ambiguous cases
+        # Silence and check warnings about SP3 version B and C potential incompatibility.
+        with self.assertWarns(Warning) as warning_assessor:
+
+            self.assertEqual(
+                sp3.check_sp3_version(fake_header_version_b),
+                False,
+                "SP3 version b should not be considered fully supported",
+            )
+
+            self.assertEqual(
+                sp3.check_sp3_version(fake_header_version_c),
+                False,
+                "SP3 version c should not be considered fully supported",
+            )
+
+        # Assess the warnings raised by those two checks
+        captured_warnings = warning_assessor.warnings
         self.assertEqual(
-            sp3.check_sp3_version(fake_header_version_b),
-            False,
-            "SP3 version b should not be considered fully supported",
+            "Reading an older SP3 file version 'b'. This may not parse correctly!", str(captured_warnings[0].message)
         )
         self.assertEqual(
-            sp3.check_sp3_version(fake_header_version_c),
-            False,
-            "SP3 version c should not be considered fully supported",
+            "Reading an older SP3 file version 'c'. This may not parse correctly!", str(captured_warnings[1].message)
         )
+        self.assertEqual(
+            len(captured_warnings),
+            2,
+            "Expected only 2 warnings. Check what other warnings are being raised!",
+        )
+
         # Our best supported version should return True
         self.assertEqual(
             sp3.check_sp3_version(fake_header_version_d), True, "SP3 version d should be considered best supported"
@@ -206,14 +224,20 @@ class TestSP3(unittest.TestCase):
         # """
 
         # sp3.read_sp3(test_content_no_overlong)
-        with self.assertRaises(ValueError) as read_exception:
-            sp3.read_sp3(test_content_no_overlong, strictness_comments=STRICT_OFF, strict_mode=STRICT_RAISE)
-        self.assertEqual(
-            str(read_exception.exception), "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
-        )
+        with self.assertWarns(Warning) as warning_assessor:
+
+            with self.assertRaises(ValueError) as read_exception:
+                sp3.read_sp3(test_content_no_overlong, strictness_comments=STRICT_OFF, strict_mode=STRICT_RAISE)
+            self.assertEqual(
+                str(read_exception.exception),
+                "2 SP3 epoch data lines were overlong and very likely to parse incorrectly.",
+            )
+        captured_warnings = warning_assessor.warnings
+        self.assertIn("Line of SP3 input exceeded max width:", str(captured_warnings[0].message))
 
         # # Assert that it still warns by default (NOTE: we can't test this with above example data, as it doens't
         # # contain a full header)
+        # TODO
         # with self.assertWarns(Warning) as read_warning:
         #     sp3.read_sp3(test_content_no_overlong, strictness_comments=STRICT_OFF)
         # self.assertEqual(
@@ -426,7 +450,19 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         )
 
         # Test cleaning function without offline sat removal
-        sp3_df_no_offline_removal = sp3.clean_sp3_orb(sp3_df, False)
+        # Note: we validate the following expected warning here, to avoid printing it.
+        with self.assertWarns(Warning) as warning_assessor:
+            sp3_df_no_offline_removal = sp3.clean_sp3_orb(sp3_df, False)
+
+        captured_warnings = warning_assessor.warnings
+        self.assertIn(
+            "Failed to grab filename from sp3 dataframe for error output purposes:", str(captured_warnings[0].message)
+        )
+        self.assertEqual(
+            len(captured_warnings),
+            1,
+            "Only expected one warning, about failing to get path. Check what other warnings are being raised!",
+        )
 
         self.assertTrue(
             np.array_equal(sp3_df_no_offline_removal.index.get_level_values(0).unique(), [774619200]),
@@ -441,12 +477,27 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             "After cleaning there should be no dupe PRNs. As offline sat removal is off, offline sat should remain",
         )
 
-        # Now check with offline sat removal enabled too
-        sp3_df_with_offline_removal = sp3.clean_sp3_orb(sp3_df, True)
-        # Check that we still seem to have one epoch with no dupe sats, and now with the offline sat removed
-        self.assertTrue(
-            np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
-            "After cleaning there should be no dupe PRNs (and with offline removal, offline sat should be gone)",
+        # NOTE: for some inexplicable reason, the following invocation doesn't seem to print its warning to the
+        # terminal when run in unittest's single file mode. I.e:
+        # - python -m unittest discover -v       --> **Warning raised and printed**
+        # - python -m unittest test_sp3.py -v    --> **Warning raised (assertWarns() is successful), but not printed**
+
+        with self.assertWarns(Warning) as warning_assessor:
+            # Now check with offline sat removal enabled too
+            sp3_df_with_offline_removal = sp3.clean_sp3_orb(sp3_df, True)
+            # Check that we still seem to have one epoch with no dupe sats, and now with the offline sat removed
+            self.assertTrue(
+                np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
+                "After cleaning there should be no dupe PRNs (and with offline removal, offline sat should be gone)",
+            )
+        captured_warnings = warning_assessor.warnings
+        self.assertIn(
+            "Failed to grab filename from sp3 dataframe for error output purposes:", str(captured_warnings[0].message)
+        )
+        self.assertEqual(
+            len(captured_warnings),
+            1,
+            "Only expected one warning, about failing to get path. Check what other warnings are being raised!",
         )
 
     def test_gen_sp3_fundamentals(self):
@@ -932,19 +983,26 @@ SP3 comment reflow test. This should not break words if possible."""
 
     def test_gen_sp3_content_velocity_exception_handling(self):
         """
-        gen_sp3_content() velocity output should raise exception (currently unsupported).\
-            If asked to continue with warning, it should remove velocity columns before output.
+        gen_sp3_content() can't yet output velocity data. Ensure raises by default, and removes vel columns with warning
         """
         # Input data passed as bytes here, rather than using a mock file, because the mock file setup seems to break
         # part of Pandas Styler, which is used by gen_sp3_content(). Specifically, some part of Styler's attempt to
         # load style config files leads to a crash, despite some style config files appearing to read successfully)
         input_data_fresh = input_data + b""  # Lazy attempt at not passing a reference
         sp3_df = sp3.read_sp3(bytes(input_data_fresh), pOnly=False)
+
         with self.assertRaises(NotImplementedError):
             generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=False)
 
-        generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=True)
-        self.assertTrue("VX" not in generated_sp3_content, "Velocity data should be removed before outputting SP3")
+        with self.assertWarns(Warning) as warning_accessor:
+            generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=True)
+            self.assertTrue("VX" not in generated_sp3_content, "Velocity data should be removed before outputting SP3")
+
+        captured_warnings = warning_accessor.warnings
+        self.assertEqual(
+            "SP3 velocity output not currently supported! Dropping velocity columns before writing out.",
+            str(captured_warnings[0].message),
+        )
 
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})

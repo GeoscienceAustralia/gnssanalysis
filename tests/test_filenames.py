@@ -42,17 +42,42 @@ class TestPropsFromNameAndContent(TestCase):
         sp3_compliant_filename = Path(path_string_compliant)
 
         # Run
-        # TODO we don't test for this warning apart from with SP3 for now.
-        with self.assertWarns(Warning):
-            # Temporary, until we confirm warnings are appearing in standard logs. Then logging.warning() call can go.
-            logging.disable(logging.WARNING)
+        # TODO For now, we only test this with SP3 files.
+        with self.assertWarns(Warning) as warning_assessor:
+
             # NOTE: this only meaningfully tests determine_sp3_name_props(), and only really the filename
             # (not content) based parts of this:
+
+            # Should raise a warning about the non-compliant filename:
             derived_from_noncompliant = filenames.determine_properties_from_contents_and_filename(
                 sp3_noncompliant_filename
             )
-            logging.disable(logging.NOTSET)
-        derived_from_compliant = filenames.determine_properties_from_contents_and_filename(sp3_compliant_filename)
+
+            # Should raise a warning about the epoch count mismatch (filename otherwise valid)
+            derived_from_compliant = filenames.determine_properties_from_contents_and_filename(sp3_compliant_filename)
+
+        captured_warnings = warning_assessor.warnings
+        self.assertIn(
+            "Filename failed overly permissive regex for IGS short format",
+            str(captured_warnings[0].message),
+        )
+        self.assertEqual(
+            "Failed to get timespan from filename 'file1.sp3'",
+            str(captured_warnings[1].message),
+        )
+
+        # TODO warning 3 (index 2), is a duplicate of the first warning. Check the stack to see if this makes sense for
+        # the call order.
+
+        self.assertEqual(
+            "Header says there should be 2 epochs, however filename 'COD0OPSFIN_20242010000_01D_05M_ORB.SP3' implies there should be 288 (or 287 at minimum).",
+            str(captured_warnings[-1].message),
+        )
+        self.assertEqual(
+            len(captured_warnings),
+            4,
+            "Expected 4 warnings. Check what other warnings are being raised!",
+        )
 
         # Verify
         # These are computed values at time of wrting:
@@ -197,14 +222,48 @@ class TestPropsFromNameAndContent(TestCase):
         sp3_noncompliant_filename = Path(fake_path_noncompliant)
         sp3_compliant_filename = Path(fake_path_compliant)
 
-        # Require a warning. Also silences warning (would normally be routed to logging) while running the test.
-        with self.assertWarns(Warning):
-            # Temporary, until we confirm warnings are appearing in standard logs. Then logging.warning() call can go.
-            logging.disable(logging.WARNING)
-            derived_filename_noncompliant_input = filenames.determine_file_name(sp3_noncompliant_filename)
-            logging.disable(logging.NOTSET)
+        # Require warnings. Also silences warnings (would normally be routed to logging) while running the test.
+        with self.assertWarns(Warning) as warning_assessor:
 
-        derived_filename_compliant_input = filenames.determine_file_name(sp3_compliant_filename)
+            derived_filename_noncompliant_input = filenames.determine_file_name(sp3_noncompliant_filename)
+            # Expect
+            # - 'Filename failed overly permissive regex for IGS short format': 'file2.sp3'. Will attempt to parse, but output will likely be wrong'
+            # - 'Failed to get timespan from filename 'file2.sp3''
+
+        captured_warnings = warning_assessor.warnings
+        self.assertEqual(
+            "Filename failed overly permissive regex for IGS short format': 'file2.sp3'. Will attempt to parse, but output will likely be wrong",
+            str(captured_warnings[0].message),
+        )
+        self.assertEqual(
+            "Failed to get timespan from filename 'file2.sp3'",
+            str(captured_warnings[1].message),
+        )
+
+        # TODO warning 3 (index 2), is a duplicate of the first warning. Check the stack to see if this makes sense for
+        # the call order.
+
+        self.assertEqual(
+            len(captured_warnings),
+            3,
+            "Expected 3 warnings. Check what other warnings are being raised!",
+        )
+
+        with self.assertWarns(Warning) as warning_assessor:
+            derived_filename_compliant_input = filenames.determine_file_name(sp3_compliant_filename)
+            # Expect:
+            # - 'Header says there should be 2 epochs, however filename 'COD0OPSFIN_20242010000_01D_05M_ORB.sp3' implies there should be 288 (or 287 at minimum).'
+
+        captured_warnings = warning_assessor.warnings
+        self.assertEqual(
+            "Header says there should be 2 epochs, however filename 'COD0OPSFIN_20242010000_01D_05M_ORB.sp3' implies there should be 288 (or 287 at minimum).",
+            str(captured_warnings[0].message),
+        )
+        self.assertEqual(
+            len(captured_warnings),
+            1,
+            "Expected 1 warning. Check what other warnings are being raised!",
+        )
 
         expected_filename_noncompliant_input = "FIL0EXP_20242010000_05M_05M_ORB.SP3"
         expected_filename_compliant_input = "COD0OPSFIN_20242010000_05M_05M_ORB.SP3"
@@ -221,7 +280,33 @@ class TestPropsFromNameAndContent(TestCase):
         self.fs.create_file(fake_path_string, contents=sp3_test_inconsistent_timerange)
         test_sp3_file = Path(fake_path_string)
 
-        discrepant_properties = filenames.check_filename_and_contents_consistency(test_sp3_file)
+        # Check warnings, prevent printing
+        with self.assertWarns(Warning) as warning_assessor:
+
+            discrepant_properties = filenames.check_filename_and_contents_consistency(test_sp3_file)
+            # - Expect epoch mismatch warning: the very thing this check is designed to detect.
+            # - Expect missing key 'sampling_rate_seconds' from filename. This key can be present in content properties,
+            # and preserves the parsed seconds before conversion to a span string (e.g. 05M).
+
+        captured_warnings = warning_assessor.warnings
+
+        # Expect epoch mismatch warning: the very thing this check is designed to detect.
+        self.assertEqual(
+            "Header says there should be 289 epochs, however filename 'GAG0EXPULT_20240270000_02D_05M_ORB.SP3' implies there should be 576 (or 575 at minimum).",
+            str(captured_warnings[0].message),
+        )
+
+        self.assertEqual(
+            "The following properties can't be compared, as they were extracted only from file content or name (not both): ['end_epoch', 'sampling_rate_seconds']",
+            str(captured_warnings[1].message),
+        )
+
+        self.assertEqual(
+            len(captured_warnings),
+            2,
+            "Expected 2 warnings. Check what other warnings are being raised!",
+        )
+
         expected_discrepant_properties = {"timespan": (timedelta(days=2), timedelta(days=1))}
 
         self.assertEqual(discrepant_properties, expected_discrepant_properties)

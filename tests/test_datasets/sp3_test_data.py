@@ -18,7 +18,8 @@ fake_header_version_e = b"""#eV2001  8  8  0  0  0.00000000       1 ORBIT IGS97 
 """
 
 # first dataset is part of the IGS benchmark (modified to include non null data on clock)
-sp3_test_data_igs_benchmark_null_clock = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
+# Header adjusted to 3 epochs, reflecting content.
+sp3_test_data_igs_benchmark_null_clock = b"""#dV2007  4 12  0  0  0.00000000       3 ORBIT IGS14 BHN ESOC
 ## 1422 345600.00000000   900.00000000 54202 0.0000000000000
 +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0
 +          0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0

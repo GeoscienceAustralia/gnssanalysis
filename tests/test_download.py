@@ -238,7 +238,6 @@ class TestDownloadFileFromCddis(TestCase):
         """Set up fake filesystem for each test."""
         self.setUpPyfakefs()
 
-
     @patch('gnssanalysis.gn_download.get_earthdata_credentials')
     @patch('gnssanalysis.gn_download.check_whether_to_download')
     def test_file_already_exists_skip(self, mock_check, mock_creds):
@@ -361,19 +360,29 @@ class TestDownloadFileFromCddis(TestCase):
         mock_session_instance.get.side_effect = [mock_response_fail, mock_response_success]
 
         # Execute
-        result = download_file_from_cddis(
-            filename="test.txt",
-            url_folder="test/folder",
-            output_folder=output_dir,
-            max_retries=2,
-            decompress=False
+        # Check (and don't print) warning
+        with self.assertWarns(Warning) as warning_assessor:
+            result = download_file_from_cddis(
+                filename="test.txt", url_folder="test/folder", output_folder=output_dir, max_retries=2, decompress=False
+            )
+
+        captured_warnings = warning_assessor.warnings
+
+        self.assertIn(  # Backoff time is random, so can't be explicitly matched here.
+            "Error downloading test.txt: Network error (retry 1/2, backoff",
+            str(captured_warnings[0].message),
+        )
+
+        self.assertEqual(
+            len(captured_warnings),
+            1,
+            "Expected 1 warning. Check what other warnings are being raised!",
         )
 
         # Verify
         self.assertEqual(result, download_path)
         self.assertEqual(mock_session_instance.get.call_count, 2)
         mock_sleep.assert_called_once()  # Should sleep once between retries
-
 
     @patch('gnssanalysis.gn_download.get_earthdata_credentials')
     @patch('gnssanalysis.gn_download.check_whether_to_download')
