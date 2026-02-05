@@ -1298,7 +1298,7 @@ class DataFrameHashUtils:
                 pickled_dfs = pickled_list_hash_file.read()
 
             # And print out diffs for them...
-            diff_pickled_dfs(pickled_dfs, dataframes)
+            DataFrameHashUtils.diff_pickled_dfs(pickled_dfs, dataframes)
 
             # Raise to ensure the test fails and this change / regression gets investigated
             raise ValueError("Dataframes did not match baseline. Please investigate using above diffs")
@@ -1306,71 +1306,71 @@ class DataFrameHashUtils:
             _logging.debug(f"Hashes matched for '{pickled_list_path}': {pickled_list_sha256}")
             return True
 
+    @staticmethod
+    def diff_pickled_dfs(pickled_df_list: bytes, current_dfs_list: list[DataFrame]) -> None:
 
-def diff_pickled_dfs(pickled_df_list: bytes, current_dfs_list: list[DataFrame]) -> None:
-
-    # CAUTION: deserialising can present arbitrary code execution potential. Ensure the data passed in is trustworthy.
-    if DataFrameHashUtils.enable_unpickling != True:
-        raise ValueError(
-            "Cannot load baselined DataFrames from pickle for analysis as unpickling is off (default for security). "
-            "Temporarily set DataFrameHashUtils.enable_unpickling = True to allow deserialisation of old DFs from disk."
-        )
-    old_df_list: list[DataFrame] = pickle.loads(pickled_df_list)
-
-    old_length = len(old_df_list)
-    current_length = len(current_dfs_list)
-    if old_length != current_length:
-        raise ValueError(
-            f"Unpickled DataFrame list had {old_length} elements, " f"whereas the current one has {current_length}"
-        )
-    for i in range(current_length):
-        old_df = old_df_list[i]
-        current_df = current_dfs_list[i]
-
-        _logging.info(f"Diffing DataFrame #{i}...")
-
-        # DF.equals() may be useful, but does not check that the row/column index datatypes are the same
-        _logging.info(f"DataFrame.equals(): {current_df.equals(old_df)}")
-
-        try:
-            _logging.info(f"current_dataframe.compare(old_dataframe): {current_df.compare(old_df)}")
-        except ValueError:
-            _logging.info(
-                f"current_dataframe.compare(old_dataframe): FAILED! Indexes / columns likely differ. Running diff of those..."
+        # CAUTION: deserialising can present arbitrary code execution potential. Ensure the data passed in is trustworthy.
+        if DataFrameHashUtils.enable_unpickling != True:
+            raise ValueError(
+                "Cannot load baselined DataFrames from pickle for analysis as unpickling is off (default for security). "
+                "Temporarily set DataFrameHashUtils.enable_unpickling = True to allow deserialisation of old DFs from disk."
             )
-            diff_indexes_and_columns(old_df, current_df)
+        old_df_list: list[DataFrame] = pickle.loads(pickled_df_list)
 
+        old_length = len(old_df_list)
+        current_length = len(current_dfs_list)
+        if old_length != current_length:
+            raise ValueError(
+                f"Unpickled DataFrame list had {old_length} elements, " f"whereas the current one has {current_length}"
+            )
+        for i in range(current_length):
+            old_df = old_df_list[i]
+            current_df = current_dfs_list[i]
 
-def diff_indexes_and_columns(existing_df: DataFrame, current_df: DataFrame) -> None:
-    # Utility function to output diffs of DataFrame indexes and columns, as DataFrame.compare() will not run if
-    # they differ.
+            _logging.info(f"Diffing DataFrame #{i}...")
 
-    # Handle diffing of indexes
-    existing_df_index = existing_df.index.to_list()
-    current_df_index = current_df.index.to_list()
-    index_diff = set(existing_df_index).symmetric_difference(current_df_index)
-    if existing_df_index != current_df_index:
-        if len(index_diff) == 0:  # Diff must've been in order, not values
-            _logging.info("Indexes differed in order, but not values. Outputting full indexes:")
-            _logging.info(f"Existing DF indexes: {str(existing_df.index.to_list())}")
-            _logging.info(f"Current DF indexes: {str(current_df.index.to_list())}")
-        else:
-            _logging.info(f"The following index values are in one DF but not the other: {str(index_diff)}")
+            # DF.equals() may be useful, but does not check that the row/column index datatypes are the same
+            _logging.info(f"DataFrame.equals(): {current_df.equals(old_df)}")
 
-    # Handle diffing of columns
-    existing_df_colums = existing_df.columns.to_list()
-    current_df_columns = current_df.columns.to_list()
+            try:
+                _logging.info(f"current_dataframe.compare(old_dataframe): {current_df.compare(old_df)}")
+            except ValueError:
+                _logging.info(
+                    f"current_dataframe.compare(old_dataframe): FAILED! Indexes / columns likely differ. Running diff of those..."
+                )
+                DataFrameHashUtils.diff_indexes_and_columns(old_df, current_df)
 
-    column_diff = set(existing_df_colums).symmetric_difference(current_df_columns)
-    if existing_df_colums != current_df_columns:
-        if len(column_diff) == 0:  # Diff must've been in order, not values
-            _logging.info("Columns differed in order, but not values. Outputting full column listing:")
-            _logging.info(f"Existing DF columns: {str(existing_df.columns.to_list())}")
-            _logging.info(f"Current DF columns: {str(current_df.columns.to_list())}")
-        else:
-            _logging.info(f"The following column names are in one DF but not the other: {str(column_diff)}")
+    @staticmethod
+    def diff_indexes_and_columns(existing_df: DataFrame, current_df: DataFrame) -> None:
+        # Utility function to output diffs of DataFrame indexes and columns, as DataFrame.compare() will not run if
+        # they differ.
 
+        # Handle diffing of indexes
+        existing_df_index = existing_df.index.to_list()
+        current_df_index = current_df.index.to_list()
+        index_diff = set(existing_df_index).symmetric_difference(current_df_index)
+        if existing_df_index != current_df_index:
+            if len(index_diff) == 0:  # Diff must've been in order, not values
+                _logging.info("Indexes differed in order, but not values. Outputting full indexes:")
+                _logging.info(f"Existing DF indexes: {str(existing_df.index.to_list())}")
+                _logging.info(f"Current DF indexes: {str(current_df.index.to_list())}")
+            else:
+                _logging.info(f"The following index values are in one DF but not the other: {str(index_diff)}")
 
-# NOTE: for aggregate tests, the revised multi-dataframe functions in PickleHashUtils are suggested
-def pickle_and_sha256(obj: object) -> str:
-    return hashlib.sha256(pickle.dumps(obj)).hexdigest()
+        # Handle diffing of columns
+        existing_df_colums = existing_df.columns.to_list()
+        current_df_columns = current_df.columns.to_list()
+
+        column_diff = set(existing_df_colums).symmetric_difference(current_df_columns)
+        if existing_df_colums != current_df_columns:
+            if len(column_diff) == 0:  # Diff must've been in order, not values
+                _logging.info("Columns differed in order, but not values. Outputting full column listing:")
+                _logging.info(f"Existing DF columns: {str(existing_df.columns.to_list())}")
+                _logging.info(f"Current DF columns: {str(current_df.columns.to_list())}")
+            else:
+                _logging.info(f"The following column names are in one DF but not the other: {str(column_diff)}")
+
+    # NOTE: for aggregate tests, the revised multi-dataframe functions above are suggested
+    @staticmethod
+    def pickle_and_sha256(obj: object) -> str:
+        return hashlib.sha256(pickle.dumps(obj)).hexdigest()
