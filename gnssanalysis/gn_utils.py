@@ -1,14 +1,21 @@
+import hashlib
+import inspect
 import logging as _logging
 import os as _os
+import pickle
 import sys as _sys
 import pathlib as _pathlib
 from time import perf_counter
+import warnings
 
 import click as _click
 
-from typing import Union
+from pandas import DataFrame
+from typing import Literal, Optional, Union
 
 from gnssanalysis.enum_meta_properties import EnumMetaProperties
+
+DEFAULT_DATAFRAME_HASH_BASELINE_DIR = _pathlib.Path("./baseline_dataframe_records")
 
 
 class StrictMode(metaclass=EnumMetaProperties):
@@ -986,3 +993,366 @@ class ContextTimer:
         )
         if self.print_time:
             print(self.readout)
+
+
+class DataFrameHashUtils:
+
+    mode: Literal["baseline", "verify"] = "verify"
+
+    # Unpickling is off by default for security reasons (arbitrary code injection via serialised objects)
+    # Enable temporarily when needed to debug a test regression / change, and ensure input data is trusted.
+    enable_unpickling: bool = False  # DO NOT commit changes to this
+
+    # Record of (test) functions which have called either baseline or verify functions.
+    # If the same function calls twice, this indicates multiple data sets are being stored / checked, under a single
+    # name. This will cause the last to overwrite all previous, and we will only test that last one.
+    caller_record: set[str] = set()
+
+    @staticmethod
+    def get_paths_for_pickle_and_hash(
+        filename_prefix: str,
+        parent_dir: _pathlib.Path = DEFAULT_DATAFRAME_HASH_BASELINE_DIR,
+        subdir: Optional[_pathlib.Path] = None,
+    ) -> tuple[_pathlib.Path, _pathlib.Path]:
+
+        cwd: str = _pathlib.Path.cwd().as_posix()
+        if not cwd.endswith("/gnssanalysis/tests"):
+            raise ValueError(
+                f"DataFrameHashUtils invoked in invalid workdir: '{cwd}'. "
+                "It should only be run within 'gnssanalysis/tests'"
+            )
+
+        dir = parent_dir / subdir if subdir is not None else parent_dir
+        ensure_folders([dir])  # Create if it doesn't already exist
+
+        pickled_list_path = _pathlib.Path(f"{dir}/{filename_prefix}.pickledlist")
+        pickled_list_hash_path = _pathlib.Path(f"{dir}/{filename_prefix}.pickledlist_sha256")
+        return (pickled_list_path, pickled_list_hash_path)
+
+    @staticmethod
+    def get_grandparent_caller_id() -> tuple[str, str]:
+        # This function uses Python frame inspection to determine the *2nd level* caller's name. I.e. finds
+        # the grandparent class and function on the stack.
+
+        # --- AI declaration ---: This function leverages suggestions from Google Gemini.
+
+        # For example, if this is *called by* a function which was itself called by TestClk.test_diff_clk(), the
+        # return would be: (TestClk, test_diff_clk)
+
+        # Note, because navigation is simply a question of how far to walk the stack, it is important to be mindful
+        # of where you call this from!
+        # I.e. don't call it from within a function which in turn is called by
+        # something, the *caller* of which you want to know about... that would be frame -3, not frame -2.
+
+        # The following depicts the typical frame structure of intended usage:
+        # TestClk.test_diff_clk() -> DataFrameHashUtils.create_and_verify_pickled_df_list() -> get_caller_names()
+        #         ^Frame -2                             ^Frame -1                              ^ current frame
+        # We want the name of frame -2, our 'grandparent'.
+
+        # Set up try block to ensure we delete the frame ref created by calling this function
+        try:
+            caller_frame = None
+            # The calling function's calling function frame. I.e the frame of the grandparent function.
+            # We have to step back two, because the first frame is us, the next is the function leveraging us,
+            # and the one after that is whatever called *that* function.
+
+            # Leveraging a lot of linter ignores here, as almost everything in these chains can return None, making
+            # it easier and much simpler, to just catch the exceptions.
+            callers_callers_frame = inspect.currentframe().f_back.f_back  # type: ignore
+            func_name = callers_callers_frame.f_code.co_name  # type: ignore
+            if "self" in callers_callers_frame.f_locals:  # type: ignore
+                calling_class_name = callers_callers_frame.f_locals["self"].__class__.__name__  # type: ignore
+            elif "cls" in callers_callers_frame.f_locals:  # type: ignore
+                calling_class_name = callers_callers_frame.f_locals["cls"].__class__.__name__  # type: ignore
+            else:
+                raise AttributeError("Class not found via either self or cls")
+
+            # If nothing has raised an AttributeError yet, we have a class and function name.
+            # Check it's not accidentally us:
+            if calling_class_name == __class__.__name__:
+                raise ValueError(
+                    f"Calling error: somehow, the grandparent of get_caller_pretty_string() was "
+                    f"us {__class__.__name__}. That shouldn't happen. Got: {calling_class_name}"
+                )
+            # TODO can we check if it's a test, or lives in a 'tests' package?
+            # return f"{calling_class_name}.{func_name}"
+            return (calling_class_name, func_name)
+
+        except AttributeError as a_ex:
+            raise ValueError(
+                f"Failed to find name of caller. Please set filename_prefix and subdir explicity. Exception: {a_ex}"
+            )
+
+        finally:
+            del caller_frame  # Avoid creating ref cycle and leaking memory. I.e. help the garbage collector.
+            # See doc here: https://docs.python.org/3/library/inspect.html#inspect.Traceback.positions
+
+    @staticmethod
+    def ensure_unique_df_objects(dataframes: list[DataFrame]) -> None:
+
+        _logging.debug("Verifying no duplicate object references in DataFrame list to hash")
+
+        unique_addresses: set[int] = set([id(df) for df in dataframes])
+
+        addr_count = len(unique_addresses)
+        df_count = len(dataframes)
+        if len(unique_addresses) != len(dataframes):
+            raise ValueError(
+                f"Count of unique addresses ({addr_count}) didn't match length of dataframe list ({df_count}). "
+                "Two references to the same DF may have been passed, please investigate!"
+            )
+
+    @staticmethod
+    def record_baseline(  # Was baseline_pickled_df_list_and_hash()
+        dataframes: list[DataFrame],
+        parent_dir: _pathlib.Path = DEFAULT_DATAFRAME_HASH_BASELINE_DIR,
+        # Used to differentiate between multiple sets of dataframes in a single test function
+        # TODO can't we just bundle them:
+        # TODO in any case we need to detect and throw an exception when the same function calls us twice in a run...
+        test_index: Optional[int] = None,
+        # These are used to describe the calling class and function, and are inferred automatically. If needed they
+        # can be explicitly set here:
+        subdir: Optional[_pathlib.Path] = None,
+        filename_prefix: Optional[str] = None,
+    ) -> None:
+
+        if test_index is not None:
+            raise NotImplementedError()
+
+        # Structure here is:
+        # pickled_list: bytes -> created from an array of DataFrames. Pickled into a single bytes object.
+        # pickled_list_sha256: str -> sha256 hash of the above pickled DataFrame list.
+
+        if DataFrameHashUtils.mode != "baseline":
+            raise ValueError(
+                "Refusing to create baseline of pickled DF and hash, while not in 'baseline' mode. "
+                "Set DataframeHashUtils.mode = 'baseline' first"
+            )
+
+        if filename_prefix is None:
+            # Try to determine filename prefix from class name and function which is calling us...
+            caller_class, caller_func = DataFrameHashUtils.get_grandparent_caller_id()
+            _logging.debug(
+                f"No filename_prefix provided. "
+                f"Using grandparent class and func (found using frame inspection): {caller_class}, {caller_func}"
+            )
+            filename_prefix = caller_func
+            subdir = _pathlib.Path(caller_class)
+
+            caller_id = f"{caller_class}.{caller_func}"
+        else:
+            caller_id = filename_prefix
+
+        # Check if we've been called before by this class,function pair (i.e. caller_id).
+        # If this is not our first call, continuing will overwrite previous results. So we raise.
+        if caller_id in DataFrameHashUtils.caller_record:
+            raise ValueError(
+                f"Multiple calls from '{caller_id}'! Please consolidate your dataframes and "
+                "only pass one list per test function / filename_prefix."
+            )
+        DataFrameHashUtils.caller_record.add(caller_id)
+
+        pickled_objects_path, aggregate_sha256_path = DataFrameHashUtils.get_paths_for_pickle_and_hash(
+            filename_prefix, parent_dir=parent_dir, subdir=subdir
+        )
+
+        DataFrameHashUtils.ensure_unique_df_objects(dataframes)
+
+        pickled_list: bytes = pickle.dumps(dataframes)
+        pickled_list_sha256: str = hashlib.sha256(pickled_list).hexdigest()
+
+        warnings.warn(
+            "Baselining should only be done supervised (in a dev environment). "
+            "If you see this message in a pipeline run, something needs fixing!"
+        )
+        _logging.debug(f"About to write baseline: '{pickled_objects_path.as_posix()}': {pickled_list_sha256}...")
+
+        with open(aggregate_sha256_path, "wb") as hash_file:
+            hash_file.write(pickled_list_sha256.encode())
+        with open(pickled_objects_path, "wb") as pickled_objects_file:
+            pickled_objects_file.write(pickled_list)
+
+        _logging.info(
+            "TEST BASELINED -->> **Please ensure you commit both pickle and hash files with your changes**: "
+            f"'{pickled_objects_path.as_posix()}': {pickled_list_sha256}.\n"
+        )
+
+    @staticmethod
+    def verify(  # Was create_and_verify_pickled_df_list()
+        dataframes: list[DataFrame],
+        parent_dir: _pathlib.Path = DEFAULT_DATAFRAME_HASH_BASELINE_DIR,
+        # Option to strictly enforce that a baseline must exist for anything this function is invoked to check:
+        raise_for_missing_baseline: bool = False,
+        raise_rather_than_continue_for_incorrect_mode: bool = False,
+        # The expected pickled list hash will be read from disk, at a path constructed using the name of the
+        # calling class and function. While it should not be necessary, you can optionally override the expected hash:
+        expected_pickled_list_sha256: Optional[str] = None,
+        # These are used to describe the calling class and function, and are inferred automatically. If needed they
+        # can be explicitly set here:
+        subdir: Optional[_pathlib.Path] = None,
+        filename_prefix: Optional[str] = None,
+    ) -> bool:
+        # Return options:
+        # - True if verification successful.
+        # - False if baseline incomplete or missing (unable to verify). OR, if not running as mode != 'verify'
+        # NOTE: Raises for verification failed.
+
+        if DataFrameHashUtils.mode != "verify":
+
+            # TODO could change this to just politely state that it is skipping as in baseline mode. But we don't
+            # want to leave things in baseline mode, so...? Is failing tests sufficient? Hopefully.
+            if raise_rather_than_continue_for_incorrect_mode:
+                raise ValueError(
+                    "Refusing to run verify method while not in verify mode. "
+                    "Set DataframeHashUtils.mode = 'verify' first"
+                )
+            warnings.warn(
+                "Refusing to run verify method while not in verify mode. "
+                "Set DataframeHashUtils.mode = 'verify' first"
+            )
+            return False
+
+        # Verify we didn't get passed multiple, overwritten copies of the same reference
+        DataFrameHashUtils.ensure_unique_df_objects(dataframes)
+
+        if filename_prefix is None:
+            # Try to determine filename prefix from class name and function which is calling us...
+            caller_class, caller_func = DataFrameHashUtils.get_grandparent_caller_id()
+            _logging.debug(
+                f"No filename_prefix provided. "
+                f"Using grandparent class and func (found using frame inspection): {caller_class}, {caller_func}"
+            )
+            filename_prefix = caller_func
+            subdir = _pathlib.Path(caller_class)
+
+            caller_id = f"{caller_class}.{caller_func}"
+        else:
+            caller_id = filename_prefix
+
+        # Check if we've been called before by this class,function pair (i.e. caller_id).
+        if caller_id in DataFrameHashUtils.caller_record:
+            raise ValueError(
+                f"Multiple calls from '{caller_id}'! Please consolidate your dataframes and "
+                "only pass one list per test function / filename_prefix."
+            )
+        DataFrameHashUtils.caller_record.add(caller_id)
+
+        # Determine paths on disk...
+        pickled_list_path, pickled_list_hash_path = DataFrameHashUtils.get_paths_for_pickle_and_hash(
+            filename_prefix, parent_dir=parent_dir, subdir=subdir
+        )
+
+        # Check if pickled_df_list or hash exist on disk
+        pickle_exists = pickled_list_path.exists()
+        hash_exists = pickled_list_hash_path.exists()
+
+        if hash_exists == False:
+            if raise_for_missing_baseline:
+                raise ValueError(
+                    f"Cannot verify DFs against baseline (hash file: {'present' if hash_exists else 'missing'}, "
+                    f"pickled list file: {'present' if pickle_exists else 'missing'}) "
+                    f"for '{caller_id}'."
+                )
+            warnings.warn(
+                f"Cannot verify DFs against baseline (hash file: {'present' if hash_exists else 'missing'}, "
+                f"pickled list file: {'present' if pickle_exists else 'missing'}) "
+                f"for '{caller_id}'."
+            )
+            return False
+
+        if expected_pickled_list_sha256 is None:  # Expected hash not provided, load it from disk
+            # Load old aggregate hash (of pickled list)...
+            _logging.debug(f"No expected hash value provided for '{pickled_list_path}', attempting to load...")
+            with open(pickled_list_hash_path, "rb") as pickled_list_hash_file:
+                expected_pickled_list_sha256 = pickled_list_hash_file.read().decode()
+
+        # Data ready, now do comparison
+        # Generate pickled list and aggregate hash
+        pickled_list = pickle.dumps(dataframes)
+        pickled_list_sha256 = hashlib.sha256(pickled_list).hexdigest()
+
+        if pickled_list_sha256 != expected_pickled_list_sha256:
+            _logging.debug(
+                f"Hashes did not match for '{pickled_list_path}'. Expected: {expected_pickled_list_sha256} Actual: {pickled_list_sha256}"
+            )
+            # Load old DataFrames (pickled list)...
+            with open(pickled_list_path, "rb") as pickled_list_hash_file:
+                pickled_dfs = pickled_list_hash_file.read()
+
+            # And print out diffs for them...
+            diff_pickled_dfs(pickled_dfs, dataframes)
+
+            # Raise to ensure the test fails and this change / regression gets investigated
+            raise ValueError("Dataframes did not match baseline. Please investigate using above diffs")
+        else:
+            _logging.debug(f"Hashes matched for '{pickled_list_path}': {pickled_list_sha256}")
+            return True
+
+
+def diff_pickled_dfs(pickled_df_list: bytes, current_dfs_list: list[DataFrame]) -> None:
+
+    # CAUTION: deserialising can present arbitrary code execution potential. Ensure the data passed in is trustworthy.
+    if DataFrameHashUtils.enable_unpickling != True:
+        raise ValueError(
+            "Cannot load baselined DataFrames from pickle for analysis as unpickling is off (default for security). "
+            "Temporarily set DataFrameHashUtils.enable_unpickling = True to allow deserialisation of old DFs from disk."
+        )
+    old_df_list: list[DataFrame] = pickle.loads(pickled_df_list)
+
+    old_length = len(old_df_list)
+    current_length = len(current_dfs_list)
+    if old_length != current_length:
+        raise ValueError(
+            f"Unpickled DataFrame list had {old_length} elements, " f"whereas the current one has {current_length}"
+        )
+    for i in range(current_length):
+        old_df = old_df_list[i]
+        current_df = current_dfs_list[i]
+
+        _logging.info(f"Diffing DataFrame #{i}...")
+
+        # DF.equals() may be useful, but does not check that the row/column index datatypes are the same
+        _logging.info(f"DataFrame.equals(): {current_df.equals(old_df)}")
+
+        try:
+            _logging.info(f"current_dataframe.compare(old_dataframe): {current_df.compare(old_df)}")
+        except ValueError:
+            _logging.info(
+                f"current_dataframe.compare(old_dataframe): FAILED! Indexes / columns likely differ. Running diff of those..."
+            )
+            diff_indexes_and_columns(old_df, current_df)
+
+
+def diff_indexes_and_columns(existing_df: DataFrame, current_df: DataFrame) -> None:
+    # Utility function to output diffs of DataFrame indexes and columns, as DataFrame.compare() will not run if
+    # they differ.
+
+    # Handle diffing of indexes
+    existing_df_index = existing_df.index.to_list()
+    current_df_index = current_df.index.to_list()
+    index_diff = set(existing_df_index).symmetric_difference(current_df_index)
+    if existing_df_index != current_df_index:
+        if len(index_diff) == 0:  # Diff must've been in order, not values
+            _logging.info("Indexes differed in order, but not values. Outputting full indexes:")
+            _logging.info(f"Existing DF indexes: {str(existing_df.index.to_list())}")
+            _logging.info(f"Current DF indexes: {str(current_df.index.to_list())}")
+        else:
+            _logging.info(f"The following index values are in one DF but not the other: {str(index_diff)}")
+
+    # Handle diffing of columns
+    existing_df_colums = existing_df.columns.to_list()
+    current_df_columns = current_df.columns.to_list()
+
+    column_diff = set(existing_df_colums).symmetric_difference(current_df_columns)
+    if existing_df_colums != current_df_columns:
+        if len(column_diff) == 0:  # Diff must've been in order, not values
+            _logging.info("Columns differed in order, but not values. Outputting full column listing:")
+            _logging.info(f"Existing DF columns: {str(existing_df.columns.to_list())}")
+            _logging.info(f"Current DF columns: {str(current_df.columns.to_list())}")
+        else:
+            _logging.info(f"The following column names are in one DF but not the other: {str(column_diff)}")
+
+
+# NOTE: for aggregate tests, the revised multi-dataframe functions in PickleHashUtils are suggested
+def pickle_and_sha256(obj: object) -> str:
+    return hashlib.sha256(pickle.dumps(obj)).hexdigest()
