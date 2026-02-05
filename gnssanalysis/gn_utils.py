@@ -1136,10 +1136,6 @@ class DataFrameHashUtils:
         if test_index is not None:
             raise NotImplementedError()
 
-        # Structure here is:
-        # pickled_list: bytes -> created from an array of DataFrames. Pickled into a single bytes object.
-        # pickled_list_sha256: str -> sha256 hash of the above pickled DataFrame list.
-
         if DataFrameHashUtils.mode != "baseline":
             raise ValueError(
                 "Refusing to create baseline of pickled DF and hash, while not in 'baseline' mode. "
@@ -1173,7 +1169,12 @@ class DataFrameHashUtils:
             filename_prefix, subdir=subdir
         )
 
+        # Safety check that we did not get two references to the same DataFrame in the list
         DataFrameHashUtils.ensure_unique_df_objects(dataframes)
+
+        # Structure here is:
+        # pickled_list: bytes -> created from an array of DataFrames. Pickled into a single bytes object.
+        # pickled_list_sha256: str -> sha256 hash of the above pickled DataFrame list.
 
         pickled_list: bytes = pickle.dumps(dataframes)
         pickled_list_sha256: str = hashlib.sha256(pickled_list).hexdigest()
