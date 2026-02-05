@@ -15,7 +15,9 @@ from typing import Literal, Optional, Union
 
 from gnssanalysis.enum_meta_properties import EnumMetaProperties
 
-DEFAULT_DATAFRAME_HASH_BASELINE_DIR = _pathlib.Path("./baseline_dataframe_records")
+# Two options, as a convenience feature to allow invoking from the project root or the tests subdir.
+BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE = _pathlib.Path("./tests/baseline_dataframe_records")
+BASELINE_DATAFRAME_RECORDS_DIR_TESTS_RELATIVE = _pathlib.Path("./baseline_dataframe_records")
 
 
 class StrictMode(metaclass=EnumMetaProperties):
@@ -1011,22 +1013,37 @@ class DataFrameHashUtils:
     @staticmethod
     def get_paths_for_pickle_and_hash(
         filename_prefix: str,
-        parent_dir: _pathlib.Path = DEFAULT_DATAFRAME_HASH_BASELINE_DIR,
+        # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
         subdir: Optional[_pathlib.Path] = None,
     ) -> tuple[_pathlib.Path, _pathlib.Path]:
 
         cwd: str = _pathlib.Path.cwd().as_posix()
-        if not cwd.endswith("/gnssanalysis/tests"):
+
+        # The following is a quality of life feature, allowing test invocation from either:
+        #  - the project root dir --> python -m unittest discover -v -s tests
+        #  - the tests subdir     --> python -m unittest discover -v
+        if cwd.endswith("/gnssanalysis"):
+            parent_dir = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE
+        elif cwd.endswith("/gnssanalysis/tests"):
+            parent_dir = BASELINE_DATAFRAME_RECORDS_DIR_TESTS_RELATIVE
+        else:
             raise ValueError(
                 f"DataFrameHashUtils invoked in invalid workdir: '{cwd}'. "
-                "It should only be run within 'gnssanalysis/tests'"
+                "It should be run within the top level gnssanalysis project dir (preferred), or the tests subdir"
             )
 
-        dir = parent_dir / subdir if subdir is not None else parent_dir
-        ensure_folders([dir])  # Create if it doesn't already exist
+        if not parent_dir.is_dir():
+            raise ValueError(f"Test baselining dir not found at: '{parent_dir.as_posix()}'")
 
-        pickled_list_path = _pathlib.Path(f"{dir}/{filename_prefix}.pickledlist")
-        pickled_list_hash_path = _pathlib.Path(f"{dir}/{filename_prefix}.pickledlist_sha256")
+        target_dir = parent_dir / subdir if subdir is not None else parent_dir
+        if not target_dir.is_dir():
+            # Create directory (fail if parent dirs don't exist). We take this more conservative approach because if
+            # the baseline directory doesn't exist *where we are looking*, that may indicate our workdir is wrong
+            # and we should stop.
+            target_dir.mkdir()
+
+        pickled_list_path = _pathlib.Path(f"{target_dir}/{filename_prefix}.pickledlist")
+        pickled_list_hash_path = _pathlib.Path(f"{target_dir}/{filename_prefix}.pickledlist_sha256")
         return (pickled_list_path, pickled_list_hash_path)
 
     @staticmethod
@@ -1105,7 +1122,7 @@ class DataFrameHashUtils:
     @staticmethod
     def record_baseline(  # Was baseline_pickled_df_list_and_hash()
         dataframes: list[DataFrame],
-        parent_dir: _pathlib.Path = DEFAULT_DATAFRAME_HASH_BASELINE_DIR,
+        # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
         # Used to differentiate between multiple sets of dataframes in a single test function
         # TODO can't we just bundle them:
         # TODO in any case we need to detect and throw an exception when the same function calls us twice in a run...
@@ -1153,7 +1170,7 @@ class DataFrameHashUtils:
         DataFrameHashUtils.caller_record.add(caller_id)
 
         pickled_objects_path, aggregate_sha256_path = DataFrameHashUtils.get_paths_for_pickle_and_hash(
-            filename_prefix, parent_dir=parent_dir, subdir=subdir
+            filename_prefix, subdir=subdir
         )
 
         DataFrameHashUtils.ensure_unique_df_objects(dataframes)
@@ -1180,7 +1197,7 @@ class DataFrameHashUtils:
     @staticmethod
     def verify(  # Was create_and_verify_pickled_df_list()
         dataframes: list[DataFrame],
-        parent_dir: _pathlib.Path = DEFAULT_DATAFRAME_HASH_BASELINE_DIR,
+        # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
         # Option to strictly enforce that a baseline must exist for anything this function is invoked to check:
         raise_for_missing_baseline: bool = False,
         raise_rather_than_continue_for_incorrect_mode: bool = False,
@@ -1239,7 +1256,7 @@ class DataFrameHashUtils:
 
         # Determine paths on disk...
         pickled_list_path, pickled_list_hash_path = DataFrameHashUtils.get_paths_for_pickle_and_hash(
-            filename_prefix, parent_dir=parent_dir, subdir=subdir
+            filename_prefix, subdir=subdir
         )
 
         # Check if pickled_df_list or hash exist on disk
