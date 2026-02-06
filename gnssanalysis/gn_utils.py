@@ -16,8 +16,8 @@ from typing import Literal, Optional, Union
 from gnssanalysis.enum_meta_properties import EnumMetaProperties
 
 # Two options, as a convenience feature to allow invoking from the project root or the tests subdir.
-BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE = _pathlib.Path("./tests/baseline_dataframe_records")
-BASELINE_DATAFRAME_RECORDS_DIR_TESTS_RELATIVE = _pathlib.Path("./baseline_dataframe_records")
+UNITTEST_BASELINE_FILES_ROOT_RELATIVE = _pathlib.Path("./tests/unittest_baselines")
+UNITTEST_BASELINE_FILES_TESTS_RELATIVE = _pathlib.Path("./unittest_baselines")
 
 
 class StrictMode(metaclass=EnumMetaProperties):
@@ -997,7 +997,14 @@ class ContextTimer:
             print(self.readout)
 
 
-class DataFrameHashUtils:
+def sha256(bytes_to_hash: bytes) -> str:
+    """
+    Convenience wrapper to quickly call hashlib.sha256 and return a hex digest string
+    """
+    return hashlib.sha256(bytes_to_hash).hexdigest()
+
+
+class UnitTestBaseliner:
 
     mode: Literal["baseline", "verify"] = "verify"
 
@@ -1013,22 +1020,20 @@ class DataFrameHashUtils:
     @staticmethod
     def get_paths_for_pickle_and_hash(
         filename_prefix: str,
-        # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
         subdir: Optional[_pathlib.Path] = None,
     ) -> tuple[_pathlib.Path, _pathlib.Path]:
 
         cwd: str = _pathlib.Path.cwd().as_posix()
-
         # The following is a quality of life feature, allowing test invocation from either:
         #  - the project root dir --> python -m unittest discover -v -s tests
         #  - the tests subdir     --> python -m unittest discover -v
         if cwd.endswith("/gnssanalysis"):
-            parent_dir = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE
+            parent_dir = UNITTEST_BASELINE_FILES_ROOT_RELATIVE
         elif cwd.endswith("/gnssanalysis/tests"):
-            parent_dir = BASELINE_DATAFRAME_RECORDS_DIR_TESTS_RELATIVE
+            parent_dir = UNITTEST_BASELINE_FILES_TESTS_RELATIVE
         else:
             raise ValueError(
-                f"DataFrameHashUtils invoked in invalid workdir: '{cwd}'. "
+                f"UnitTestBaseliner invoked in invalid workdir: '{cwd}'. "
                 "It should be run within the top level gnssanalysis project dir (preferred), or the tests subdir"
             )
 
@@ -1062,8 +1067,8 @@ class DataFrameHashUtils:
         # something, the *caller* of which you want to know about... that would be frame -3, not frame -2.
 
         # The following depicts the typical frame structure of intended usage:
-        # TestClk.test_diff_clk() -> DataFrameHashUtils.create_and_verify_pickled_df_list() -> get_caller_names()
-        #         ^Frame -2                             ^Frame -1                              ^ current frame
+        # TestClk.test_diff_clk() -> UnitTestBaseliner.verify() -> get_caller_names()
+        #         ^Frame -2                            ^Frame -1   ^ current frame
         # We want the name of frame -2, our 'grandparent'.
 
         # Set up try block to ensure we delete the frame ref created by calling this function
@@ -1105,46 +1110,38 @@ class DataFrameHashUtils:
             # See doc here: https://docs.python.org/3/library/inspect.html#inspect.Traceback.positions
 
     @staticmethod
-    def ensure_unique_df_objects(dataframes: list[DataFrame]) -> None:
+    def ensure_unique_objects(objects: list[object]) -> None:
 
-        _logging.debug("Verifying no duplicate object references in DataFrame list to hash")
+        _logging.debug("Verifying no duplicate object references in object list to hash")
 
-        unique_addresses: set[int] = set([id(df) for df in dataframes])
+        unique_addresses: set[int] = set([id(obj) for obj in objects])
 
         addr_count = len(unique_addresses)
-        df_count = len(dataframes)
-        if len(unique_addresses) != len(dataframes):
+        obj_count = len(objects)
+        if addr_count != obj_count:
             raise ValueError(
-                f"Count of unique addresses ({addr_count}) didn't match length of dataframe list ({df_count}). "
-                "Two references to the same DF may have been passed, please investigate!"
+                f"Count of unique addresses ({addr_count}) didn't match length of object list ({obj_count}). "
+                "Two references to the same DF / other object may have been passed, please investigate!"
             )
 
     @staticmethod
-    def record_baseline(  # Was baseline_pickled_df_list_and_hash()
-        dataframes: list[DataFrame],
-        # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
-        # Used to differentiate between multiple sets of dataframes in a single test function
-        # TODO can't we just bundle them:
-        # TODO in any case we need to detect and throw an exception when the same function calls us twice in a run...
-        test_index: Optional[int] = None,
+    def create_baseline(  # Was baseline_pickled_df_list_and_hash()
+        current_object_list: list[object],
         # These are used to describe the calling class and function, and are inferred automatically. If needed they
         # can be explicitly set here:
         subdir: Optional[_pathlib.Path] = None,
         filename_prefix: Optional[str] = None,
     ) -> None:
 
-        if test_index is not None:
-            raise NotImplementedError()
-
-        if DataFrameHashUtils.mode != "baseline":
+        if UnitTestBaseliner.mode != "baseline":
             raise ValueError(
-                "Refusing to create baseline of pickled DF and hash, while not in 'baseline' mode. "
-                "Set DataframeHashUtils.mode = 'baseline' first"
+                "Refusing to create baseline of pickled DFs / objects and hash, while not in 'baseline' mode. "
+                "Set UnitTestBaseliner.mode = 'baseline' first"
             )
 
         if filename_prefix is None:
             # Try to determine filename prefix from class name and function which is calling us...
-            caller_class, caller_func = DataFrameHashUtils.get_grandparent_caller_id()
+            caller_class, caller_func = UnitTestBaseliner.get_grandparent_caller_id()
             _logging.debug(
                 f"No filename_prefix provided. "
                 f"Using grandparent class and func (found using frame inspection): {caller_class}, {caller_func}"
@@ -1158,25 +1155,34 @@ class DataFrameHashUtils:
 
         # Check if we've been called before by this class,function pair (i.e. caller_id).
         # If this is not our first call, continuing will overwrite previous results. So we raise.
-        if caller_id in DataFrameHashUtils.caller_record:
+        if caller_id in UnitTestBaseliner.caller_record:
             raise ValueError(
-                f"Multiple calls from '{caller_id}'! Please consolidate your dataframes and "
+                f"Multiple calls from '{caller_id}'! Please consolidate your dataframes / objects to verify, and "
                 "only pass one list per test function / filename_prefix."
             )
-        DataFrameHashUtils.caller_record.add(caller_id)
+        UnitTestBaseliner.caller_record.add(caller_id)
 
-        pickled_objects_path, aggregate_sha256_path = DataFrameHashUtils.get_paths_for_pickle_and_hash(
+        pickled_objects_path, aggregate_sha256_path = UnitTestBaseliner.get_paths_for_pickle_and_hash(
             filename_prefix, subdir=subdir
         )
 
-        # Safety check that we did not get two references to the same DataFrame in the list
-        DataFrameHashUtils.ensure_unique_df_objects(dataframes)
+        # Safety check that we did not get two references to the same DataFrame / object in the list
+        UnitTestBaseliner.ensure_unique_objects(current_object_list)
 
         # Structure here is:
-        # pickled_list: bytes -> created from an array of DataFrames. Pickled into a single bytes object.
-        # pickled_list_sha256: str -> sha256 hash of the above pickled DataFrame list.
+        # pickled_list: bytes -> created from an array of DataFrames / objects. Pickled into a single bytes object.
+        # pickled_list_sha256: str -> sha256 hash of the above pickled DataFrame / object list.
 
-        pickled_list: bytes = pickle.dumps(dataframes)
+        current_df_list: list[DataFrame] = [df for df in current_object_list if isinstance(df, DataFrame)]
+        if len(current_object_list) > len(current_df_list):
+            warnings.warn(
+                "Creating a unittest baseline containing objects other than DataFrames! This can be hash "
+                "verified, but verify() will crash if any changes are detected. Please implement support for "
+                "other required object types!"
+            )
+        # TODO other object support to be added here
+
+        pickled_list: bytes = pickle.dumps(current_object_list)
         pickled_list_sha256: str = hashlib.sha256(pickled_list).hexdigest()
 
         warnings.warn(
@@ -1197,7 +1203,7 @@ class DataFrameHashUtils:
 
     @staticmethod
     def verify(  # Was create_and_verify_pickled_df_list()
-        dataframes: list[DataFrame],
+        current_object_list: list[object],
         # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
         # Option to strictly enforce that a baseline must exist for anything this function is invoked to check:
         raise_for_missing_baseline: bool = False,
@@ -1215,27 +1221,26 @@ class DataFrameHashUtils:
         # - False if baseline incomplete or missing (unable to verify). OR, if not running as mode != 'verify'
         # NOTE: Raises for verification failed.
 
-        if DataFrameHashUtils.mode != "verify":
+        if UnitTestBaseliner.mode != "verify":
 
             # TODO could change this to just politely state that it is skipping as in baseline mode. But we don't
             # want to leave things in baseline mode, so...? Is failing tests sufficient? Hopefully.
             if raise_rather_than_continue_for_incorrect_mode:
                 raise ValueError(
                     "Refusing to run verify method while not in verify mode. "
-                    "Set DataframeHashUtils.mode = 'verify' first"
+                    "Set UnitTestBaseliner.mode = 'verify' first"
                 )
             warnings.warn(
-                "Refusing to run verify method while not in verify mode. "
-                "Set DataframeHashUtils.mode = 'verify' first"
+                "Refusing to run verify method while not in verify mode. " "Set UnitTestBaseliner.mode = 'verify' first"
             )
             return False
 
         # Verify we didn't get passed multiple, overwritten copies of the same reference
-        DataFrameHashUtils.ensure_unique_df_objects(dataframes)
+        UnitTestBaseliner.ensure_unique_objects(current_object_list)
 
         if filename_prefix is None:
             # Try to determine filename prefix from class name and function which is calling us...
-            caller_class, caller_func = DataFrameHashUtils.get_grandparent_caller_id()
+            caller_class, caller_func = UnitTestBaseliner.get_grandparent_caller_id()
             _logging.debug(
                 f"No filename_prefix provided. "
                 f"Using grandparent class and func (found using frame inspection): {caller_class}, {caller_func}"
@@ -1248,31 +1253,31 @@ class DataFrameHashUtils:
             caller_id = filename_prefix
 
         # Check if we've been called before by this class,function pair (i.e. caller_id).
-        if caller_id in DataFrameHashUtils.caller_record:
+        if caller_id in UnitTestBaseliner.caller_record:
             raise ValueError(
-                f"Multiple calls from '{caller_id}'! Please consolidate your dataframes and "
+                f"Multiple calls from '{caller_id}'! Please consolidate your dataframes / objects to validate, and "
                 "only pass one list per test function / filename_prefix."
             )
-        DataFrameHashUtils.caller_record.add(caller_id)
+        UnitTestBaseliner.caller_record.add(caller_id)
 
         # Determine paths on disk...
-        pickled_list_path, pickled_list_hash_path = DataFrameHashUtils.get_paths_for_pickle_and_hash(
+        pickled_list_path, pickled_list_hash_path = UnitTestBaseliner.get_paths_for_pickle_and_hash(
             filename_prefix, subdir=subdir
         )
 
-        # Check if pickled_df_list or hash exist on disk
+        # Check if pickled list or hash exist on disk
         pickle_exists = pickled_list_path.exists()
         hash_exists = pickled_list_hash_path.exists()
 
         if hash_exists == False:
             if raise_for_missing_baseline:
                 raise ValueError(
-                    f"Cannot verify DFs against baseline (hash file: {'present' if hash_exists else 'missing'}, "
+                    f"Cannot verify DFs / objects against baseline (hash file: {'present' if hash_exists else 'missing'}, "
                     f"pickled list file: {'present' if pickle_exists else 'missing'}) "
                     f"for '{caller_id}'."
                 )
             warnings.warn(
-                f"Cannot verify DFs against baseline (hash file: {'present' if hash_exists else 'missing'}, "
+                f"Cannot verify DFs / objects against baseline (hash file: {'present' if hash_exists else 'missing'}, "
                 f"pickled list file: {'present' if pickle_exists else 'missing'}) "
                 f"for '{caller_id}'."
             )
@@ -1286,36 +1291,62 @@ class DataFrameHashUtils:
 
         # Data ready, now do comparison
         # Generate pickled list and aggregate hash
-        pickled_list = pickle.dumps(dataframes)
-        pickled_list_sha256 = hashlib.sha256(pickled_list).hexdigest()
+        pickled_list = pickle.dumps(current_object_list)
+        pickled_list_sha256 = sha256(pickled_list)
 
         if pickled_list_sha256 != expected_pickled_list_sha256:
             _logging.debug(
                 f"Hashes did not match for '{pickled_list_path}'. Expected: {expected_pickled_list_sha256} Actual: {pickled_list_sha256}"
             )
-            # Load old DataFrames (pickled list)...
+            # Load old DataFrames / other objects (pickled list)...
             with open(pickled_list_path, "rb") as pickled_list_hash_file:
-                pickled_dfs = pickled_list_hash_file.read()
+                pickled_list = pickled_list_hash_file.read()
 
-            # And print out diffs for them...
-            DataFrameHashUtils.diff_pickled_dfs(pickled_dfs, dataframes)
+            # Unpickle if the safety is turned off
+            # CAUTION: deserialising can present arbitrary code execution potential. Ensure the data passed in is trustworthy.
+            if UnitTestBaseliner.enable_unpickling != True:
+                raise ValueError(
+                    "Cannot load baselined DataFrames / objects from pickle for analysis as unpickling is "
+                    "off (default for security). Temporarily set UnitTestBaseliner.enable_unpickling = True to "
+                    "allow deserialisation of old DFs / objects from disk."
+                )
+            warnings.warn(
+                "Unpickling object list from unittest baseline, to create diff with current results. This may "
+                "present a security risk, and should NOT be left enabled when not needed. Please ensure "
+                "UnitTestBaseliner.enable_unpickling defaults to False"
+            )
+            unpickled_object_list: list[object] = pickle.loads(pickled_list)
+
+            # Filter OLD (baseline) object list by datatype
+            old_df_list: list[DataFrame] = [df for df in unpickled_object_list if isinstance(df, DataFrame)]
+            if len(unpickled_object_list) > len(old_df_list):
+                raise NotImplementedError(
+                    "Outputting diffs for non-DataFrame objects during verification, is not yet supported"
+                )
+            # TODO filtering to extract other supported datatypes will go here in future, rather than the above exception
+
+            # Filter NEW (being verified) object list by datatype
+            current_df_list: list[DataFrame] = [df for df in current_object_list if isinstance(df, DataFrame)]
+            if len(current_object_list) > len(current_df_list):
+                raise NotImplementedError(
+                    "Outputting diffs for non-DataFrame objects during verification, is not yet supported"
+                )
+            # TODO as above for OLD objects, filtering for NEW objects will go here
+
+            # And print out diffs for the DataFrames. This in turn calls the index and column diff
+            # utility, if dataframe.diff() raises.
+            UnitTestBaseliner.diff_dfs(old_df_list, current_df_list)
+
+            # TODO when adding other supported object types, calculate diffs for them here.
 
             # Raise to ensure the test fails and this change / regression gets investigated
-            raise ValueError("Dataframes did not match baseline. Please investigate using above diffs")
+            raise ValueError("Dataframes / objects did not match baseline. Please investigate using above diffs")
         else:
             _logging.debug(f"Hashes matched for '{pickled_list_path}': {pickled_list_sha256}")
             return True
 
     @staticmethod
-    def diff_pickled_dfs(pickled_df_list: bytes, current_dfs_list: list[DataFrame]) -> None:
-
-        # CAUTION: deserialising can present arbitrary code execution potential. Ensure the data passed in is trustworthy.
-        if DataFrameHashUtils.enable_unpickling != True:
-            raise ValueError(
-                "Cannot load baselined DataFrames from pickle for analysis as unpickling is off (default for security). "
-                "Temporarily set DataFrameHashUtils.enable_unpickling = True to allow deserialisation of old DFs from disk."
-            )
-        old_df_list: list[DataFrame] = pickle.loads(pickled_df_list)
+    def diff_dfs(old_df_list: list[DataFrame], current_dfs_list: list[DataFrame]) -> None:
 
         old_length = len(old_df_list)
         current_length = len(current_dfs_list)
@@ -1338,7 +1369,7 @@ class DataFrameHashUtils:
                 _logging.info(
                     f"current_dataframe.compare(old_dataframe): FAILED! Indexes / columns likely differ. Running diff of those..."
                 )
-                DataFrameHashUtils.diff_indexes_and_columns(old_df, current_df)
+                UnitTestBaseliner.diff_indexes_and_columns(old_df, current_df)
 
     @staticmethod
     def diff_indexes_and_columns(existing_df: DataFrame, current_df: DataFrame) -> None:
@@ -1373,4 +1404,4 @@ class DataFrameHashUtils:
     # NOTE: for aggregate tests, the revised multi-dataframe functions above are suggested
     @staticmethod
     def pickle_and_sha256(obj: object) -> str:
-        return hashlib.sha256(pickle.dumps(obj)).hexdigest()
+        return sha256(pickle.dumps(obj))
