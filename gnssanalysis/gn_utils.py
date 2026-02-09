@@ -997,6 +997,28 @@ class ContextTimer:
             print(self.readout)
 
 
+def stringify_warnings(captured_warnings: list[warnings.WarningMessage]) -> str:
+    """
+    Convenience function to convert a list of warning messages to a string.
+    E.g. output:
+    Warning message #1: Some warning
+    Warning message #2: Some other warning
+    ...
+
+    :param captured_warnings: list of warning message objects (e.g. from UnitTest's _AssertWarnsContext.warnings)
+    :type captured_warnings: list[warnings.WarningMessage]
+    :return: rendered string for multi-line log output
+    :rtype: str
+    """
+    aggregate_message = ""
+    for i in range(len(captured_warnings)):
+        w = captured_warnings[i]
+        aggregate_message += f"Warning message #{i+1}: {str(w.message)}\n"
+    return aggregate_message
+    # Alternatively:
+    # return f"{''.join('MESSAGE -> ' + str(w.message) + NEWLINE for w in captured_warnings)}"
+
+
 def sha256(bytes_to_hash: bytes) -> str:
     """
     Convenience wrapper to quickly call hashlib.sha256 and return a hex digest string

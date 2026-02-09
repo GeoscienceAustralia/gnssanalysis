@@ -8,7 +8,7 @@ import pandas as pd
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
 import gnssanalysis.gn_io.sp3 as sp3
 
-from gnssanalysis.gn_utils import STRICT_OFF, STRICT_RAISE, STRICT_WARN, trim_line_ends
+from gnssanalysis.gn_utils import STRICT_OFF, STRICT_RAISE, STRICT_WARN, stringify_warnings, trim_line_ends
 from test_datasets.sp3_test_data import (
     fake_header_version_a,
     fake_header_version_b,
@@ -496,8 +496,9 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         )
         self.assertEqual(
             len(captured_warnings),
-            1,
-            "Only expected one warning, about failing to get path. Check what other warnings are being raised!",
+            1,  # Second warning is about pandas 3 deprecations.
+            "Only expected one warning, about failing to get path. "
+            f"Check all warnings below:\n{stringify_warnings(captured_warnings)}",
         )
 
     def test_gen_sp3_fundamentals(self):
