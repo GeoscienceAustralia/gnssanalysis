@@ -33,7 +33,7 @@ def read_clk(clk_path_or_bytes: _Union[Path, str, bytes]) -> _pd.DataFrame:
         clk_cols += [10]
         clk_names += ["STD"]
 
-    clk_df = _pd.read_csv(
+    clk_df = _pd.read_csv(  # TODO consider updating to read_fwf()
         _BytesIO(data),
         sep="\\s+",  # delim_whitespace is deprecated
         header=None,
