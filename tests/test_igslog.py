@@ -2,6 +2,7 @@ import unittest
 from pyfakefs.fake_filesystem_unittest import TestCase
 
 from gnssanalysis.gn_io import igslog
+from gnssanalysis.gn_utils import UnitTestBaseliner
 from test_datasets.sitelog_test_data import (
     abmf_site_log_v1 as v1_data,
     abmf_site_log_v2 as v2_data,
@@ -20,7 +21,8 @@ class TestRegex(unittest.TestCase):
         self.assertEqual(igslog.determine_log_version(v2_data), "v2.0")
 
         # Check that LogVersionError is raised on wrong data
-        self.assertRaises(igslog.LogVersionError, igslog.determine_log_version, b"Wrong data")
+        with self.assertRaises(igslog.LogVersionError):
+            igslog.determine_log_version(b"Wrong data")
 
     def test_extract_id_block(self):
         # Ensure the extract of ID information works and gives correct dome number:
@@ -86,6 +88,16 @@ class TestRegex(unittest.TestCase):
         # Last receiver should not have an end date assigned (i.e. current):
         self.assertEqual(v2_receiver_block[-1][-1], b"")
 
+        objs_to_verify: list[object] = [v1_receiver_block, v2_receiver_block]
+
+        # Baseline (manually)
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objs_to_verify)
+
+        # Verify
+        self.assertTrue(UnitTestBaseliner.verify(objs_to_verify), "Hash verification should pass")
+        # TODO update verify() to support required datatypes, so it does not crash if hash changes
+
     def test_extract_antenna_block(self):
         # Testing version 1:
         v1_antenna_block = igslog.extract_antenna_block(v1_data, "/example/path")
@@ -100,6 +112,16 @@ class TestRegex(unittest.TestCase):
         self.assertEqual(v2_antenna_block[0][8], b"2009-10-15T20:00Z")  # Check end date of second entry
         # Last antenna should not have an end date assigned (i.e. current):
         self.assertEqual(v2_antenna_block[-1][-1], b"")
+
+        objs_to_verify: list[object] = [v1_antenna_block, v2_antenna_block]
+
+        # Baseline (manually)
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objs_to_verify)
+
+        # Verify
+        self.assertTrue(UnitTestBaseliner.verify(objs_to_verify), "Hash verification should pass")
+        # TODO update verify() to support required datatypes, so it does not crash if hash changes
 
 
 class TestDataParsing(unittest.TestCase):
@@ -121,6 +143,17 @@ class TestDataParsing(unittest.TestCase):
         self.assertEqual(v2_data_parsed[0][4], "GLP")
         # Check last antenna type:
         self.assertEqual(v2_data_parsed[-1][2], "TRM57971.00")
+
+        objs_to_verify: list[object] = [v1_data_parsed, v2_data_parsed]
+
+        # Baseline (manually)
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objs_to_verify)
+
+        # Verify
+        self.assertTrue(UnitTestBaseliner.verify(objs_to_verify), "Hash verification should pass")
+        # TODO update verify() to support required datatypes, so it does not crash if hash changes
+        # TODO check if ndarray has an equivalent to DF.equals()
 
 
 class TestFileParsing(TestCase):
@@ -158,3 +191,25 @@ class TestFileParsing(TestCase):
         self.assertEqual(record_3.CODE, "AGGO")
         # Antenna info: test for antenna serial number
         self.assertEqual(result[2]["S/N"][4], "726722")
+
+        # As the gather_metadata() function we are testing here, reads from a filesystem and outputs a DataFrame,
+        # running it without pyfakefs isn't practical. So we temporarily suspend patching in order to run baselining.
+        # See docs here:
+        # https://pytest-pyfakefs.readthedocs.io/en/latest/convenience.html#suspending-patching
+
+        # Pause fake filesystem patching to allow access to baseline files.
+        self.fs.pause()
+
+        # Create a generic (object rather than DF) list, and copy elements across
+        dfs_to_verify: list[object] = []
+        dfs_to_verify.extend(result)
+
+        # Baseline (manually)
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(dfs_to_verify)
+
+        # Verify
+        self.assertTrue(UnitTestBaseliner.verify(dfs_to_verify), "Hash verification should pass")
+
+        # Ensure pyfakefs is re-enabled before further tests run
+        self.fs.resume()
