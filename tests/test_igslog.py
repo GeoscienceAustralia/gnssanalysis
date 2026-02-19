@@ -10,7 +10,7 @@ from test_datasets.sitelog_test_data import (
 )
 
 
-class TestRegex(unittest.TestCase):
+class TestIgsLogRegex(unittest.TestCase):
     """
     Test the various regex expressions used in the parsing of IGS log files
     """
@@ -124,7 +124,7 @@ class TestRegex(unittest.TestCase):
         # TODO update verify() to support required datatypes, so it does not crash if hash changes
 
 
-class TestDataParsing(unittest.TestCase):
+class TestIgsLogDataParsing(unittest.TestCase):
     """
     Test the integrated functions that gather and parse information from IGS log files
     """
@@ -156,7 +156,7 @@ class TestDataParsing(unittest.TestCase):
         # TODO check if ndarray has an equivalent to DF.equals()
 
 
-class TestFileParsing(TestCase):
+class TestIgsLogFileParsing(TestCase):
     """
     Test gather_metadata()
     """
