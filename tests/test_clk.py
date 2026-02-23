@@ -3,7 +3,7 @@ from unittest import TestCase
 
 import gnssanalysis.gn_io.clk as clk
 import gnssanalysis.gn_diffaux as gn_diffaux
-from gnssanalysis.gn_utils import UnitTestBaseliner
+from gnssanalysis.gn_utils import UnitTestBaseliner, stringify_warnings
 
 from test_datasets.clk_test_data import (
     # first dataset is a truncated version of file IGS0OPSRAP_20240400000_01D_05M_CLK.CLK:
@@ -73,7 +73,10 @@ class TestClk(TestCase):
         self.assertEqual(
             len(captured_warnings),
             9,
-            "Expected exactly 9 warnings. Check what other warnings are being raised!",
+            "Expected exactly 9 warnings. Check what other warnings are being raised! Full list below:\n"
+            + stringify_warnings(captured_warnings),
+            # Passing the converted warning strings to the assert may not be very efficient. Consider changing if
+            # it slows things down.
         )
 
         # Test index is as expected
