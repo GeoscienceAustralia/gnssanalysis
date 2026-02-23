@@ -28,7 +28,8 @@ class TestIgsLogRegex(unittest.TestCase):
         # Ensure the extract of ID information works and gives correct dome number:
         self.assertEqual(igslog.extract_id_block(v1_data, "/example/path", "ABMF", "v1.0"), ["ABMF", "97103M001"])
         self.assertEqual(igslog.extract_id_block(v2_data, "/example/path", "ABMF", "v2.0"), ["ABMF", "97103M001"])
-        # Check automatic version determination works as expected:
+        # Check that automatic version determination is used when a version is not provided. This
+        # leverages determine_log_version() which is already tested above:
         self.assertEqual(igslog.extract_id_block(v1_data, "/example/path", "ABMF"), ["ABMF", "97103M001"])
 
         # Check LogVersionError is raised on no data:
@@ -44,6 +45,7 @@ class TestIgsLogRegex(unittest.TestCase):
     def test_extract_location_block(self):
         # Version 1 Location description results:
         v1_location_block = igslog.extract_location_block(v1_data, "/example/path", "v1.0")
+        # NOTE: this test cannot currently support baselining. This will be addressed in NPI-4492
         self.assertEqual(v1_location_block.group(1), b"Les Abymes")
         self.assertEqual(v1_location_block.group(2), b"Guadeloupe")
 
@@ -153,7 +155,6 @@ class TestIgsLogDataParsing(unittest.TestCase):
         # Verify
         self.assertTrue(UnitTestBaseliner.verify(objs_to_verify), "Hash verification should pass")
         # TODO update verify() to support required datatypes, so it does not crash if hash changes
-        # TODO check if ndarray has an equivalent to DF.equals()
 
 
 class TestIgsLogFileParsing(TestCase):
