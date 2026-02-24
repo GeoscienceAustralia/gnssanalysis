@@ -292,9 +292,9 @@ class TestSP3(unittest.TestCase):
 
     def test_read_sp3_misalignment_check(self):
         """
-        Test that misaligned columns raise an error (currently only in STRICT mode).
-        Strictness of comment checking is set to OFF, as the test data has a comment line equal to '*/' not '*/ '
+        Test that misaligned columns raise an error in strict_mode=RAISE (by default it's a warning).
         """
+        # NOTE: Strictness of *comment* checking is set to OFF, as the test data has a comment line equal to '*/' not '*/ '
         with self.assertRaises(ValueError) as read_exception:
             sp3.read_sp3(sp3_test_data_misaligned_columns, strict_mode=STRICT_RAISE, strictness_comments=STRICT_OFF)
         self.assertEqual(
@@ -306,26 +306,27 @@ class TestSP3(unittest.TestCase):
         """
         Test that misaligned columns in an epoch block raise an error (currently only in STRICT mode)
         """
-        # Check that misaligned (but artificially not overlong) data line, raises exception
-        with self.assertRaises(ValueError) as misaligned_ex:
-            data = """
+
+        data = """
 PG06 -16988.173766  -1949.602010 -20295.348670  13551.688732                    
 PG07  -2270.179246 -18040.766586  19792.234454  13925.747073                    
 PG08-538216.0254931012968.294871-1053208.82032548447864.338317                  
 PG09  -7083.058359 -25531.577633  -1359.151582  14650.575917                    
 """
+        # Check that misaligned (but artificially not overlong) data line, raises exception
+        with self.assertRaises(ValueError) as misaligned_ex:
             sp3._check_column_alignment_of_sp3_block("*  2025  6 17  6  0  0.00000000", data, strict_mode=STRICT_RAISE)
         self.assertEqual(
             "Misaligned data line (unused column did not contain a space): 'PG08-538216.0254931012968.294871-1053208.82032548447864.338317                  '",
             str(misaligned_ex.exception),
         )
 
-        # Check that misaligned data line (flags) trimmed to 80 chars, raises exception
-        with self.assertRaises(ValueError) as misaligned_flags:
-            data = """
+        data = """
 PG06  -5247.775383 -25963.469495   -106.156584  15892.813576               P   P
 PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P   
 """
+        # Check that misaligned data line (flags) trimmed to 80 chars, raises exception
+        with self.assertRaises(ValueError) as misaligned_flags:
             sp3._check_column_alignment_of_sp3_block("*  2025  6 17  6  0  0.00000000", data, strict_mode=STRICT_RAISE)
         self.assertEqual(
             "Misaligned data line (unused column did not contain a space): 'PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P   '",
