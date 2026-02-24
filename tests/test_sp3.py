@@ -1269,6 +1269,9 @@ SP3 comment reflow test. This should not break words if possible."""
         Standalone test for remove_offline_sats() using manually constructed DataFrame to
         avoid dependency on read_sp3()
         """
+
+        objects_to_verify: list = []
+
         sp3_df_nans = TestSP3.get_example_dataframe("offline_sat_nan")
         sp3_df_zeros = TestSP3.get_example_dataframe("offline_sat_zero")
 
@@ -1282,6 +1285,7 @@ SP3 comment reflow test. This should not break words if possible."""
             ["G01", "G02", "G03"],
             "Should start with 3 SVs",
         )
+        objects_to_verify.extend([sp3_df_nans, sp3_df_zeros])
 
         sp3_df_zeros_removed = sp3.remove_offline_sats(sp3_df_zeros)
         sp3_df_nans_removed = sp3.remove_offline_sats(sp3_df_nans)
@@ -1296,6 +1300,13 @@ SP3 comment reflow test. This should not break words if possible."""
             ["G01", "G02"],
             "Should be two SVs after removing offline ones",
         )
+
+        objects_to_verify.extend([sp3_df_zeros_removed, sp3_df_nans_removed])
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_offline_sat_removal(self):
         sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False, strict_mode=STRICT_OFF)
