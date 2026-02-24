@@ -660,6 +660,9 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
 
     def test_update_sp3_comments(self):
         # Somewhat standalone test to check updating SP3 comments in a DataFrame
+
+        objects_to_verify: list = []
+
         expected_comments = [
             "/*   EUROPEAN SPACE OPERATIONS CENTRE - DARMSTADT, GERMANY",
             "/* ---------------------------------------------------------",
@@ -670,6 +673,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         sp3_df: pd.DataFrame = sp3.read_sp3(input_data, strict_mode=STRICT_OFF)  # Load DataFrame
         # Read comments directly from DataFrame to check they are as expected
         self.assertEqual(sp3_df.attrs["COMMENTS"], expected_comments, "SP3 initial comments read were not as expected")
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))  # Append list of comments (do not unpack elements)
 
         # Introduce invalid but not overlong comment to check lead-in writing part of validation
         sp3_df.attrs["COMMENTS"] = [
@@ -684,6 +688,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             ["/* malformed comment is missing lead-in", "/* malformed comment is missing space", "/* ", "/* "],
             "Lead in and spacing should be added to existing comments if missing",
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Introduce overlong comment to check exception handling part of validation
         sp3_df.attrs["COMMENTS"] = [
@@ -707,24 +712,31 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             "/* ",
             "Padding comment expected on second line",
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Check deletion of all comments
         sp3.update_sp3_comments(sp3_df, ammend=False)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"],
             ["/* ", "/* ", "/* ", "/* "],
-            "Should be no comments besides 4 padding ones, after running ammend with no input",
+            "Should be no comments besides 4 padding ones, after running with ammend=False and no input",
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Write initial comment lines
         sp3.update_sp3_comments(sp3_df, comment_lines=["line 1", "line 2", "line 3", "line 4"], ammend=False)
         self.assertEqual(sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4"])
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Write more lines
         sp3.update_sp3_comments(sp3_df, comment_lines=["line 5", "line 6"], ammend=True)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* line 5", "/* line 6"]
         )
+        # NOTE: Creating a new list captures the immutable strings it contains, at this point in time. Without
+        # constructing a new list, we would just capture a reference to the list itself (which is added to rather
+        # than replaced when ammend=True)
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Write more lines, free form
         sp3.update_sp3_comments(sp3_df, comment_string="arbitrary length line", ammend=True)
@@ -732,6 +744,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             sp3_df.attrs["COMMENTS"],
             ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* line 5", "/* line 6", "/* arbitrary length line"],
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Write more lines, both modes at once
         sp3.update_sp3_comments(sp3_df, comment_lines=["line 8"], comment_string="some other comment", ammend=True)
@@ -749,7 +762,9 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 "/* some other comment",
             ],
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
+        # Same as above but truncating existing comments (starting again)
         sp3.update_sp3_comments(sp3_df, comment_lines=["new line"], comment_string="some new comment", ammend=False)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"],
@@ -760,7 +775,9 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 "/* ",
             ],
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
+        # And free form string mode with no ammending (truncate)
         sp3.update_sp3_comments(sp3_df, comment_string="some other new comment", ammend=False)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"],
@@ -771,6 +788,16 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 "/* ",
             ],
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
+
+        # NOTE: comment reflow not tested above. This is done in test_sp3_comment_reflow()
+
+        # NOTE: all key changes are explicitly checked with asserts above: baselining is not strictly necessary.
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_comment_validation_standalone(self):
 
