@@ -123,7 +123,7 @@ class TestSP3(unittest.TestCase):
         self.assertEqual(len(result), 6)
 
         # UnitTestBaseliner.mode = "baseline"
-        # UnitTestBaseliner.create_baseline([result])
+        # UnitTestBaseliner.create_baseline([result]) # DO NOT commit this line un-commented.
 
         self.assertTrue(UnitTestBaseliner.verify([result]), "Hash verification should pass")
 
@@ -136,7 +136,7 @@ class TestSP3(unittest.TestCase):
         self.assertEqual(result.index[0][0], 229608000)  # Same date, as J2000
 
         # UnitTestBaseliner.mode = "baseline"
-        # UnitTestBaseliner.create_baseline([result])
+        # UnitTestBaseliner.create_baseline([result]) # DO NOT commit this line un-commented.
 
         self.assertTrue(UnitTestBaseliner.verify([result]), "Hash verification should pass")
 
@@ -159,7 +159,7 @@ class TestSP3(unittest.TestCase):
 
         # Somewhat redundant as it tests the same use of the read function as an already basedlined test above
         # UnitTestBaseliner.mode = "baseline"
-        # UnitTestBaseliner.create_baseline([result])
+        # UnitTestBaseliner.create_baseline([result]) # DO NOT commit this line un-commented.
 
         self.assertTrue(UnitTestBaseliner.verify([result]), "Hash verification should pass")
 
@@ -211,7 +211,7 @@ class TestSP3(unittest.TestCase):
 
         # TODO add support for pandas Series
         # UnitTestBaseliner.mode = "baseline"
-        # UnitTestBaseliner.create_baseline([result])
+        # UnitTestBaseliner.create_baseline([result]) # DO NOT commit this line un-commented.
 
         self.assertTrue(UnitTestBaseliner.verify([result]), "Hash verification should pass")
 
@@ -241,7 +241,7 @@ class TestSP3(unittest.TestCase):
 
         # TODO add support for pandas Index
         # UnitTestBaseliner.mode = "baseline"
-        # UnitTestBaseliner.create_baseline([result, parsed_svs_content])
+        # UnitTestBaseliner.create_baseline([result, parsed_svs_content]) # DO NOT commit this line un-commented.
 
         self.assertTrue(UnitTestBaseliner.verify([result, parsed_svs_content]), "Hash verification should pass")
 
@@ -551,7 +551,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         )
 
         # UnitTestBaseliner.mode = "baseline"
-        # UnitTestBaseliner.create_baseline(objects_to_verify)
+        # UnitTestBaseliner.create_baseline(objects_to_verify) # DO NOT commit this line un-commented.
 
         self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
@@ -613,7 +613,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             )
 
         # UnitTestBaseliner.mode = "baseline"
-        # UnitTestBaseliner.create_baseline(objects_to_verify)
+        # UnitTestBaseliner.create_baseline(objects_to_verify) # DO NOT commit this line un-commented.
 
         self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
@@ -654,7 +654,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         objects_to_verify.extend([sp3_df, automated_comment_read])
 
         # UnitTestBaseliner.mode = "baseline"
-        # UnitTestBaseliner.create_baseline(objects_to_verify)
+        # UnitTestBaseliner.create_baseline(objects_to_verify) # DO NOT commit this line un-commented.
 
         self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
