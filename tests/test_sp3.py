@@ -466,9 +466,43 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 ],
             )
 
-            # Merge SV table and header, and store as 'HEADER'
+            # Merge SV table and header into a single Series object, and store that as 'HEADER'
             df.attrs["HEADER"] = pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
         return df
+
+    def baseline_get_example_dataframe(self):
+
+        # NOTE: this function creates a baseline, but does not do any testing beyond that.
+        # I.e. it will detect regressions, but does not assert that the starting value is correct.
+
+        # TODO enable these once the default template is implemented
+        # ex_df_default = TestSP3.get_example_dataframe()
+        # ex_df_default_no_header = TestSP3.get_example_dataframe(include_simple_header=False)
+
+        ex_df_dupe = TestSP3.get_example_dataframe(template_name="dupe_epoch_offline_sat_empty_epoch")
+        ex_df_dupe_no_header = TestSP3.get_example_dataframe(
+            template_name="dupe_epoch_offline_sat_empty_epoch", include_simple_header=False
+        )
+
+        ex_df_offline_nan = TestSP3.get_example_dataframe(template_name="offline_sat_nan")
+        ex_df_offline_zero = TestSP3.get_example_dataframe(template_name="offline_sat_zero")
+
+        objects_to_verify: list = [
+            ex_df_dupe,
+            ex_df_dupe_no_header,
+            ex_df_offline_nan,
+            ex_df_offline_zero,
+        ]
+
+        # TODO baseline outputs
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
+
+    # TODO implement the following to actually test the example DF function, not just check for regressions against
+    # the current value
+    # def test_get_example_dataframe(self):
 
     def test_clean_sp3_orb(self):
         """
