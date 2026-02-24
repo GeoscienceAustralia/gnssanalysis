@@ -1148,7 +1148,7 @@ class UnitTestBaseliner:
 
     @staticmethod
     def create_baseline(  # Was baseline_pickled_df_list_and_hash()
-        current_object_list: list[object],
+        current_object_list: list,  # Any kind of object is ok
         # These are used to describe the calling class and function, and are inferred automatically. If needed they
         # can be explicitly set here:
         subdir: Optional[_pathlib.Path] = None,
@@ -1225,7 +1225,8 @@ class UnitTestBaseliner:
 
     @staticmethod
     def verify(  # Was create_and_verify_pickled_df_list()
-        current_object_list: list[object],
+        current_object_list: list,  # Can be any type of object (though diff output only supported for some types)
+        # TODO update to output notice rather than crashing, if type encountered we can't print a diff for.
         # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
         # Option to strictly enforce that a baseline must exist for anything this function is invoked to check:
         raise_for_missing_baseline: bool = False,

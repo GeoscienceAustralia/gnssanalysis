@@ -256,23 +256,25 @@ class TestSP3(unittest.TestCase):
         test_content_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
 ## 1422 345600.00000000   900.00000000 54202 0.0000000000000 THIS LINE IS TOO LONG
 +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 THIS IS OK.........
-+    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN ......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 2......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 3......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 4......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 5......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 6......
 """
-        #         test_content_no_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
-        # +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 THIS IS OK.........
-        # """
 
-        # sp3.read_sp3(test_content_no_overlong)
         with self.assertWarns(Warning) as warning_assessor:
 
             with self.assertRaises(ValueError) as read_exception:
                 sp3.read_sp3(test_content_overlong, strictness_comments=STRICT_OFF, strict_mode=STRICT_RAISE)
             self.assertEqual(
                 str(read_exception.exception),
-                "2 SP3 epoch data lines were overlong and very likely to parse incorrectly.",
+                "6 SP3 epoch data lines were overlong and very likely to parse incorrectly.",
             )
         captured_warnings = warning_assessor.warnings
         self.assertIn("Line of SP3 input exceeded max width:", str(captured_warnings[0].message))
+        self.assertIn("TOO LONG AGAIN 5......", str(captured_warnings[4].message))
+        self.assertEqual(len(captured_warnings), 5, "Only the first 5 overlong SP3 content lines should be printed")
 
         # # Assert that it still warns by default (NOTE: we can't test this with above example data, as it doens't
         # # contain a full header)
@@ -282,6 +284,11 @@ class TestSP3(unittest.TestCase):
         # self.assertEqual(
         #     str(read_warning.msg), "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
         # )
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(captured_warnings)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(captured_warnings), "Hash verification should pass")
 
     def test_read_sp3_misalignment_check(self):
         """
