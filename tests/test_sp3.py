@@ -843,6 +843,8 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
 
     def test_sp3_comment_validation_standalone(self):
 
+        objects_to_verify: list = []
+
         # Other examples of valid and invalid lines we could use.
 
         # valid_lines: list[str] = [
@@ -867,37 +869,47 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         # ]
 
         # Insufficient number of lines should fail validation
-        self.assertFalse(sp3.validate_sp3_comment_lines(["/* Must have >= 4 comment lines!"], STRICT_OFF))
+        comment_lines = ["/* Must have >= 4 comment lines!"]
+        self.assertFalse(sp3.validate_sp3_comment_lines(comment_lines, STRICT_OFF))
+        objects_to_verify.append(list(comment_lines))
+
+        comment_lines = [
+            "/* Must have >= 4 comment lines!",
+            "/* Must have >= 4 comment lines!",
+            "/* Must have >= 4 comment lines!",
+        ]
         self.assertFalse(
             sp3.validate_sp3_comment_lines(
-                [
-                    "/* Must have >= 4 comment lines!",
-                    "/* Must have >= 4 comment lines!",
-                    "/* Must have >= 4 comment lines!",
-                ],
+                comment_lines,
                 STRICT_OFF,
             )
         )
+        objects_to_verify.append(list(comment_lines))
+
+        comment_lines = [
+            "/* Must have >= 4 comment lines!",
+            "/* Must have >= 4 comment lines!",
+            "/* Must have >= 4 comment lines!",
+            "/* Ok we're good now",
+        ]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                [
-                    "/* Must have >= 4 comment lines!",
-                    "/* Must have >= 4 comment lines!",
-                    "/* Must have >= 4 comment lines!",
-                    "/* Ok we're good now",
-                ],
+                comment_lines,
                 STRICT_OFF,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # We have a convenience flag to turn that one off, to make testing less cumbersome:
+        comment_lines = ["/* Must have >= 4 comment lines! ...Unless that check is turned off"]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                ["/* Must have >= 4 comment lines! ...Unless that check is turned off"],
+                comment_lines,
                 STRICT_OFF,
                 skip_min_4_lines_test=True,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # # The bulk tests may be overkill.
         # # Bulk test valid and invalid lines, with different settings
@@ -929,46 +941,54 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         #     )
 
         # Uneventful cases
-        self.assertTrue(
-            sp3.validate_sp3_comment_lines(["/* this line is fine"], STRICT_RAISE, skip_min_4_lines_test=True)
-        )
+        comment_lines = ["/* this line is fine"]
+        self.assertTrue(sp3.validate_sp3_comment_lines(comment_lines, STRICT_RAISE, skip_min_4_lines_test=True))
+        objects_to_verify.append(list(comment_lines))
+
+        comment_lines = ["/* line 1", "/* line 2"]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                ["/* line 1", "/* line 2"],
+                comment_lines,
                 STRICT_OFF,
                 skip_min_4_lines_test=True,
                 attempt_fixes=False,
                 fail_on_fixed_issues=True,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # Turning off fail_on_fixed_issues should make no difference here.
+        comment_lines = ["/* line 1", "/* line 2"]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                ["/* line 1", "/* line 2"],
+                comment_lines,
                 STRICT_OFF,
                 skip_min_4_lines_test=True,
                 attempt_fixes=False,
                 fail_on_fixed_issues=False,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # Strict mode shouldn't change how valid lines are handled
+        comment_lines = ["/* line 1", "/* line 2"]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                ["/* line 1", "/* line 2"],
+                comment_lines,
                 STRICT_RAISE,
                 skip_min_4_lines_test=True,
                 attempt_fixes=False,
                 fail_on_fixed_issues=False,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # With strictness off, invalid lines shouldn't raise exceptions, but should still fail validation
         # Note that fail-on-fixed currently has no effect if attempt_fixes is off.
+        comment_lines = ["this line has no lead-in"]
         self.assertFalse(
             sp3.validate_sp3_comment_lines(
-                ["this line has no lead-in"],
+                comment_lines,
                 STRICT_OFF,
                 skip_min_4_lines_test=True,
                 attempt_fixes=False,
@@ -976,6 +996,8 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             ),
             "Invalid comment line should fail validation but not raise exception as strict mode is off",
         )
+        self.assertEqual(comment_lines, ["this line has no lead-in"], "No fix should be made when attempt_fixes=False")
+        # No need to add this one to the baseline, we have a full coverage assert here.
 
         with self.assertRaises(ValueError):
             sp3.validate_sp3_comment_lines(
@@ -1017,6 +1039,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             ["/* this line has missing space after lead-in"],
             "Missing space should be addressed in place",
         )
+        objects_to_verify.append(list(comment_lines))
 
         # With fail on fixed: fail validation because the input was wrong, even though we were able to remedy it.
         comment_lines = ["/*this line has missing space after lead-in"]
@@ -1035,6 +1058,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             ["/* this line has missing space after lead-in"],
             "Missing space should be addressed in place",
         )
+        objects_to_verify.append(list(comment_lines))
 
         # Same as above, but with strict mode: raise, that should be an exception.
         comment_lines = ["/*this line has missing space after lead-in"]
@@ -1067,6 +1091,11 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 skip_min_4_lines_test=True,
                 attempt_fixes=True,
             )
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_comment_reflow(self):
         # Test that string reflow utility correctly splits a string and converts it into SP3 comment lines.
