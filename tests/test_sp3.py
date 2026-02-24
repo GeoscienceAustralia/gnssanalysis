@@ -1169,24 +1169,40 @@ SP3 comment reflow test. This should not break words if possible."""
         """
         gen_sp3_content() can't yet output velocity data. Ensure raises by default, and removes vel columns with warning
         """
+
+        objects_to_verify: list = []
         # Input data passed as bytes here, rather than using a mock file, because the mock file setup seems to break
         # part of Pandas Styler, which is used by gen_sp3_content(). Specifically, some part of Styler's attempt to
         # load style config files leads to a crash, despite some style config files appearing to read successfully)
         input_data_fresh = input_data + b""  # Lazy attempt at not passing a reference
         sp3_df = sp3.read_sp3(bytes(input_data_fresh), pOnly=False)
+        objects_to_verify.append(sp3_df)
 
         with self.assertRaises(NotImplementedError):
             generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=False)
+            objects_to_verify.append(generated_sp3_content)
 
         with self.assertWarns(Warning) as warning_accessor:
             generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=True)
             self.assertTrue("VX" not in generated_sp3_content, "Velocity data should be removed before outputting SP3")
+            objects_to_verify.append(generated_sp3_content)
 
         captured_warnings = warning_accessor.warnings
         self.assertEqual(
             "SP3 velocity output not currently supported! Dropping velocity columns before writing out.",
             str(captured_warnings[0].message),
         )
+        self.assertEqual(
+            len(captured_warnings),
+            1,
+            "Expected only 1 warning. Check what other warnings are being raised! Full list below:\n"
+            + stringify_warnings(captured_warnings),
+        )
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
