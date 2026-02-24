@@ -1210,6 +1210,8 @@ SP3 comment reflow test. This should not break words if possible."""
         expected_result = pd.DataFrame({("EST", "CLK"): [np.nan, 123456.789, np.nan, 987654.321]})
         self.assertTrue(sp3_df.equals(expected_result))
 
+        # Note while this does not test a full dataframe, it does use DF.equals(), so we are not adding baselining.
+
     def test_sp3_pos_nodata_to_nan(self):
         """
         This test data represents four 'rows' of data, each with an X, Y and Z component of the Position vector.
@@ -1241,11 +1243,26 @@ SP3 comment reflow test. This should not break words if possible."""
         is to check if the function runs without errors
         TODO: update that to check actual expected values
         """
+
+        # TODO note we do not currntly check for a confirmed correct answer. We just check that the answer has
+        # not changed from our baseline.
+        objects_to_verify: list = []
+
         result = sp3.read_sp3(input_data, pOnly=True, strict_mode=STRICT_OFF)
+        objects_to_verify.append(result)
+
         r = sp3.getVelSpline(result)
-        r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r)
+        objects_to_verify.append(r)
+
+        r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r2)
+        objects_to_verify.append(r2)
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_offline_sat_removal_standalone(self):
         """
