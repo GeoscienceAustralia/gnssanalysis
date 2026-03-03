@@ -4,6 +4,7 @@ from pyfakefs.fake_filesystem_unittest import TestCase
 
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
 import gnssanalysis.gn_io.sp3 as sp3
@@ -1309,7 +1310,10 @@ SP3 comment reflow test. This should not break words if possible."""
         self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_offline_sat_removal(self):
+        objects_to_verify: list = []
+
         sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False, strict_mode=STRICT_OFF)
+        objects_to_verify.append(sp3_df)
 
         # Confirm starting state of content
         self.assertEqual(
@@ -1328,25 +1332,38 @@ SP3 comment reflow test. This should not break words if possible."""
             sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "3", "Header should have 2 SVs before removing offline"
         )
 
+        df_snapshot = DataFrame(sp3_df)
         # Now make the changes - this should also update the header
-        sp3_df = sp3.remove_offline_sats(sp3_df)
+        sp3_df_cleaned = sp3.remove_offline_sats(sp3_df)
+        objects_to_verify.append(sp3_df_cleaned)
+        # Ensure the source DF did NOT get modified...
+        df_snapshot_after = DataFrame(sp3_df)
+        self.assertTrue(
+            df_snapshot.equals(df_snapshot_after),
+            "Original DF should not be modified by function that returns a new copy",
+        )
 
         # Check contents
         self.assertEqual(
-            sp3_df.index.get_level_values(1).unique().array.tolist(),
+            sp3_df_cleaned.index.get_level_values(1).unique().array.tolist(),
             ["G02", "G03"],
             "Should be two SVs after removing offline ones",
         )
 
         # Check header
         self.assertEqual(
-            sp3_df.attrs["HEADER"].SV_INFO.index.array.tolist(),
+            sp3_df_cleaned.attrs["HEADER"].SV_INFO.index.array.tolist(),
             ["G02", "G03"],
             "Should be two SVs in parsed header after removing offline ones",
         )
         self.assertEqual(
-            sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "2", "Header should have 2 SVs after removing offline"
+            sp3_df_cleaned.attrs["HEADER"].HEAD.SV_COUNT_STATED, "2", "Header should have 2 SVs after removing offline"
         )
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     # sp3_test_data_truncated_cod_final is input_data2
     def test_filter_by_svs(self):
