@@ -96,7 +96,7 @@ class TransferCallback:
 
 def get_earthdata_credentials(username: Optional[str] = None, password: Optional[str] = None) -> Tuple[str, str]:
     """
-    Get NASA Earthdata credentials from .netrc file or direct parameters.
+    Get NASA Earthdata credentials from direct parameters, env vars, or .netrc file.
     :param Optional[str] username: Directly provided username (highest priority)
     :param Optional[str] password: Directly provided password (highest priority)
     :return Tuple[str, str]: Username and password tuple
@@ -106,7 +106,23 @@ def get_earthdata_credentials(username: Optional[str] = None, password: Optional
     if username and password:
         logging.debug("Using directly provided NASA Earthdata credentials")
         return username, password
-    # Priority 2: Try to read from .netrc file
+
+    # Priority 2: Try to read from env vars
+    logging.debug("Attempting to pick up NASA Earthdata credentials from env vars...")
+    if all(env in _os.environ for env in ["EARTHDATA_USERNAME", "EARTHDATA_PASSWORD"]):
+
+        env_user = _os.environ["EARTHDATA_USERNAME"]
+        env_pass = _os.environ["EARTHDATA_PASSWORD"]
+
+        if len(env_user) == 0 or len(env_pass) == 0:
+            raise ValueError("NASA Earthdata username or password found in env var appears to be empty")
+
+        logging.debug("NASA Earthdata credentials successfully read from env vars")
+        return _os.environ["EARTHDATA_USERNAME"], _os.environ["EARTHDATA_PASSWORD"]
+    else:
+        logging.debug("Env vars EARTHDATA_USERNAME or EARTHDATA_PASSWORD were not set. Trying netrc...")
+
+    # Priority 3: Try to read from .netrc file
     try:
         netrc_path = _Path.home() / '.netrc'
         if netrc_path.exists():
@@ -121,8 +137,11 @@ def get_earthdata_credentials(username: Optional[str] = None, password: Optional
     except Exception as e:
         logging.debug(f"Error reading .netrc: {e}")
     # No credentials available
-    raise ValueError("No NASA Earthdata credentials available. Provide username/password directly "
-                     f"or set up .netrc file with entry for '{EARTHDATA_URL}'.")
+    raise ValueError(
+        "No NASA Earthdata credentials available. Provide username/password directly, "
+        "set env vars EARTHDATA_USERNAME and EARTHDATA_PASSWORD, "
+        f"or set up .netrc file with entry for '{EARTHDATA_URL}'."
+    )
 
 
 def upload_with_chunksize_and_meta(
