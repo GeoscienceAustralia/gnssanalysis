@@ -1,7 +1,7 @@
 """Auxiliary functions"""
 
 import logging as _logging
-from typing import overload, Tuple, Union
+from typing import overload, Union
 import numpy as _np
 import pandas as _pd
 
@@ -183,7 +183,7 @@ def rms(
 
 def get_std_bounds(
     a: _np.ndarray,
-    axis: Union[None, int, Tuple[int, ...]] = None,
+    axis: Union[None, int, tuple[int, ...]] = None,
     sigma_coeff: int = 3,
 ):
     """
@@ -287,7 +287,7 @@ def degminsec2deg(a: Union[_pd.Series, _pd.DataFrame, list, str]) -> Union[_pd.S
         assert isinstance(a_series, _pd.Series)
         return _series_str_degminsec2deg(a_series).unstack()
     else:
-        raise TypeError("Unsupported input type. Please use either of _pd.Series, _pd.DataFrame, List or str")
+        raise TypeError("Unsupported input type. Please use either of _pd.Series, _pd.DataFrame, list or str")
 
 
 def _deg2degminsec(a: _np.ndarray) -> _np.ndarray:

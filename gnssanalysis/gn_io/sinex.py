@@ -1,4 +1,4 @@
-"""IO functions for various formats used: trace, sinex etc """
+"""IO functions for various formats used: trace, sinex etc"""
 
 import logging as _logging
 import math as _math
@@ -7,9 +7,7 @@ import re as _re
 import zlib as _zlib
 from io import BytesIO as _BytesIO
 from typing import Any as _Any
-from typing import Dict as _Dict
 from typing import Iterable as _Iterable
-from typing import List as _List
 from typing import Union as _Union
 
 import numpy as _np
@@ -61,7 +59,7 @@ def _get_snx_header(path_or_bytes):
 
 # This is in tension with the existing above function but is what was used by
 # the filenames functionality and so is ported here for now.
-def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _Any]:
+def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> dict[str, _Any]:
     """Extract the data contained in the header of a sinex file
 
     The extracted data is returned in a dictionary containing:
@@ -75,7 +73,7 @@ def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _
      - "contents": list[str]
 
     :param _Union[str, bytes, _os.PathLike] file_path: sinex file from which to read header
-    :return _Dict[str, _Any]: dictionary containing the properties extracted from the header
+    :return dict[str, _Any]: dictionary containing the properties extracted from the header
     """
     with open(file_path, mode="r", encoding="utf-8") as f:
         header_line = f.readline()
@@ -95,7 +93,7 @@ def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _
             header_line,
             _re.VERBOSE,
         )
-        if match:
+        if match is not None:
             header_dict = match.groupdict()
             header_dict["creation_time"] = _gn_datetime.snx_time_to_pydatetime(header_dict["creation_time"])
             header_dict["start_epoch"] = _gn_datetime.snx_time_to_pydatetime(header_dict["start_epoch"])
@@ -107,20 +105,20 @@ def get_header_dict(file_path: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _
             return {}
 
 
-def get_available_blocks(file_path: _Union[str, bytes, _os.PathLike]) -> _List[str]:
+def get_available_blocks(file_path: _Union[str, bytes, _os.PathLike]) -> list[str]:
     """Return the blocks available within a sinex file
 
     :param _Union[str, bytes, _os.PathLike] file_path: sinex file to read for blocks
-    :return _List[str]: list of names of blocks available in sinex file
+    :return list[str]: list of names of blocks available in sinex file
     """
     with open(file_path, "r", encoding="utf-8") as f:
         return [line[1:-1].strip() for line in f if line.startswith("+")]
 
 
-def includes_noncrd_block(block_labels: _List[str]) -> bool:
+def includes_noncrd_block(block_labels: list[str]) -> bool:
     """Check whether list of block names includes at least one non-coordinate block
 
-    :param _List[str] block_labels: list of block names to check
+    :param list[str] block_labels: list of block names to check
     :return bool: whether any block names correspond to non-coordinate blocks
     """
     return any(is_noncrd_block(b) for b in block_labels)
@@ -159,11 +157,11 @@ def all_notnan(iterable: _Iterable) -> bool:
 
 
 # TODO: Generalise to handle a path or bytes object?
-def read_sinex_comment_block(filename: _Union[str, bytes, _os.PathLike]) -> _List[str]:
+def read_sinex_comment_block(filename: _Union[str, bytes, _os.PathLike]) -> list[str]:
     """Extract comments from a provided sinex file
 
     :param Union[str, bytes, os.PathLike] filename: path to sinex file
-    :return List[str]: list containing all lines in sinex comment block
+    :return list[str]: list containing all lines in sinex comment block
     """
     with open(filename, "r", encoding="utf-8") as f:
         # Find start of "+FILE/COMMENT"
@@ -179,7 +177,7 @@ def read_sinex_comment_block(filename: _Union[str, bytes, _os.PathLike]) -> _Lis
         return comment_lines
 
 
-def extract_mincon_from_comments(comment_block: _Iterable[str]) -> _Dict[str, _Any]:
+def extract_mincon_from_comments(comment_block: _Iterable[str]) -> dict[str, _Any]:
     """Extract PEA-style minimum constraints data from sinex comments
 
     PEA can place information about the minimum constraint solution applied into a sinex
@@ -198,7 +196,7 @@ def extract_mincon_from_comments(comment_block: _Iterable[str]) -> _Dict[str, _A
     The entries will only be included if complete data is extracted for them.
 
     :param _Iterable[str] comment_block: iterable containing comment lines to parse
-    :return _Dict[str, _Any]: dictionary containing extracted minimum constraints information
+    :return dict[str, _Any]: dictionary containing extracted minimum constraints information
     """
     # Initialise the places where we'll store our output data
     unused = []
@@ -269,7 +267,7 @@ def extract_mincon_from_comments(comment_block: _Iterable[str]) -> _Dict[str, _A
             transform["rotation_uncertainty"] = rotation_uncertainty
 
     # Set up return data dictionary
-    mincon_dict: _Dict[str, _Any] = {"used": used, "unused": unused}
+    mincon_dict: dict[str, _Any] = {"used": used, "unused": unused}
     if len(transform) != 0:
         mincon_dict["transform"] = transform
 
@@ -277,7 +275,7 @@ def extract_mincon_from_comments(comment_block: _Iterable[str]) -> _Dict[str, _A
 
 
 # TODO: Generalise to handle a path or bytes object?
-def read_sinex_mincon(filename: _Union[str, bytes, _os.PathLike]) -> _Dict[str, _Any]:
+def read_sinex_mincon(filename: _Union[str, bytes, _os.PathLike]) -> dict[str, _Any]:
     """Extract PEA-style minimum constraints data from sinex file
 
     PEA can place information about the minimum constraint solution applied into a sinex
@@ -296,7 +294,7 @@ def read_sinex_mincon(filename: _Union[str, bytes, _os.PathLike]) -> _Dict[str, 
     The entries will only be included if complete data is extracted for them.
 
     :param _Union[str, bytes, _os.PathLike] filename: sinex file from which to read minimum constraints data
-    :return _Dict[str, _Any]: dictionary containing extracted minimum constraints information
+    :return dict[str, _Any]: dictionary containing extracted minimum constraints information
     """
     return extract_mincon_from_comments(read_sinex_comment_block(filename))
 
@@ -323,11 +321,11 @@ def snx_soln_int_to_str(soln: _pd.Series, nan_as_dash=True) -> _pd.Series:
     return soln_str
 
 
-def _get_valid_stypes(stypes):
+def _get_valid_stypes(stypes: _Union[list[str], set[str]]) -> list[str]:
     """Returns only stypes in allowed list
     Fastest if stypes size is small"""
     allowed_stypes = ["EST", "APR", "NEQ"]
-    stypes = set(stypes) if not isinstance(stypes, set) else stypes
+    stypes = set(stypes) if not isinstance(stypes, set) else stypes  # Convert to set if not one.
     ok_stypes = sorted(stypes.intersection(allowed_stypes), key=allowed_stypes.index)  # need EST to always be first
     if len(ok_stypes) != len(stypes):
         not_ok_stypes = stypes.difference(allowed_stypes)
@@ -515,13 +513,13 @@ def snxdf2xyzdf(snx_df: _pd.DataFrame, unstack: bool = True, keep_all_soln: _Uni
 
 def _get_snx_vector(
     path_or_bytes: _Union[str, bytes],
-    stypes: tuple = ("EST", "APR"),
+    stypes: _Union[set[str], list[str]] = set(["EST", "APR"]),
     format: str = "long",
     keep_all_soln: _Union[bool, None] = None,
     verbose: bool = True,
     recenter_epochs: bool = False,
     snx_header: dict = {},
-) -> _pd.DataFrame:
+) -> _Union[_pd.DataFrame, None]:
     """Main function of reading vector data from sinex file. Doesn't support sinex files from EMR AC as APRIORI and ESTIMATE indices are not in sync (APRIORI params might not even exist in he ESTIMATE block). While will parse the file, the alignment of EST and APR values might be wrong. No easy solution was found for the issue thus unsupported for now. TODO parse header and add a warning if EMR agency
 
     Args:
@@ -537,18 +535,24 @@ def _get_snx_vector(
         NotImplementedError: for the unknown format option
 
     Returns:
-        _pd.DataFrame: a dataframe of sine vector block/blocks
+        _pd.DataFrame: a dataframe of sine vector block/blocks, or None if Sinex extraction fails
     """
 
     path = None
     if isinstance(path_or_bytes, str):
         path = path_or_bytes
         snx_bytes = _gn_io.common.path2bytes(path)
+    # Very weird code path, should be removed if possible
     elif isinstance(path_or_bytes, list):
+        _logging.error(
+            f"path_or_bytes was a list! Using legacy code path. Please update this! Input values: {path_or_bytes}"
+        )
         path, stypes, format, verbose = path_or_bytes
         snx_bytes = _gn_io.common.path2bytes(path)
-    else:
+    elif isinstance(path_or_bytes, bytes):
         snx_bytes = path_or_bytes
+    else:
+        raise ValueError(f"Unexpected type for path_or_bytes: {type(path_or_bytes)}. Value: {path_or_bytes}")
 
     if snx_header == {}:
         snx_header = _get_snx_header(
@@ -559,7 +563,9 @@ def _get_snx_vector(
             "Indices are likely inconsistent between ESTIMATE and APRIORI in the EMR AC files hence files might be parsed incorrectly"
         )
 
+    _logging.info(f"Passing stypes through SType validator: {stypes}. Input path if available: {path}")
     stypes = _get_valid_stypes(stypes)  # EST is always first as APR may have skips
+    _logging.info(f"STypes after validator: {stypes}. Input path if available: {path}")
 
     extracted = _snx_extract(snx_bytes=snx_bytes, stypes=stypes, obj_type="VECTOR", verbose=verbose)
     if extracted is None:
@@ -730,7 +736,7 @@ def _read_snx_solution(path_or_bytes, recenter_epochs=False):
 #     # return _pd.concat(data, axis=0).pivot(index=['CODE','TYPE'],columns='REF_EPOCH').T
 
 
-def _get_snx_vector_gzchunks(filename, block_name="SOLUTION/ESTIMATE", size_lookback=100, format="raw"):
+def _get_snx_vector_gzchunks(filename: str, block_name="SOLUTION/ESTIMATE", size_lookback=100, format="raw"):
     """extract block from a large gzipped sinex file e.g. ITRF2014 sinex"""
     block_open = False
     block_bytes = b""
@@ -763,7 +769,7 @@ def _get_snx_vector_gzchunks(filename, block_name="SOLUTION/ESTIMATE", size_look
                     stop = True
             i += 1
 
-    return _get_snx_vector(path_or_bytes=block_bytes, stypes=["EST"], format=format)
+    return _get_snx_vector(path_or_bytes=block_bytes, stypes=set(["EST"]), format=format)
 
 
 def _get_snx_id(path):
@@ -845,7 +851,7 @@ def llh2snxdms(llh):
     ll_stack = _pd.concat([llh_degminsec_df.LON, llh_degminsec_df.LAT], axis=0)
     ll_stack = ll_stack.D.str.rjust(4).values + ll_stack.M.str.rjust(3).values + ll_stack.S.str.rjust(5).values
     buf = ll_stack[:n_rows] + ll_stack[n_rows:] + llh_degminsec_df.HEI.str.rjust(8).values
-
+    # The following is a Numpy OR operator (not a standard Python bitwise OR):
     buf[(height > 8000) | (height < -2000)] = " 000 00 00.0  00 00 00.0   000.0"  # | zero_mask
     return buf
 

@@ -1,6 +1,9 @@
 """Base time conversion functions"""
 
+import logging
+
 from datetime import datetime as _datetime
+from datetime import date as _date
 from datetime import timedelta as _timedelta
 from io import StringIO as _StringIO
 from typing import Optional, overload, Union
@@ -11,7 +14,10 @@ import pandas as _pd
 from . import gn_const as _gn_const
 
 
-def gpsweekD(yr, doy, wkday_suff=False):
+logger = logging.getLogger(__name__)
+
+
+def derive_gps_week(year: Union[int, str], day_of_year: Union[int, str], weekday_suffix: bool = False) -> str:
     """
     Convert year, day-of-year to GPS week format: WWWWD or WWWW
     Based on code from Kristine Larson's gps.py
@@ -26,28 +32,35 @@ def gpsweekD(yr, doy, wkday_suff=False):
     """
 
     # Set up the date and time variables
-    yr = int(yr)
-    doy = int(doy)
-    dt = _datetime.strptime(f"{yr}-{doy:03d} 01", "%Y-%j %H")
+    year = int(year)
+    day_of_year = int(day_of_year)
+    dt: _datetime = _datetime.strptime(f"{year}-{day_of_year:03d} 01", "%Y-%j %H")
 
     wkday = dt.weekday() + 1
 
     if wkday == 7:
         wkday = 0
 
-    mn, dy, hr = dt.month, dt.day, dt.hour
+    month, day, hour = dt.month, dt.day, dt.hour
 
-    if mn <= 2:
-        yr = yr - 1
-        mn = mn + 12
+    if month <= 2:
+        year = year - 1
+        month = month + 12
 
-    JD = _np.floor(365.25 * yr) + _np.floor(30.6001 * (mn + 1)) + dy + hr / 24.0 + 1720981.5
-    GPS_wk = int(_np.floor((JD - 2444244.5) / 7.0))
+    julian_day: float = _np.floor(365.25 * year) + _np.floor(30.6001 * (month + 1)) + day + hour / 24.0 + 1720981.5
+    GPS_wk = int(_np.floor((julian_day - 2444244.5) / 7.0))
 
-    if wkday_suff:
+    if weekday_suffix:
         return str(GPS_wk) + str(wkday)
     else:
         return str(GPS_wk)
+
+
+def gpsweekD(yr, doy, wkday_suff=False) -> str:
+    """
+    TODO DEPRECATED. Legacy wrapper for the above
+    """
+    return derive_gps_week(yr, doy, wkday_suff)
 
 
 class GPSDate:
@@ -58,76 +71,154 @@ class GPSDate:
     Usage:
     today = GPSDate("today")
     tomorrow = today.next
-    print(f"today year: {today.year}, doy: {today.dy}, GPS week and weekday: {today.gpswkD}")
-    print(f"tomorrow year: {tomorrow.year}, doy: {tomorrow.dy}, GPS week and weekday: {tomorrow.gpswkD}")
+    print(f"today year: {today.year}, doy: {today.day_of_year}, GPS week and weekday: {today.gps_week_and_day_of_week}")
+    print(f"tomorrow year: {tomorrow.year}, doy: {tomorrow.day_of_year}, GPS week and weekday: {tomorrow.gps_week_and_day_of_week}")
     """
 
-    def __init__(self, ts: _np.datetime64):
-        if isinstance(ts, str):
-            ts = _np.datetime64(ts)
+    # For compatibility, we have accessors called 'ts' and 'timestamp'.
+    _internal_dt64: _np.datetime64
 
-        self.ts = ts
+    def __init__(self, time: Union[_np.datetime64, _datetime, _date, str]):
+        if isinstance(time, _np.datetime64):
+            self._internal_dt64 = time
+        elif isinstance(time, (_datetime, _date, str)):
+            # Something we may be able to convert to a datetime64
+            self._internal_dt64 = _np.datetime64(time)
+        else:
+            raise TypeError("GPSDate() takes only Numpy datetime64, datetime, date, or str representation of a date")
 
     @property
-    def as_datetime(self):
-        """Convert to Python `datetime` object."""
-        return self.ts.astype(_datetime)
+    def get_datetime64(self) -> _np.datetime64:
+        return self._internal_dt64
+
+    @property  # For backwards compatibility
+    def ts(self) -> _np.datetime64:
+        return self.get_datetime64
 
     @property
-    def yr(self):
+    def as_datetime(self) -> _datetime:
+        """Convert to Python `datetime` object. Note that as GPSDate has no hour, neither will this datetime"""
+        return _pd.Timestamp(self._internal_dt64).to_pydatetime()
+
+    @property
+    def as_date(self) -> _date:
+        """Convert to Python `date` object."""
+        return self._internal_dt64.astype(_date)
+
+    @property
+    def year(self) -> str:
         """Year"""
         return self.as_datetime.strftime("%Y")
 
+    @property  # For backwards compatibility
+    def yr(self) -> str:
+        """Year DEPRECATED, use GPSDate.year"""
+        return self.year
+
     @property
-    def dy(self):
+    def day_of_year(self) -> str:
         """Day of year"""
         return self.as_datetime.strftime("%j")
 
-    @property
-    def gpswk(self):
-        """GPS week"""
-        return gpsweekD(self.yr, self.dy, wkday_suff=False)
+    @property  # For backwards compatibility
+    def dy(self) -> str:
+        """Day of year. DEPRECATED, use GPSDate.day_of_year"""
+        return self.day_of_year
 
     @property
-    def gpswkD(self):
+    def gps_week(self) -> str:
+        """GPS week"""
+        return derive_gps_week(self.yr, self.dy, weekday_suffix=False)
+
+    @property  # For backwards compatibility
+    def gpswk(self) -> str:
+        """GPS week. DEPRECATED, use GPSDate.gps_week"""
+        return self.gps_week
+
+    @property
+    def gps_week_and_day_of_week(self) -> str:
         """GPS week with weekday suffix"""
-        return gpsweekD(self.yr, self.dy, wkday_suff=True)
+        return derive_gps_week(self.yr, self.dy, weekday_suffix=True)
+
+    @property  # For backwards compatibility
+    def gpswkD(self) -> str:
+        """GPS week with weekday suffix. DEPRECATED, use GPSDate.gps_week_and_day_of_week"""
+        return self.gps_week_and_day_of_week
 
     @property
     def next(self):
         """The following day"""
-        return GPSDate(self.ts + 1)
+        return GPSDate(self._internal_dt64 + 1)
 
     @property
     def prev(self):
         """The previous day"""
-        return GPSDate(self.ts - 1)
+        return GPSDate(self._internal_dt64 - 1)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Same string representation as the underlying numpy datetime64 object"""
-        return str(self.ts)
+        return str(self._internal_dt64)
 
 
-def dt2gpswk(dt, wkday_suff=False, both=False):
+def datetime_to_gps_week(dt: _datetime, wkday_suff: bool = False) -> str:
     """
-    Convert the given datetime object to a GPS week (option to include day suffix)
+    Convert given datetime object to GPS week e.g. '2350', optionally including day suffix e.g. '23500' (Sunday)
+
+    :param datetime dt: datetime for which to calculate a GPS week (and optionally day)
+    :returns str: intput datetime expressed as a GPS week (wwww) or GPS week with day (wwwwd)
     """
     yr = dt.strftime("%Y")
     doy = dt.strftime("%j")
-    if not both:
-        return gpsweekD(yr, doy, wkday_suff=wkday_suff)
+    return derive_gps_week(yr, doy, weekday_suffix=wkday_suff)
+
+
+def dt2gpswk(dt: _datetime, wkday_suff: bool = False, both: bool = False) -> Union[str, tuple[str, str]]:
+    """
+    TODO DEPRECATED. Please use datetime_to_gps_week()
+    """
+
+    if both:
+        return (datetime_to_gps_week(dt, wkday_suff=False), datetime_to_gps_week(dt, wkday_suff=True))
     else:
-        return gpsweekD(yr, doy, wkday_suff=False), gpsweekD(yr, doy, wkday_suff=True)
+        return datetime_to_gps_week(dt, wkday_suff=wkday_suff)
 
 
-def gpswkD2dt(gpswkD):
+def gps_week_day_to_datetime(gps_week_and_weekday: str) -> _datetime:
     """
-    Convert from GPS-Week-Day (WWWWDD) format to datetime object
+    Convert from GPS-Week-Day (including day: WWWWD or just week: WWWW) format to datetime object.
+    If a day-of-week is not provided, 0 (Sunday) is assumed.
+
+    param: str gps_week_and_weekday: A date expressed in GPS weeks with (optionally) day-of-week.
+    returns _datetime: The date expressed as a datetime.datetime object
     """
-    if type(gpswkD) != str:
-        gpswkD = str(gpswkD)
-    dt_64 = _gn_const.GPS_ORIGIN + _np.timedelta64(int(gpswkD[:-1]), "W") + _np.timedelta64(int(gpswkD[-1]), "D")
+    if not isinstance(gps_week_and_weekday, str):
+        raise TypeError("GPS Week-Day must be a string")
+
+    if not len(gps_week_and_weekday) in (4, 5):
+        raise ValueError(
+            "GPS Week-Day must be either a 4 digit week (WWWW), or a 4 digit week plus 1 digit day-of-week (WWWWD)"
+        )
+
+    if len(gps_week_and_weekday) == 5:  # GPS week with day-of-week (WWWWD)
+        # Split into 4 digit week number, and 1 digit day number.
+        # Parse each as a time delta and add them to the GPS origin date.
+        dt_64 = (
+            _gn_const.GPS_ORIGIN
+            + _np.timedelta64(int(gps_week_and_weekday[:-1]), "W")
+            + _np.timedelta64(int(gps_week_and_weekday[-1]), "D")
+        )
+    else:  # 4 digit week, no trimming needed
+        dt_64 = _gn_const.GPS_ORIGIN + _np.timedelta64(int(gps_week_and_weekday), "W")
+
     return dt_64.astype(_datetime)
+
+
+# TODO DEPRECATED
+def gpswkD2dt(gpswkD: str) -> _datetime:
+    """
+    DEPRECATED. This is a compatibility wrapper. Use gps_week_day_to_datetime() instead.
+    """
+    return gps_week_day_to_datetime(gpswkD)
 
 
 def yydoysec2datetime(
@@ -270,11 +361,72 @@ def mjd2j2000(mjd: _np.ndarray, seconds_frac: _np.ndarray, pea_partials=False) -
     return datetime2j2000(datetime)
 
 
+def j2000_to_igs_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
+    """
+    Converts array of j2000 times to format string representation used by many IGS formats including Rinex and SP3.
+    E.g. 674913600 -> '2021-05-22T00:00:00' -> '2021  5 22  0  0  0.00000000'
+    :param _np.ndarray j2000_secs: Numpy NDArray of (typically epoch) times in J2000 seconds.
+    :return _np.ndarray: Numpy NDArray with those same times as strings.
+    """
+    datetime = j20002datetime(j2000_secs)
+    year = datetime.astype("datetime64[Y]")
+    month = datetime.astype("datetime64[M]")
+    day = datetime.astype("datetime64[D]")
+    hour = datetime.astype("datetime64[h]")
+    minute = datetime.astype("datetime64[m]")
+
+    date_y = _pd.Series(year.astype(str)).str.rjust(4).values
+    date_m = _pd.Series(((month - year).astype("int64") + 1).astype(str)).str.rjust(3).values
+    date_d = _pd.Series(((day - month).astype("int64") + 1).astype(str)).str.rjust(3).values
+
+    time_h = _pd.Series((hour - day).astype("int64").astype(str)).str.rjust(3).values
+    time_m = _pd.Series((minute - hour).astype("int64").astype(str)).str.rjust(3).values
+    # Width 12 due to one extra leading space (for easier concatenation next), then _0.00000000 format per SP3d spec:
+    time_s = (_pd.Series((datetime - minute)).astype("int64") / 1e9).apply("{:.8f}".format).str.rjust(12).values
+    return date_y + date_m + date_d + time_h + time_m + time_s
+
+
+def j2000_to_igs_epoch_row_header_dt(j2000_secs: _np.ndarray) -> _np.ndarray:
+    """
+    Utility wrapper function to format J2000 time values (typically epoch values) to be written as epoch header lines
+    within the body of SP3, Rinex, etc. files.
+    E.g. 674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0  0.00000000\n'
+    :param _np.ndarray j2000_secs: Numpy NDArray of (typically epoch) times in J2000 seconds.
+    :return _np.ndarray: Numpy NDArray with those same times as strings, including epoch line lead-in and newline.
+    """
+    # Add leading "*  "s and trailing newlines around all values
+    return "*  " + j2000_to_igs_dt(j2000_secs) + "\n"
+
+
+def j2000_to_sp3_head_dt(j2000secs: _np.ndarray) -> str:
+    """
+    Utility wrapper function to format a J2000 time value for the SP3 header. Takes NDArray, but only expects one value
+    in it.
+    :param _np.ndarray j2000_secs: Numpy NDArray containing a *single* time value in J2000 seconds.
+    :return str: The provided time value as a string.
+    """
+    formatted_times = j2000_to_igs_dt(j2000secs)
+
+    # If making a header there should be one value. If not it's a mistake, or at best inefficient.
+    if len(formatted_times) != 1:
+        logger.warning(
+            "More than one time value passed through. This function is meant to be used to format a single value "
+            "in the SP3 header."
+        )
+    return formatted_times[0]
+
+
+# TODO DEPRECATED.
 def j20002rnxdt(j2000secs: _np.ndarray) -> _np.ndarray:
     """
-    Converts j2000 array to rinex format string representation
+    DEPRECATED since about version 0.0.58
+    TODO remove in version 0.0.59
+    Converts array of j2000 times to rinex format string representation
+    NOTE: the following is incorrect by SP3d standard; there should be another space before the seconds.
     674913600 -> '2021-05-22T00:00:00' -> '*  2021  5 22  0  0 0.00000000\n'
     """
+    logger.warning("j20002rnxdt() is deprecated. Please use j2000_to_igs_epoch_row_header_dt() instead.")
+
     datetime = j20002datetime(j2000secs)
     year = datetime.astype("datetime64[Y]")
     month = datetime.astype("datetime64[M]")
@@ -288,6 +440,7 @@ def j20002rnxdt(j2000secs: _np.ndarray) -> _np.ndarray:
 
     time_h = _pd.Series((hour - day).astype("int64").astype(str)).str.rjust(3).values
     time_m = _pd.Series((minute - hour).astype("int64").astype(str)).str.rjust(3).values
+    # NOTE: The following may be wrong by the SP3d spec. Again, please use j2000_to_igs_epoch_row_header_dt() instead.
     time_s = (_pd.Series((datetime - minute)).view("int64") / 1e9).apply("{:.8f}\n".format).str.rjust(13).values
     return date_y + date_m + date_d + time_h + time_m + time_s
 

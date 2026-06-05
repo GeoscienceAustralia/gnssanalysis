@@ -2,7 +2,6 @@
 
 import numpy as _np
 import pandas as _pd
-from typing import Tuple
 
 from . import gn_aux as _gn_aux
 from . import gn_const as _gn_const
@@ -12,13 +11,13 @@ def gen_helm_aux(
     pt1: _np.ndarray,
     pt2: _np.ndarray,
     dropna: bool = True,
-) -> Tuple[_np.ndarray, _np.ndarray]:
+) -> tuple[_np.ndarray, _np.ndarray]:
     """Aux function for helmert values inversion.
 
     :param _np.ndarray pt1: The first set of points.
     :param _np.ndarray pt2: The second set of points.
     :param bool dropna: Whether to drop NaN values in input data, defaults to True.
-    :return Tuple[_np.ndarray, _np.ndarray]: A tuple containing the design matrix and right hand side of the equation for least square estimation.
+    :return tuple[_np.ndarray, _np.ndarray]: A tuple containing the design matrix and right hand side of the equation for least square estimation.
     """
     if dropna:
         mask = ~_np.isnan(pt1).any(axis=1) & ~_np.isnan(pt2).any(axis=1)

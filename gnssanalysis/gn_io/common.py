@@ -76,7 +76,7 @@ def _gz2bytes(path: str) -> bytes:
     """
     with _gzip.open(filename=path, mode="rb") as gz_file:
         databytes = gz_file.read()
-    assert not isinstance(databytes, bytes)
+    assert isinstance(databytes, bytes)
     return databytes
 
 

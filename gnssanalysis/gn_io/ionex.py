@@ -38,7 +38,7 @@ def read_ionex(path_or_bytes):
     data = data[end_of_head:]
 
     maps_heads = find_all(data, b"START", window=[9, 60])  # type + epoch info
-    if not maps_heads:
+    if len(maps_heads) == 0:
         raise ValueError("IONEX maps not found")
     maps_heads_arr = _np.asarray(b"".join(maps_heads).split()).reshape(len(maps_heads), -1)
     # return maps_heads

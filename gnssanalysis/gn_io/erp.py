@@ -7,7 +7,7 @@ import pathlib
 # from collections.abc import Callable, Iterable
 from typing import Callable, Iterable
 from io import BytesIO as _BytesIO
-from typing import List, TextIO, Union
+from typing import TextIO, Union
 from urllib import request as _rqs
 
 import numpy as _np
@@ -17,11 +17,11 @@ from gnssanalysis import gn_datetime as _gn_datetime
 from gnssanalysis import gn_io as _gn_io
 
 
-def normalise_headers(headers: Iterable[str]) -> List[str]:
+def normalise_headers(headers: Iterable[str]) -> list[str]:
     """Apply :func: `gn_io.erp.normalise_headers` to all headers in an iterable
 
     :param Iterable[str] headers: Iterable of header strings obtained from an ERP file
-    :return List[str]: List of normalised headers as per :func: `gn_io.erp.normalise_headers`
+    :return list[str]: List of normalised headers as per :func: `gn_io.erp.normalise_headers`
     """
     return [normalise_header(h) for h in headers]
 
@@ -44,7 +44,7 @@ def normalise_header(header: str) -> str:
     return get_canonical_header(header)
 
 
-def merge_hyphen_headers(raw_split_header: Iterable[str]) -> List[str]:
+def merge_hyphen_headers(raw_split_header: Iterable[str]) -> list[str]:
     """Take a list of raw headers from an ERP file and merge hyphenated headers that got split
 
     In some ERP files hyphenated headers, such as UTC-TAI, occasionally have spaces before or after
@@ -52,7 +52,7 @@ def merge_hyphen_headers(raw_split_header: Iterable[str]) -> List[str]:
     This function re-merges those header components.
 
     :param Iterable[str] raw_split_header: ERP header line that has been split/tokenized
-    :return List[str]: List of ERP headers with hyphen-separated headers merged
+    :return list[str]: List of ERP headers with hyphen-separated headers merged
     """
     # Copy to avoid mutating input list
     headers = list(raw_split_header)
@@ -594,7 +594,9 @@ def erp_outfile(datetime_epoch: datetime.datetime, output_dir: pathlib.Path):
     # Restrict the amount data we output
     resampled_df = resampled_df[resampled_df["MJD"] > mjd - 3]
 
-    gps_date = _gn_datetime.gpsweekD(datetime_epoch.strftime("%Y"), datetime_epoch.strftime("%j"), wkday_suff=True)
+    gps_date = _gn_datetime.derive_gps_week(
+        datetime_epoch.strftime("%Y"), datetime_epoch.strftime("%j"), weekday_suffix=True
+    )
     file_suffix = f'_{int(int(str(mjd).split(".")[1].ljust(2,"0"))*0.24):02}'
     file_name = f"igu{gps_date}{file_suffix}.erp"
 

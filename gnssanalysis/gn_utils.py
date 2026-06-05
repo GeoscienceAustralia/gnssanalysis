@@ -1,12 +1,71 @@
+import hashlib
+import inspect
 import logging as _logging
 import os as _os
+import pickle
 import sys as _sys
 import pathlib as _pathlib
 from time import perf_counter
+import warnings
 
 import click as _click
 
-from typing import List, Union
+from pandas import DataFrame
+from typing import Literal, Optional, Union
+
+from gnssanalysis.enum_meta_properties import EnumMetaProperties
+
+# Two options, as a convenience feature to allow invoking from the project root or the tests subdir.
+UNITTEST_BASELINE_FILES_ROOT_RELATIVE = _pathlib.Path("./tests/unittest_baselines")
+UNITTEST_BASELINE_FILES_TESTS_RELATIVE = _pathlib.Path("./unittest_baselines")
+
+
+class StrictMode(metaclass=EnumMetaProperties):
+    name: str
+    long_name: str
+
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
+
+
+class STRICT_OFF(StrictMode):
+    """
+    Strict mode: off
+    """
+
+    name = "OFF"
+    long_name = "Strict mode: off"
+
+
+class STRICT_WARN(StrictMode):
+    """
+    Strict mode: warn
+    """
+
+    name = "WARN"
+    long_name = "Strict mode: warn"
+
+
+class STRICT_RAISE(StrictMode):
+    """
+    Strict mode: raise
+    """
+
+    name = "RAISE"
+    long_name = "Strict mode: raise"
+
+
+class StrictModes(metaclass=EnumMetaProperties):
+    """
+    Defines all strict mode settings
+    """
+
+    def __init__(self):
+        raise Exception("This is intended to act akin to an enum. Don't instantiate it.")
+
+    STRICT_OFF = STRICT_OFF  # Strict mode off
+    STRICT_WARN = STRICT_WARN  # Strict mode warn
+    STRICT_RAISE = STRICT_RAISE  # Strict mode warn
 
 
 def diffutil_verify_input(input):
@@ -25,6 +84,7 @@ def diffutil_verify_input(input):
 
 def diffutil_verify_status(status, passthrough):
     if status:
+        # TODO type of 'status' and 'passthrough' here is a bit unclear, so it's hard to make the checks more explicit
         if not passthrough:
             _logging.error(msg=f":diffutil failed. Calling sys.exit\n")
             _sys.exit(status)
@@ -72,10 +132,10 @@ def configure_logging(verbose: bool, output_logger: bool = False) -> Union[_logg
         return None
 
 
-def ensure_folders(paths: List[_pathlib.Path]):
+def ensure_folders(paths: list[_pathlib.Path]):
     """Ensures the folders in the input list exist in the file system - if not, create them
 
-    :param List[_pathlib.Path] paths: list of pathlib.Path/s to check
+    :param list[_pathlib.Path] paths: list of pathlib.Path/s to check
     """
     for path in paths:
         if not isinstance(path, _pathlib.Path):
@@ -467,7 +527,7 @@ def log2snx(logglob, rnxglob, outfile, frame_snx, frame_dis, frame_psd, datetime
     from .gn_io import igslog
 
     if isinstance(rnxglob, list):
-        if (len(rnxglob) == 1) & (
+        if (len(rnxglob) == 1) and (
             rnxglob[0].find("*") != -1
         ):  # it's rnx_glob expression (may be better to check if star is present)
             rnxglob = rnxglob[0]
@@ -658,6 +718,7 @@ def orbq(
         satellite_data = conv_to_m(rms_df).to_json(orient=json_format, index=index)
         constellation_data = conv_to_m(rms_df.attrs["summary"]).to_json(orient=json_format, index=index)
 
+    # TODO work out the types of these, in order to make these checks more explicit
     if satellite:
         output_data.append(satellite_data)
     if constellation:
@@ -814,6 +875,8 @@ def clkq(
     """
     from gnssanalysis import gn_io, gn_aux, gn_diffaux, gn_const
 
+    # TODO work out the types of these parameters and apply more robust equality checks
+
     logger = configure_logging(verbose=verbose, output_logger=True)
 
     clk_a, clk_b = gn_io.clk.read_clk(input_clk_paths[0]), gn_io.clk.read_clk(input_clk_paths[1])
@@ -874,6 +937,18 @@ def clkq(
         print(output_str)
 
 
+def trim_line_ends(content: str) -> str:
+    """
+    Utility to strip trailing whitespace from all lines given.
+    This is useful as for example, the SP3 spec doesn't stipulate whether lines should have trailing whitespace or not,
+    and implementations vary.
+
+    :param str content: input string to strip
+    :return str: string with trailing (only, not leading) whitespace removed from each line
+    """
+    return "\n".join([line.rstrip() for line in content.split("\n")])
+
+
 class ContextTimer:
     """
     Utility for measuring function execution time (e.g. for manually profiling which unit tests are taking
@@ -920,3 +995,413 @@ class ContextTimer:
         )
         if self.print_time:
             print(self.readout)
+
+
+def sha256(bytes_to_hash: bytes) -> str:
+    """
+    Convenience wrapper to quickly call hashlib.sha256 and return a hex digest string
+    """
+    return hashlib.sha256(bytes_to_hash).hexdigest()
+
+
+class UnitTestBaseliner:
+
+    mode: Literal["baseline", "verify"] = "verify"
+
+    # Unpickling is off by default for security reasons (arbitrary code injection via serialised objects)
+    # Enable temporarily when needed to debug a test regression / change, and ensure input data is trusted.
+    enable_unpickling: bool = False  # DO NOT commit changes to this
+
+    # Record of (test) functions which have called either baseline or verify functions.
+    # If the same function calls twice, this indicates multiple data sets are being stored / checked, under a single
+    # name. This will cause the last to overwrite all previous, and we will only test that last one.
+    caller_record: set[str] = set()
+
+    @staticmethod
+    def get_paths_for_pickle_and_hash(
+        filename_prefix: str,
+        subdir: Optional[_pathlib.Path] = None,
+    ) -> tuple[_pathlib.Path, _pathlib.Path]:
+
+        cwd: str = _pathlib.Path.cwd().as_posix()
+        # The following is a quality of life feature, allowing test invocation from either:
+        #  - the project root dir --> python -m unittest discover -v -s tests
+        #  - the tests subdir     --> python -m unittest discover -v
+        if cwd.endswith("/gnssanalysis"):
+            parent_dir = UNITTEST_BASELINE_FILES_ROOT_RELATIVE
+        elif cwd.endswith("/gnssanalysis/tests"):
+            parent_dir = UNITTEST_BASELINE_FILES_TESTS_RELATIVE
+        else:
+            raise ValueError(
+                f"UnitTestBaseliner invoked in invalid workdir: '{cwd}'. "
+                "It should be run within the top level gnssanalysis project dir (preferred), or the tests subdir"
+            )
+
+        if not parent_dir.is_dir():
+            raise ValueError(f"Test baselining dir not found at: '{parent_dir.as_posix()}'")
+
+        target_dir = parent_dir / subdir if subdir is not None else parent_dir
+        if not target_dir.is_dir():
+            # Create directory (fail if parent dirs don't exist). We take this more conservative approach because if
+            # the baseline directory doesn't exist *where we are looking*, that may indicate our workdir is wrong
+            # and we should stop.
+            target_dir.mkdir()
+
+        pickled_list_path = _pathlib.Path(f"{target_dir}/{filename_prefix}.pickledlist")
+        pickled_list_hash_path = _pathlib.Path(f"{target_dir}/{filename_prefix}.pickledlist_sha256")
+        return (pickled_list_path, pickled_list_hash_path)
+
+    @staticmethod
+    def get_grandparent_caller_id() -> tuple[str, str]:
+        # This function uses Python frame inspection to determine the *2nd level* caller's name. I.e. finds
+        # the grandparent class and function on the stack.
+
+        # --- AI declaration ---: This function leverages suggestions from Google Gemini.
+
+        # For example, if this is *called by* a function which was itself called by TestClk.test_diff_clk(), the
+        # return would be: (TestClk, test_diff_clk)
+
+        # Note, because navigation is simply a question of how far to walk the stack, it is important to be mindful
+        # of where you call this from!
+        # I.e. don't call it from within a function which in turn is called by
+        # something, the *caller* of which you want to know about... that would be frame -3, not frame -2.
+
+        # The following depicts the typical frame structure of intended usage:
+        # TestClk.test_diff_clk() -> UnitTestBaseliner.verify() -> get_caller_names()
+        #         ^Frame -2                            ^Frame -1   ^ current frame
+        # We want the name of frame -2, our 'grandparent'.
+
+        # Set up try block to ensure we delete the frame ref created by calling this function
+        try:
+            caller_frame = None
+            # The calling function's calling function frame. I.e the frame of the grandparent function.
+            # We have to step back two, because the first frame is us, the next is the function leveraging us,
+            # and the one after that is whatever called *that* function.
+
+            # Leveraging a lot of linter ignores here, as almost everything in these chains can return None, making
+            # it easier and much simpler, to just catch the exceptions.
+            callers_callers_frame = inspect.currentframe().f_back.f_back  # type: ignore
+            func_name = callers_callers_frame.f_code.co_name  # type: ignore
+            if "self" in callers_callers_frame.f_locals:  # type: ignore
+                calling_class_name = callers_callers_frame.f_locals["self"].__class__.__name__  # type: ignore
+            elif "cls" in callers_callers_frame.f_locals:  # type: ignore
+                calling_class_name = callers_callers_frame.f_locals["cls"].__class__.__name__  # type: ignore
+            else:
+                raise AttributeError("Class not found via either self or cls")
+
+            # If nothing has raised an AttributeError yet, we have a class and function name.
+            # Check it's not accidentally us:
+            if calling_class_name == __class__.__name__:
+                raise ValueError(
+                    f"Calling error: somehow, the grandparent of get_caller_pretty_string() was "
+                    f"us {__class__.__name__}. That shouldn't happen. Got: {calling_class_name}"
+                )
+            # TODO can we check if it's a test, or lives in a 'tests' package?
+            # return f"{calling_class_name}.{func_name}"
+            return (calling_class_name, func_name)
+
+        except AttributeError as a_ex:
+            raise ValueError(
+                f"Failed to find name of caller. Please set filename_prefix and subdir explicity. Exception: {a_ex}"
+            )
+
+        finally:
+            del caller_frame  # Avoid creating ref cycle and leaking memory. I.e. help the garbage collector.
+            # See doc here: https://docs.python.org/3/library/inspect.html#inspect.Traceback.positions
+
+    @staticmethod
+    def ensure_unique_objects(objects: list[object]) -> None:
+
+        _logging.debug("Verifying no duplicate object references in object list to hash")
+
+        unique_addresses: set[int] = set([id(obj) for obj in objects])
+
+        addr_count = len(unique_addresses)
+        obj_count = len(objects)
+        if addr_count != obj_count:
+            raise ValueError(
+                f"Count of unique addresses ({addr_count}) didn't match length of object list ({obj_count}). "
+                "Two references to the same DF / other object may have been passed, please investigate!"
+            )
+
+    @staticmethod
+    def create_baseline(  # Was baseline_pickled_df_list_and_hash()
+        current_object_list: list[object],
+        # These are used to describe the calling class and function, and are inferred automatically. If needed they
+        # can be explicitly set here:
+        subdir: Optional[_pathlib.Path] = None,
+        filename_prefix: Optional[str] = None,
+    ) -> None:
+
+        if UnitTestBaseliner.mode != "baseline":
+            raise ValueError(
+                "Refusing to create baseline of pickled DFs / objects and hash, while not in 'baseline' mode. "
+                "Set UnitTestBaseliner.mode = 'baseline' first"
+            )
+
+        if filename_prefix is None:
+            # Try to determine filename prefix from class name and function which is calling us...
+            caller_class, caller_func = UnitTestBaseliner.get_grandparent_caller_id()
+            _logging.debug(
+                f"No filename_prefix provided. "
+                f"Using grandparent class and func (found using frame inspection): {caller_class}, {caller_func}"
+            )
+            filename_prefix = caller_func
+            subdir = _pathlib.Path(caller_class)
+
+            caller_id = f"{caller_class}.{caller_func}"
+        else:
+            caller_id = filename_prefix
+
+        # Check if we've been called before by this class,function pair (i.e. caller_id).
+        # If this is not our first call, continuing will overwrite previous results. So we raise.
+        if caller_id in UnitTestBaseliner.caller_record:
+            raise ValueError(
+                f"Multiple calls from '{caller_id}'! Please consolidate your dataframes / objects to verify, and "
+                "only pass one list per test function / filename_prefix."
+            )
+        UnitTestBaseliner.caller_record.add(caller_id)
+
+        pickled_objects_path, aggregate_sha256_path = UnitTestBaseliner.get_paths_for_pickle_and_hash(
+            filename_prefix, subdir=subdir
+        )
+
+        # Safety check that we did not get two references to the same DataFrame / object in the list
+        UnitTestBaseliner.ensure_unique_objects(current_object_list)
+
+        # Structure here is:
+        # pickled_list: bytes -> created from an array of DataFrames / objects. Pickled into a single bytes object.
+        # pickled_list_sha256: str -> sha256 hash of the above pickled DataFrame / object list.
+
+        current_df_list: list[DataFrame] = [df for df in current_object_list if isinstance(df, DataFrame)]
+        if len(current_object_list) > len(current_df_list):
+            warnings.warn(
+                "Creating a unittest baseline containing objects other than DataFrames! This can be hash "
+                "verified, but verify() will crash if any changes are detected. Please implement support for "
+                "other required object types!"
+            )
+        # TODO other object support to be added here
+
+        pickled_list: bytes = pickle.dumps(current_object_list)
+        pickled_list_sha256: str = hashlib.sha256(pickled_list).hexdigest()
+
+        warnings.warn(
+            "Baselining should only be done supervised (in a dev environment). "
+            "If you see this message in a pipeline run, something needs fixing!"
+        )
+        _logging.debug(f"About to write baseline: '{pickled_objects_path.as_posix()}': {pickled_list_sha256}...")
+
+        with open(aggregate_sha256_path, "wb") as hash_file:
+            hash_file.write(pickled_list_sha256.encode())
+        with open(pickled_objects_path, "wb") as pickled_objects_file:
+            pickled_objects_file.write(pickled_list)
+
+        _logging.info(
+            "TEST BASELINED -->> **Please ensure you commit both pickle and hash files with your changes**: "
+            f"'{pickled_objects_path.as_posix()}': {pickled_list_sha256}.\n"
+        )
+
+    @staticmethod
+    def verify(  # Was create_and_verify_pickled_df_list()
+        current_object_list: list[object],
+        # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
+        # Option to strictly enforce that a baseline must exist for anything this function is invoked to check:
+        raise_for_missing_baseline: bool = False,
+        raise_rather_than_continue_for_incorrect_mode: bool = False,
+        # The expected pickled list hash will be read from disk, at a path constructed using the name of the
+        # calling class and function. While it should not be necessary, you can optionally override the expected hash:
+        expected_pickled_list_sha256: Optional[str] = None,
+        # These are used to describe the calling class and function, and are inferred automatically. If needed they
+        # can be explicitly set here:
+        subdir: Optional[_pathlib.Path] = None,
+        filename_prefix: Optional[str] = None,
+    ) -> bool:
+        # Return options:
+        # - True if verification successful.
+        # - False if baseline incomplete or missing (unable to verify). OR, if not running as mode != 'verify'
+        # NOTE: Raises for verification failed.
+
+        if UnitTestBaseliner.mode != "verify":
+
+            # TODO could change this to just politely state that it is skipping as in baseline mode. But we don't
+            # want to leave things in baseline mode, so...? Is failing tests sufficient? Hopefully.
+            if raise_rather_than_continue_for_incorrect_mode:
+                raise ValueError(
+                    "Refusing to run verify method while not in verify mode. "
+                    "Set UnitTestBaseliner.mode = 'verify' first"
+                )
+            warnings.warn(
+                "Refusing to run verify method while not in verify mode. " "Set UnitTestBaseliner.mode = 'verify' first"
+            )
+            return False
+
+        # Verify we didn't get passed multiple, overwritten copies of the same reference
+        UnitTestBaseliner.ensure_unique_objects(current_object_list)
+
+        if filename_prefix is None:
+            # Try to determine filename prefix from class name and function which is calling us...
+            caller_class, caller_func = UnitTestBaseliner.get_grandparent_caller_id()
+            _logging.debug(
+                f"No filename_prefix provided. "
+                f"Using grandparent class and func (found using frame inspection): {caller_class}, {caller_func}"
+            )
+            filename_prefix = caller_func
+            subdir = _pathlib.Path(caller_class)
+
+            caller_id = f"{caller_class}.{caller_func}"
+        else:
+            caller_id = filename_prefix
+
+        # Check if we've been called before by this class,function pair (i.e. caller_id).
+        if caller_id in UnitTestBaseliner.caller_record:
+            raise ValueError(
+                f"Multiple calls from '{caller_id}'! Please consolidate your dataframes / objects to validate, and "
+                "only pass one list per test function / filename_prefix."
+            )
+        UnitTestBaseliner.caller_record.add(caller_id)
+
+        # Determine paths on disk...
+        pickled_list_path, pickled_list_hash_path = UnitTestBaseliner.get_paths_for_pickle_and_hash(
+            filename_prefix, subdir=subdir
+        )
+
+        # Check if pickled list or hash exist on disk
+        pickle_exists = pickled_list_path.exists()
+        hash_exists = pickled_list_hash_path.exists()
+
+        if hash_exists == False:
+            if raise_for_missing_baseline:
+                raise ValueError(
+                    f"Cannot verify DFs / objects against baseline (hash file: {'present' if hash_exists else 'missing'}, "
+                    f"pickled list file: {'present' if pickle_exists else 'missing'}) "
+                    f"for '{caller_id}'."
+                )
+            warnings.warn(
+                f"Cannot verify DFs / objects against baseline (hash file: {'present' if hash_exists else 'missing'}, "
+                f"pickled list file: {'present' if pickle_exists else 'missing'}) "
+                f"for '{caller_id}'."
+            )
+            return False
+
+        if expected_pickled_list_sha256 is None:  # Expected hash not provided, load it from disk
+            # Load old aggregate hash (of pickled list)...
+            _logging.debug(f"No expected hash value provided for '{pickled_list_path}', attempting to load...")
+            with open(pickled_list_hash_path, "rb") as pickled_list_hash_file:
+                expected_pickled_list_sha256 = pickled_list_hash_file.read().decode()
+
+        # Data ready, now do comparison
+        # Generate pickled list and aggregate hash
+        pickled_list = pickle.dumps(current_object_list)
+        pickled_list_sha256 = sha256(pickled_list)
+
+        if pickled_list_sha256 != expected_pickled_list_sha256:
+            _logging.debug(
+                f"Hashes did not match for '{pickled_list_path}'. Expected: {expected_pickled_list_sha256} Actual: {pickled_list_sha256}"
+            )
+            # Load old DataFrames / other objects (pickled list)...
+            with open(pickled_list_path, "rb") as pickled_list_hash_file:
+                pickled_list = pickled_list_hash_file.read()
+
+            # Unpickle if the safety is turned off
+            # CAUTION: deserialising can present arbitrary code execution potential. Ensure the data passed in is trustworthy.
+            if UnitTestBaseliner.enable_unpickling != True:
+                raise ValueError(
+                    "Cannot load baselined DataFrames / objects from pickle for analysis as unpickling is "
+                    "off (default for security). Temporarily set UnitTestBaseliner.enable_unpickling = True to "
+                    "allow deserialisation of old DFs / objects from disk."
+                )
+            warnings.warn(
+                "Unpickling object list from unittest baseline, to create diff with current results. This may "
+                "present a security risk, and should NOT be left enabled when not needed. Please ensure "
+                "UnitTestBaseliner.enable_unpickling defaults to False"
+            )
+            unpickled_object_list: list[object] = pickle.loads(pickled_list)
+
+            # Filter OLD (baseline) object list by datatype
+            old_df_list: list[DataFrame] = [df for df in unpickled_object_list if isinstance(df, DataFrame)]
+            if len(unpickled_object_list) > len(old_df_list):
+                raise NotImplementedError(
+                    "Outputting diffs for non-DataFrame objects during verification, is not yet supported"
+                )
+            # TODO filtering to extract other supported datatypes will go here in future, rather than the above exception
+
+            # Filter NEW (being verified) object list by datatype
+            current_df_list: list[DataFrame] = [df for df in current_object_list if isinstance(df, DataFrame)]
+            if len(current_object_list) > len(current_df_list):
+                raise NotImplementedError(
+                    "Outputting diffs for non-DataFrame objects during verification, is not yet supported"
+                )
+            # TODO as above for OLD objects, filtering for NEW objects will go here
+
+            # And print out diffs for the DataFrames. This in turn calls the index and column diff
+            # utility, if dataframe.diff() raises.
+            UnitTestBaseliner.diff_dfs(old_df_list, current_df_list)
+
+            # TODO when adding other supported object types, calculate diffs for them here.
+
+            # Raise to ensure the test fails and this change / regression gets investigated
+            raise ValueError("Dataframes / objects did not match baseline. Please investigate using above diffs")
+        else:
+            _logging.debug(f"Hashes matched for '{pickled_list_path}': {pickled_list_sha256}")
+            return True
+
+    @staticmethod
+    def diff_dfs(old_df_list: list[DataFrame], current_dfs_list: list[DataFrame]) -> None:
+
+        old_length = len(old_df_list)
+        current_length = len(current_dfs_list)
+        if old_length != current_length:
+            raise ValueError(
+                f"Unpickled DataFrame list had {old_length} elements, " f"whereas the current one has {current_length}"
+            )
+        for i in range(current_length):
+            old_df = old_df_list[i]
+            current_df = current_dfs_list[i]
+
+            _logging.info(f"Diffing DataFrame #{i}...")
+
+            # DF.equals() may be useful, but does not check that the row/column index datatypes are the same
+            _logging.info(f"DataFrame.equals(): {current_df.equals(old_df)}")
+
+            try:
+                _logging.info(f"current_dataframe.compare(old_dataframe): {current_df.compare(old_df)}")
+            except ValueError:
+                _logging.info(
+                    f"current_dataframe.compare(old_dataframe): FAILED! Indexes / columns likely differ. Running diff of those..."
+                )
+                UnitTestBaseliner.diff_indexes_and_columns(old_df, current_df)
+
+    @staticmethod
+    def diff_indexes_and_columns(existing_df: DataFrame, current_df: DataFrame) -> None:
+        # Utility function to output diffs of DataFrame indexes and columns, as DataFrame.compare() will not run if
+        # they differ.
+
+        # Handle diffing of indexes
+        existing_df_index = existing_df.index.to_list()
+        current_df_index = current_df.index.to_list()
+        index_diff = set(existing_df_index).symmetric_difference(current_df_index)
+        if existing_df_index != current_df_index:
+            if len(index_diff) == 0:  # Diff must've been in order, not values
+                _logging.info("Indexes differed in order, but not values. Outputting full indexes:")
+                _logging.info(f"Existing DF indexes: {str(existing_df.index.to_list())}")
+                _logging.info(f"Current DF indexes: {str(current_df.index.to_list())}")
+            else:
+                _logging.info(f"The following index values are in one DF but not the other: {str(index_diff)}")
+
+        # Handle diffing of columns
+        existing_df_colums = existing_df.columns.to_list()
+        current_df_columns = current_df.columns.to_list()
+
+        column_diff = set(existing_df_colums).symmetric_difference(current_df_columns)
+        if existing_df_colums != current_df_columns:
+            if len(column_diff) == 0:  # Diff must've been in order, not values
+                _logging.info("Columns differed in order, but not values. Outputting full column listing:")
+                _logging.info(f"Existing DF columns: {str(existing_df.columns.to_list())}")
+                _logging.info(f"Current DF columns: {str(current_df.columns.to_list())}")
+            else:
+                _logging.info(f"The following column names are in one DF but not the other: {str(column_diff)}")
+
+    # NOTE: for aggregate tests, the revised multi-dataframe functions above are suggested
+    @staticmethod
+    def pickle_and_sha256(obj: object) -> str:
+        return sha256(pickle.dumps(obj))
