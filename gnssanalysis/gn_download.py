@@ -124,7 +124,7 @@ def get_earthdata_credentials(username: Optional[str] = None, password: Optional
 
     # Priority 3: Try to read from .netrc file
     try:
-        netrc_path = _Path.home() / '.netrc'
+        netrc_path = _Path.home() / ".netrc"
         if netrc_path.exists():
             logging.debug(f"Found .netrc at {netrc_path}")
             netrc_auth = _netrc.netrc()
@@ -351,7 +351,7 @@ def generate_sampling_rate(file_ext: str, analysis_center: str, solution_type: s
         "BIA": "01D",
         "SP3": {
             ("COD", "GFZ", "GRG", "IAC", "JAX", "MIT", "WUM"): "05M",
-            ("ESA", "IGS"): {"FIN": "05M", "RAP": "15M", None: "15M"},
+            ("ESA"): {"FIN": "05M", "RAP": "15M", None: "15M"},
             (): "15M",
         },
         "CLK": {
@@ -858,7 +858,7 @@ def download_file_from_cddis(
                 response.raise_for_status()
 
                 # Download the file
-                with open(download_filepath, 'wb') as f:
+                with open(download_filepath, "wb") as f:
                     for chunk in response.iter_content(chunk_size=MB):
                         if chunk:
                             f.write(chunk)
@@ -879,7 +879,7 @@ def download_file_from_cddis(
                 if download_filepath.is_file():
                     download_filepath.unlink()
                 raise
-            backoff = _random.uniform(0.0, 2.0 ** retries)
+            backoff = _random.uniform(0.0, 2.0**retries)
             _warnings.warn(
                 f"Error downloading {filename}: {e} " f"(retry {retries}/{max_retries}, backoff {backoff:.1f}s)"
             )
@@ -921,9 +921,7 @@ def download_multiple_files_from_cddis(
 
     # Get credentials once for all downloads
     try:
-        earthdata_username, earthdata_password = get_earthdata_credentials(
-            username=username, password=password
-        )
+        earthdata_username, earthdata_password = get_earthdata_credentials(username=username, password=password)
     except ValueError as e:
         logging.error(f"Failed to obtain NASA Earthdata credentials: {e}")
         raise
@@ -935,7 +933,7 @@ def download_multiple_files_from_cddis(
             url_folder=url_folder,
             output_folder=output_folder,
             username=earthdata_username,
-            password=earthdata_password
+            password=earthdata_password,
         )
 
     with _concurrent.futures.ThreadPoolExecutor() as executor:
