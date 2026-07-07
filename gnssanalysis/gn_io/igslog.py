@@ -5,6 +5,7 @@ import glob as _glob
 import re as _re
 from multiprocessing import Pool as _Pool
 from typing import Optional, Union
+import warnings
 
 import numpy as _np
 import pandas as _pd
@@ -59,6 +60,7 @@ _REGEX_LOC_V1 = _re.compile(
     _re.IGNORECASE | _re.VERBOSE,
 )
 
+# See example here: https://files.igs.org/pub/station/general/blank.log
 _REGEX_LOC_V2 = _re.compile(
     rb"""
     2.+\W+City\sor\sTown\s+\:\s*(\w[^\(\n\,/\?]+|).*\W+
@@ -222,15 +224,24 @@ def extract_id_block(
     return id_block
 
 
-def extract_location_block(data: bytes, file_path: str, version: Union[str, None] = None) -> _np.ndarray:
+def extract_location_block(
+    data: bytes,
+    file_path: str,
+    version: Union[str, None] = None,
+    raise_on_extract_failure: bool = True,
+    raise_on_unexpected_element_count: bool = True,
+) -> list[str]:
     """Extract the location block given the bytes object read from an IGS site log file
 
     :param bytes data: The bytes object returned from an open() call on a IGS site log in "rb" mode
     :param str file_path: The path to the file from which the "data" bytes object was obtained
     :param str version: Version number of log file (e.g. "v2.0") - will be determined from input data unless
         provided here.
+    :param bool raise_on_extract_failure: raise (default) rather than just warning, if regex extract fails
+    :param bool raise_on_unexpected_element_count: raise (default) rather than just warning, if LOC elements count != 8
     :raises LogVersionError: Raises an error if an unknown version string is passed in
-    :return _np.ndarray: The location block of the IGS site log, as a numpy NDArray of strings
+    :raises ValueError: If an the location block regex does not match, or if the number of elements extracted is not 8
+    :return list[str]: The location block of the IGS site log, as a list of strings
     """
     if version == None:
         version = determine_log_version(data)
@@ -242,11 +253,26 @@ def extract_location_block(data: bytes, file_path: str, version: Union[str, None
     else:
         raise LogVersionError(f"Incorrect version string '{version}' passed to extract_location_block() function")
 
-    location_block = _REGEX_LOC.search(data)
-    if location_block is None:
-        logger.warning(f"LOC rejected from {file_path}")
-        return _np.array([]).reshape(0, 12)
-    return location_block
+    loc_block_match = _REGEX_LOC.search(data)
+    if loc_block_match is None:
+        if raise_on_extract_failure:
+            raise ValueError(f"Failed to extract LOC block from {file_path}")
+        warnings.warn(f"Failed to extract LOC block from {file_path}")
+        return []
+
+    # List of location properties.
+    # See example under '2.   Site Location Information' here: https://files.igs.org/pub/station/general/blank.log
+    loc_block_decoded = [group.decode(encoding="utf8", errors="ignore") for group in loc_block_match.groups()]
+
+    loc_element_count = len(loc_block_decoded)
+    if loc_element_count != 8:
+        # TODO consider using t-strings in Python 3.14
+        loc_count_warning = "Expected 8 elements in LOC block, got: {block_length}, file: {file_path}"
+        if raise_on_unexpected_element_count:
+            raise ValueError(loc_count_warning.format(block_length=loc_element_count, file_path=file_path))
+        warnings.warn(loc_count_warning.format(block_length=loc_element_count, file_path=file_path))
+
+    return loc_block_decoded
 
 
 def extract_receiver_block(data: bytes, file_path: str) -> Union[list[tuple[bytes]], _np.ndarray]:
@@ -304,7 +330,6 @@ def parse_igs_log_data(data: bytes, file_path: str, file_code: str) -> Union[_np
         file_path=file_path,
         version=version,
     )
-    blk_loc = [group.decode(encoding="utf8", errors="ignore") for group in blk_loc.groups()]
     # Combine ID and Location information:
     blk_id_loc = _np.asarray([0] + blk_id + blk_loc, dtype=object)[_np.newaxis]
     # Extract and re-format information from receiver block:

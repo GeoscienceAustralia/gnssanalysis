@@ -42,16 +42,51 @@ class TestRegex(unittest.TestCase):
     def test_extract_location_block(self):
         # Version 1 Location description results:
         v1_location_block = igslog.extract_location_block(v1_data, "/example/path", "v1.0")
-        self.assertEqual(v1_location_block.group(1), b"Les Abymes")
-        self.assertEqual(v1_location_block.group(2), b"Guadeloupe")
+        self.assertEqual(v1_location_block[0], "Les Abymes")
+        self.assertEqual(v1_location_block[1], "Guadeloupe")
+
+        self.assertEqual(v1_location_block[2], "2919786.0")  # X
+        self.assertEqual(v1_location_block[3], "-5383745.0")  # Y
+        self.assertEqual(v1_location_block[4], "1774604.0")  # Z
+
+        self.assertEqual(len(v1_location_block), 8)
+
+        # Source values:
+        #  City or Town             : Les Abymes
+        #  State or Province        : Guadeloupe (971)
+        #  Country                  : Guadeloupe
+        #  Tectonic Plate           : CARIBBEAN
+        #  Approximate Position (ITRF)
+        #    X coordinate (m)       : 2919786.0
+        #    Y coordinate (m)       : -5383745.0
+        #    Z coordinate (m)       : 1774604.0
+        #    Latitude (N is +)      : +161544.30
+        #    Longitude (E is +)     : -0613139.11
+        #    Elevation (m,ellips.)  : -25.0
+
+        # V2:
+        #  City or Town             : Les Abymes
+        #  State or Province        : Guadeloupe (971)
+        #  Country or Region        : GLP
+        #  Tectonic Plate           : CARIBBEAN
+        #  Approximate Position (ITRF)
+        #    X coordinate (m)       : 2919786.0
+        #    Y coordinate (m)       : -5383745.0
+        #    Z coordinate (m)       : 1774604.0
+        #    Latitude (N is +)      : +161544.30
+        #    Longitude (E is +)     : -0613139.11
+        #    Elevation (m,ellips.)  : -25.0
+        #  Additional Information   :
 
         # Version 2 Location description results:
         v2_location_block = igslog.extract_location_block(v2_data, "/example/path", "v2.0")
-        self.assertEqual(v2_location_block.group(1), b"Les Abymes")
-        self.assertEqual(v2_location_block.group(2), b"GLP")
+        self.assertEqual(v2_location_block[0], "Les Abymes")
+        self.assertEqual(v2_location_block[1], "GLP")
 
-        # Coordinate information remains the same:
-        self.assertEqual(v2_location_block.group(3), v1_location_block.group(3))
+        # Coordinate information remains the same compared to v1.0:
+        self.assertEqual(v2_location_block[2], v1_location_block[2])
+        self.assertEqual(v2_location_block[3], v1_location_block[3])
+        self.assertEqual(v2_location_block[4], v1_location_block[4])
 
         # Check LogVersionError is rasied on no data:
         with self.assertRaises(igslog.LogVersionError):
