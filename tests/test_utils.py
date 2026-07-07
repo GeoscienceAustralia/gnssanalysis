@@ -70,13 +70,28 @@ class TestUtils(TestCase):
 
 
 class TestUnitTestBaseliner(unittest.TestCase):
+    """
+    Test functionality for creating and verifying hash & pickle baselines of objects produced by unit tests. Used to
+    support detection and troubleshooting of subtle regressions.
+    """
 
     def test_verify_refusal_in_wrong_mode(self):
+        # This tests our logic for preventing baselining and verification from running in the same session / without
+        # manual code changes.
+
+        # We do this to make baselining a more deliberate, developer supervised activity.
+        # This specific functionality is designed to mitigate the risk posed by the following sequence of events:
+        # - setting `UnitTestBaseliner.mode = baseline` is *accidentally committed*, then
+        # - a regression is introduced, then
+        # - the utility updates the baseline (so it now matches the regression), then
+        # - verification is performed against the updated baseline, which will be considered valid despite being
+        #   a regression!
+
         mode_backup = UnitTestBaseliner.mode
         try:
             df = DataFrame(["a", "b", "c"])
 
-            # Baseline (do not commit uncommented!) Note: every function needs its own baseline, becuase the
+            # Baseline (do not commit uncommented!) Note: every function needs its own baseline, because the
             # function name determines the filename, unless we override that.
             # UnitTestBaseliner.mode = "baseline"
             # UnitTestBaseliner.record_baseline([df])
@@ -121,11 +136,12 @@ class TestUnitTestBaseliner(unittest.TestCase):
         #   likely fail).
 
         # We're only testing it with the verify function below, but both verify and baseline functions use the same
-        # caller check logic, and store the caller record statically in a class variable. ?
+        # caller check logic, and store the caller record *statically* in a class variable (known as static variables
+        # in some other languages).
 
         df = DataFrame(["a", "b", "c"])
 
-        # Baseline (every function needs its own baseline, becuase the function name determines the filename,
+        # Baseline (every function needs its own baseline, because the function name determines the filename,
         # unless we override that)
         # UnitTestBaseliner.mode = "baseline"
         # UnitTestBaseliner.record_baseline([df])
@@ -139,6 +155,11 @@ class TestUnitTestBaseliner(unittest.TestCase):
             self.fail("DF / object list verification should fail on *second*/repeated calls from a function.")
 
     def test_duplicate_object_rejection(self):
+        # This function tests our logic for ensuring we reject input data with multiple *top level* references to
+        # the same object (which likely indicates a mistake while using the utility in a unit test).
+        # I.e. passing in a list with two references to the exact same DataFrame object, should be considered an error.
+        # NOTE: this check is not recursive. Passing in two lists, which themselves refer to the same objects, will
+        # not raise an exception, though this would arguably also be a bad sign.
 
         # List to aggregate DFs / objects for hashing
         objects_to_hash: list[object] = []
@@ -163,7 +184,8 @@ class TestUnitTestBaseliner(unittest.TestCase):
             "DF / object list verification should succeed here (unless baseline files are missing, or baselining has been turned on)",
         )
 
-        # The local variable df still points to the same DF, so now the list contains [a,b,b]. This should be an error.
+        # The local variable df still points to the same DF, so adding it to the list will result in a duplicate
+        # ref i.e. the list will point at dataframes: [a,b,b]. This should cause an error to be raised.
         objects_to_hash.extend([df])
         with self.assertRaises(ValueError):
             UnitTestBaseliner.verify(objects_to_hash)
