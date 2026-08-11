@@ -870,7 +870,9 @@ def logllh2snxdms(llh):
 
     deg = _gn_aux.degminsec2deg(_pd.Series(step2[:, 0] + " " + step2[:, 1] + " " + step2[:, 2]))
     height = llh[step1_mask].HEI.values
-    height[height == ""] = 9999
+    height[height == ""] = _np.nan  # TODO check if this makes sense here
+    # As of Pandas 3:
+    # TypeError: Invalid value '9999' for dtype 'str'. Value should be a string or missing value, got 'int' instead.
 
     llh_out = _np.vstack([deg[n_rows:], deg[:n_rows], height.astype(float)]).T
 

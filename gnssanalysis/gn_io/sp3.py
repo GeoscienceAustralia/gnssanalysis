@@ -239,8 +239,35 @@ def remove_svs_from_header(sp3_df: _pd.DataFrame, sats_to_remove: set[str]) -> N
     """
     num_to_remove: int = len(sats_to_remove)
 
-    # Update header SV count (bunch of type conversion because header is stored as strings)
-    sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED = str(int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove)
+    # NOTE: As of Pandas 3, you can't do chained assignments.
+    # Trying to assign to a highly nested structure like this, does NOT apply the change to the higher level structures:
+    # sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED = <some value>
+    #
+    # The recommended approach is to use .loc, specifying the full heirarchy of the DataFrame or Series.
+    # I.e.
+    # Use this: header.loc["HEAD", "SV_COUNT_STATED"]
+    # NOT this: header["HEAD"]["SV_COUNT_STATED"]
+    #
+    # In the below statement, we get a reference to the Series object in the DataFrame attrs dict (dict key = "HEADER").
+    # "HEAD" is a column of the Series object: if we request that instead, we get a view or copy, NOT the actual
+    # Series object we can modify.
+
+    # Get stable reference to HEADER Series within dataframe attributes dict:
+    header: _pd.Series = sp3_df.attrs["HEADER"]
+
+    # Update nested structures explicitly with loc (chained assignments are disallowed under Pandas3's CoW scheme)
+    header.loc["HEAD", "SV_COUNT_STATED"] = str(int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove)
+
+    # NOTE: data structures here are roughly: sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED
+    #                                DataFrame^  dict^   key^ Series^  ^MultiIndex  ^Row(str)
+
+    # NOTE: We could assign the Series back to the attrs dict, but that's unnecessary as we got a reference to the
+    # Series object, not a copy of it.
+
+    # The most succinct Pandas3 compatible option so far is this, but it's a lot clearer to do it in two lines as above.
+    # sp3_df.attrs["HEADER"].loc["HEAD", "SV_COUNT_STATED"] = str(
+    #     int(sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED) - num_to_remove
+    # )
 
     # Remove sats from the multi-index which contains SV_INFO and HEAD. This does both SV list and accuracy code list.
     sp3_df.attrs["HEADER"].drop(level=1, labels=sats_to_remove, inplace=True)
@@ -1085,7 +1112,9 @@ def read_sp3(
         # not drop all the data to which the column previously applied!)
         # We drop from pos rather than vel, because vel is on the right hand side, so the layout resembles the
         # layout of an SP3 file better. Functionally, this shouldn't make a difference.
-        position_df = position_df.drop(axis=1, columns="FLAGS", level=0)  # TODO double check this level is right
+        position_df = position_df.drop(columns="FLAGS", level=0)
+        # As of Pandas 3:
+        # ValueError: Cannot specify both 'axis' and 'index'/'columns'
 
         velocity_df.columns = SP3_VELOCITY_COLUMNS
         # NOTE from the docs: pandas.concat copies attrs only if all input datasets have the same attrs.
@@ -1878,8 +1907,10 @@ def merge_attrs(df_list: list[_pd.DataFrame]) -> _pd.Series:
     values_if_mixed = _np.asarray(
         [version_str, pv_flag_str, out_dt_str, None, "M", None, "MIX", ac_str, "MX", "MIX", None]
     )
-    head = df[0].loc["HEAD"].values
+    head = _np.array(df[0].loc["HEAD"].values)
+    # As of Pandas 3, assigning to this requires an explicit copy first
     head[mask_mixed] = values_if_mixed[mask_mixed]
+
     # total_num_epochs needs to be assigned manually - length can be the same but have different epochs in each file
     # Determine number of epochs combined DataFrame will contain) - N_EPOCHS in heads[3]:
     first_set_of_epochs = set(df_list[0].index.get_level_values("J2000"))
