@@ -1,6 +1,7 @@
 """RINEX CLK file parsing function"""
 
 import logging as _logging
+from pathlib import Path
 import re as _re
 from io import BytesIO as _BytesIO
 from typing import Union as _Union
@@ -15,8 +16,8 @@ from .. import gn_io as _gn_io
 _RE_LINE = _re.compile(rb"(AS[ ]G.+)")  # GPS SV line (other GNSS may not have STD)
 
 
-def read_clk(clk_path):
-    content = _gn_io.common.path2bytes(str(clk_path))
+def read_clk(clk_path_or_bytes: _Union[Path, str, bytes]) -> _pd.DataFrame:
+    content = _gn_io.common.path2bytes(clk_path_or_bytes)
     data_b = content.find(b"END OF HEADER") + 13
     data_b += content[data_b : data_b + 20].find(b"\n") + 1
 
@@ -32,7 +33,7 @@ def read_clk(clk_path):
         clk_cols += [10]
         clk_names += ["STD"]
 
-    clk_df = _pd.read_csv(
+    clk_df = _pd.read_csv(  # TODO consider updating to read_fwf()
         _BytesIO(data),
         sep="\\s+",  # delim_whitespace is deprecated
         header=None,
@@ -77,12 +78,12 @@ def get_sv_clocks(clk_df: _pd.DataFrame) -> _pd.Series:
     :raises IndexError: Raise error if the dataframe is not indexed correctly
     :return _pd.Series: Retrieved satellite clocks
     """
-    if clk_df.index.names == ['A', 'J2000', 'CODE']:
+    if clk_df.index.names == ["A", "J2000", "CODE"]:
         # fastest method to grab a specific category!, same as clk_df.EST.loc['AS'] but >6 times faster
         AS_cat_code = clk_df.index.levels[0].categories.get_loc("AS")
         mask = clk_df.index.codes[0] == AS_cat_code
         return _pd.Series(data=clk_df.values[:, 0][mask], index=clk_df.index.droplevel(0)[mask])
-    elif clk_df.index.names == ['J2000', 'PRN']:
+    elif clk_df.index.names == ["J2000", "PRN"]:
         return _pd.Series(data=clk_df[("EST", "CLK")].values, index=clk_df.index)
     else:
         raise IndexError("Incorrect index names of dataframe")

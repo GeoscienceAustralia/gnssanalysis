@@ -407,17 +407,17 @@ def remove_offline_sats(sp3_df: _pd.DataFrame, df_friendly_name: str = "") -> _p
     offline_sats = sp3_df[mask_either].index.get_level_values(1).unique()
 
     # Using that list of offline / partially offline sats, remove all entries for those sats from the SP3 DataFrame:
-    sp3_df = sp3_df.drop(offline_sats, level=1, errors="ignore")
+    sp3_df_cleaned = sp3_df.drop(offline_sats, level=1, errors="ignore")
 
     if len(offline_sats) > 0:
         # Update the internal representation of the SP3 header to match the change
-        remove_svs_from_header(sp3_df, offline_sats.values)
+        remove_svs_from_header(sp3_df_cleaned, offline_sats.values)
         logger.info(
             f"Dropped offline / nodata sats from {df_friendly_name} SP3 DataFrame (including header): {offline_sats.values}"
         )
     else:
         logger.info(f"No offline / nodata sats detected to be dropped from {df_friendly_name} SP3 DataFrame")
-    return sp3_df
+    return sp3_df_cleaned
 
 
 def filter_by_svs(

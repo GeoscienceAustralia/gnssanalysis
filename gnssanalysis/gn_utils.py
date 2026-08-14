@@ -997,6 +997,28 @@ class ContextTimer:
             print(self.readout)
 
 
+def stringify_warnings(captured_warnings: list[warnings.WarningMessage]) -> str:
+    """
+    Convenience function to convert a list of warning messages to a string.
+    E.g. output:
+    Warning message #1: Some warning
+    Warning message #2: Some other warning
+    ...
+
+    :param captured_warnings: list of warning message objects (e.g. from UnitTest's _AssertWarnsContext.warnings)
+    :type captured_warnings: list[warnings.WarningMessage]
+    :return: rendered string for multi-line log output
+    :rtype: str
+    """
+    aggregate_message = ""
+    for i in range(len(captured_warnings)):
+        w = captured_warnings[i]
+        aggregate_message += f"Warning message #{i+1}: {str(w.message)}\n"
+    return aggregate_message
+    # Alternatively:
+    # return f"{''.join('MESSAGE -> ' + str(w.message) + NEWLINE for w in captured_warnings)}"
+
+
 def sha256(bytes_to_hash: bytes) -> str:
     """
     Convenience wrapper to quickly call hashlib.sha256 and return a hex digest string
@@ -1126,7 +1148,7 @@ class UnitTestBaseliner:
 
     @staticmethod
     def create_baseline(  # Was baseline_pickled_df_list_and_hash()
-        current_object_list: list[object],
+        current_object_list: list,  # Any kind of object is ok
         # These are used to describe the calling class and function, and are inferred automatically. If needed they
         # can be explicitly set here:
         subdir: Optional[_pathlib.Path] = None,
@@ -1203,7 +1225,8 @@ class UnitTestBaseliner:
 
     @staticmethod
     def verify(  # Was create_and_verify_pickled_df_list()
-        current_object_list: list[object],
+        current_object_list: list,  # Can be any type of object (though diff output only supported for some types)
+        # TODO update to output notice rather than crashing, if type encountered we can't print a diff for.
         # parent_dir: _pathlib.Path = BASELINE_DATAFRAME_RECORDS_DIR_ROOT_RELATIVE,
         # Option to strictly enforce that a baseline must exist for anything this function is invoked to check:
         raise_for_missing_baseline: bool = False,

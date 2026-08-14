@@ -2,6 +2,7 @@ import unittest
 from pyfakefs.fake_filesystem_unittest import TestCase
 
 from gnssanalysis.gn_io import igslog
+from gnssanalysis.gn_utils import UnitTestBaseliner
 from test_datasets.sitelog_test_data import (
     abmf_site_log_v1 as v1_data,
     abmf_site_log_v2 as v2_data,
@@ -9,7 +10,7 @@ from test_datasets.sitelog_test_data import (
 )
 
 
-class TestRegex(unittest.TestCase):
+class TestIgsLogRegex(unittest.TestCase):
     """
     Test the various regex expressions used in the parsing of IGS log files
     """
@@ -20,13 +21,15 @@ class TestRegex(unittest.TestCase):
         self.assertEqual(igslog.determine_log_version(v2_data), "v2.0")
 
         # Check that LogVersionError is raised on wrong data
-        self.assertRaises(igslog.LogVersionError, igslog.determine_log_version, b"Wrong data")
+        with self.assertRaises(igslog.LogVersionError):
+            igslog.determine_log_version(b"Wrong data")
 
     def test_extract_id_block(self):
         # Ensure the extract of ID information works and gives correct dome number:
         self.assertEqual(igslog.extract_id_block(v1_data, "/example/path", "ABMF", "v1.0"), ["ABMF", "97103M001"])
         self.assertEqual(igslog.extract_id_block(v2_data, "/example/path", "ABMF", "v2.0"), ["ABMF", "97103M001"])
-        # Check automatic version determination works as expected:
+        # Check that automatic version determination is used when a version is not provided. This
+        # leverages determine_log_version() which is already tested above:
         self.assertEqual(igslog.extract_id_block(v1_data, "/example/path", "ABMF"), ["ABMF", "97103M001"])
 
         # Check LogVersionError is raised on no data:
@@ -42,6 +45,7 @@ class TestRegex(unittest.TestCase):
     def test_extract_location_block(self):
         # Version 1 Location description results:
         v1_location_block = igslog.extract_location_block(v1_data, "/example/path", "v1.0")
+        # NOTE: this test cannot currently support baselining. This will be addressed in NPI-4492
         self.assertEqual(v1_location_block.group(1), b"Les Abymes")
         self.assertEqual(v1_location_block.group(2), b"Guadeloupe")
 
@@ -86,6 +90,16 @@ class TestRegex(unittest.TestCase):
         # Last receiver should not have an end date assigned (i.e. current):
         self.assertEqual(v2_receiver_block[-1][-1], b"")
 
+        objs_to_verify: list[object] = [v1_receiver_block, v2_receiver_block]
+
+        # Baseline (manually)
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objs_to_verify)
+
+        # Verify
+        self.assertTrue(UnitTestBaseliner.verify(objs_to_verify), "Hash verification should pass")
+        # TODO update verify() to support required datatypes, so it does not crash if hash changes
+
     def test_extract_antenna_block(self):
         # Testing version 1:
         v1_antenna_block = igslog.extract_antenna_block(v1_data, "/example/path")
@@ -101,8 +115,18 @@ class TestRegex(unittest.TestCase):
         # Last antenna should not have an end date assigned (i.e. current):
         self.assertEqual(v2_antenna_block[-1][-1], b"")
 
+        objs_to_verify: list[object] = [v1_antenna_block, v2_antenna_block]
 
-class TestDataParsing(unittest.TestCase):
+        # Baseline (manually)
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objs_to_verify)
+
+        # Verify
+        self.assertTrue(UnitTestBaseliner.verify(objs_to_verify), "Hash verification should pass")
+        # TODO update verify() to support required datatypes, so it does not crash if hash changes
+
+
+class TestIgsLogDataParsing(unittest.TestCase):
     """
     Test the integrated functions that gather and parse information from IGS log files
     """
@@ -122,8 +146,18 @@ class TestDataParsing(unittest.TestCase):
         # Check last antenna type:
         self.assertEqual(v2_data_parsed[-1][2], "TRM57971.00")
 
+        objs_to_verify: list[object] = [v1_data_parsed, v2_data_parsed]
 
-class TestFileParsing(TestCase):
+        # Baseline (manually)
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objs_to_verify)
+
+        # Verify
+        self.assertTrue(UnitTestBaseliner.verify(objs_to_verify), "Hash verification should pass")
+        # TODO update verify() to support required datatypes, so it does not crash if hash changes
+
+
+class TestIgsLogFileParsing(TestCase):
     """
     Test gather_metadata()
     """
@@ -158,3 +192,25 @@ class TestFileParsing(TestCase):
         self.assertEqual(record_3.CODE, "AGGO")
         # Antenna info: test for antenna serial number
         self.assertEqual(result[2]["S/N"][4], "726722")
+
+        # As the gather_metadata() function we are testing here, reads from a filesystem and outputs a DataFrame,
+        # running it without pyfakefs isn't practical. So we temporarily suspend patching in order to run baselining.
+        # See docs here:
+        # https://pytest-pyfakefs.readthedocs.io/en/latest/convenience.html#suspending-patching
+
+        # Pause fake filesystem patching to allow access to baseline files.
+        self.fs.pause()
+
+        # Create a generic (object rather than DF) list, and copy elements across
+        dfs_to_verify: list[object] = []
+        dfs_to_verify.extend(result)
+
+        # Baseline (manually)
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(dfs_to_verify)
+
+        # Verify
+        self.assertTrue(UnitTestBaseliner.verify(dfs_to_verify), "Hash verification should pass")
+
+        # Ensure pyfakefs is re-enabled before further tests run
+        self.fs.resume()

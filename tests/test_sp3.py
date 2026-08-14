@@ -4,11 +4,19 @@ from pyfakefs.fake_filesystem_unittest import TestCase
 
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 
 from gnssanalysis.filenames import convert_nominal_span, determine_properties_from_filename
 import gnssanalysis.gn_io.sp3 as sp3
 
-from gnssanalysis.gn_utils import STRICT_OFF, STRICT_RAISE, STRICT_WARN, trim_line_ends
+from gnssanalysis.gn_utils import (
+    STRICT_OFF,
+    STRICT_RAISE,
+    STRICT_WARN,
+    UnitTestBaseliner,
+    stringify_warnings,
+    trim_line_ends,
+)
 from test_datasets.sp3_test_data import (
     fake_header_version_a,
     fake_header_version_b,
@@ -98,12 +106,13 @@ class TestSP3(unittest.TestCase):
         self.assertEqual(
             len(captured_warnings),
             2,
-            "Expected only 2 warnings. Check what other warnings are being raised!",
+            "Expected only 2 warnings. Check what other warnings are being raised! Full list below:\n"
+            + stringify_warnings(captured_warnings),
         )
 
         # Our best supported version should return True
         self.assertEqual(
-            sp3.check_sp3_version(fake_header_version_d), True, "SP3 version d should be considered best supported"
+            sp3.check_sp3_version(fake_header_version_d), True, "SP3 version d should be considered supported"
         )
 
         # StrictModes.STRICT_RAISE should cause a *possibly* supported version to raise an exception.
@@ -114,6 +123,11 @@ class TestSP3(unittest.TestCase):
         result = sp3.read_sp3(input_data, pOnly=True, strict_mode=STRICT_OFF)
         self.assertEqual(len(result), 6)
 
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline([result]) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify([result]), "Hash verification should pass")
+
     def test_read_sp3_pv(self):
         result = sp3.read_sp3(input_data, pOnly=False, strict_mode=STRICT_OFF)
         self.assertEqual(len(result), 6)
@@ -122,10 +136,18 @@ class TestSP3(unittest.TestCase):
         self.assertEqual(result.attrs["HEADER"]["HEAD"]["DATETIME"], "2007  4 12  0  0  0.00000000")
         self.assertEqual(result.index[0][0], 229608000)  # Same date, as J2000
 
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline([result]) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify([result]), "Hash verification should pass")
+
     def test_read_sp3_pv_with_ev_ep_rows(self):
         # Expect exception relating to the EV and EP rows (in RAISE mode), as we can't currently handle them properly.
         with self.assertRaises(NotImplementedError) as raised_exception:
             sp3.read_sp3(sp3c_example2_data, pOnly=False, strict_mode=STRICT_RAISE, skip_version_check=True)
+
+            # Assert that raised exception says what we expect it to
+            self.assertEqual(raised_exception.exception, "EP and EV flag rows are currently not supported")
 
     def test_read_sp3_header_svs_basic(self):
         """
@@ -135,6 +157,12 @@ class TestSP3(unittest.TestCase):
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].shape[0], 2, "Should be two SVs in data")
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].index[1], "G02", "Second SV should be G02")
         self.assertEqual(result.attrs["HEADER"]["SV_INFO"].iloc[1], 8, "Second ACC should be 8")
+
+        # Somewhat redundant as it tests the same use of the read function as an already basedlined test above
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline([result]) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify([result]), "Hash verification should pass")
 
     def test_read_sp3_header_svs_detailed(self):
         """
@@ -182,6 +210,12 @@ class TestSP3(unittest.TestCase):
         end_line2_acc = sv_info.iloc[29]
         self.assertEqual(end_line2_acc, 18, msg="Last ACC on test line 2 (pos 30) should be 18")
 
+        # TODO add support for pandas Series
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline([result]) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify([result]), "Hash verification should pass")
+
     def test_read_sp3_validation_sv_count_mismatch_header_vs_content(self):
         with self.assertRaises(ValueError) as context_manager:
             sp3.read_sp3(
@@ -206,6 +240,12 @@ class TestSP3(unittest.TestCase):
         parsed_svs_content = sp3.get_unique_svs(result).astype(str).values
         self.assertEqual(set(parsed_svs_content), set(["G01", "G02", "G03", "G04", "G05"]))
 
+        # TODO add support for pandas Index
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline([result, parsed_svs_content]) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify([result, parsed_svs_content]), "Hash verification should pass")
+
     # TODO Add test(s) for correctly reading header fundamentals (ACC, ORB_TYPE, etc.)
     # TODO add tests for correctly reading the actual content of the SP3 in addition to the header.
 
@@ -214,26 +254,28 @@ class TestSP3(unittest.TestCase):
         Test overlong content line check
         """
 
-        test_content_no_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
+        test_content_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
 ## 1422 345600.00000000   900.00000000 54202 0.0000000000000 THIS LINE IS TOO LONG
 +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 THIS IS OK.........
-+    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN ......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 2......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 3......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 4......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 5......
++    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 TOO LONG AGAIN 6......
 """
-        #         test_content_no_overlong: bytes = b"""#dV2007  4 12  0  0  0.00000000       2 ORBIT IGS14 BHN ESOC
-        # +    2   G01G02  0  0  0  0  0  0  0  0  0  0  0  0  0  0  0 THIS IS OK.........
-        # """
 
-        # sp3.read_sp3(test_content_no_overlong)
         with self.assertWarns(Warning) as warning_assessor:
 
             with self.assertRaises(ValueError) as read_exception:
-                sp3.read_sp3(test_content_no_overlong, strictness_comments=STRICT_OFF, strict_mode=STRICT_RAISE)
+                sp3.read_sp3(test_content_overlong, strictness_comments=STRICT_OFF, strict_mode=STRICT_RAISE)
             self.assertEqual(
                 str(read_exception.exception),
-                "2 SP3 epoch data lines were overlong and very likely to parse incorrectly.",
+                "6 SP3 epoch data lines were overlong and very likely to parse incorrectly.",
             )
         captured_warnings = warning_assessor.warnings
         self.assertIn("Line of SP3 input exceeded max width:", str(captured_warnings[0].message))
+        self.assertIn("TOO LONG AGAIN 5......", str(captured_warnings[4].message))
+        self.assertEqual(len(captured_warnings), 5, "Only the first 5 overlong SP3 content lines should be printed")
 
         # # Assert that it still warns by default (NOTE: we can't test this with above example data, as it doens't
         # # contain a full header)
@@ -244,11 +286,16 @@ class TestSP3(unittest.TestCase):
         #     str(read_warning.msg), "2 SP3 epoch data lines were overlong and very likely to parse incorrectly."
         # )
 
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(captured_warnings)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(captured_warnings), "Hash verification should pass")
+
     def test_read_sp3_misalignment_check(self):
         """
-        Test that misaligned columns raise an error (currently only in STRICT mode).
-        Strictness of comment checking is set to OFF, as the test data has a comment line equal to '*/' not '*/ '
+        Test that misaligned columns raise an error in strict_mode=RAISE (by default it's a warning).
         """
+        # NOTE: Strictness of *comment* checking is set to OFF, as the test data has a comment line equal to '*/' not '*/ '
         with self.assertRaises(ValueError) as read_exception:
             sp3.read_sp3(sp3_test_data_misaligned_columns, strict_mode=STRICT_RAISE, strictness_comments=STRICT_OFF)
         self.assertEqual(
@@ -260,26 +307,27 @@ class TestSP3(unittest.TestCase):
         """
         Test that misaligned columns in an epoch block raise an error (currently only in STRICT mode)
         """
-        # Check that misaligned (but artificially not overlong) data line, raises exception
-        with self.assertRaises(ValueError) as misaligned_ex:
-            data = """
+
+        data = """
 PG06 -16988.173766  -1949.602010 -20295.348670  13551.688732                    
 PG07  -2270.179246 -18040.766586  19792.234454  13925.747073                    
 PG08-538216.0254931012968.294871-1053208.82032548447864.338317                  
 PG09  -7083.058359 -25531.577633  -1359.151582  14650.575917                    
 """
+        # Check that misaligned (but artificially not overlong) data line, raises exception
+        with self.assertRaises(ValueError) as misaligned_ex:
             sp3._check_column_alignment_of_sp3_block("*  2025  6 17  6  0  0.00000000", data, strict_mode=STRICT_RAISE)
         self.assertEqual(
             "Misaligned data line (unused column did not contain a space): 'PG08-538216.0254931012968.294871-1053208.82032548447864.338317                  '",
             str(misaligned_ex.exception),
         )
 
-        # Check that misaligned data line (flags) trimmed to 80 chars, raises exception
-        with self.assertRaises(ValueError) as misaligned_flags:
-            data = """
+        data = """
 PG06  -5247.775383 -25963.469495   -106.156584  15892.813576               P   P
 PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P   
 """
+        # Check that misaligned data line (flags) trimmed to 80 chars, raises exception
+        with self.assertRaises(ValueError) as misaligned_flags:
             sp3._check_column_alignment_of_sp3_block("*  2025  6 17  6  0  0.00000000", data, strict_mode=STRICT_RAISE)
         self.assertEqual(
             "Misaligned data line (unused column did not contain a space): 'PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P   '",
@@ -419,17 +467,54 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 ],
             )
 
-            # Merge SV table and header, and store as 'HEADER'
+            # Merge SV table and header into a single Series object, and store that as 'HEADER'
             df.attrs["HEADER"] = pd.concat([sp3_heading, sv_tbl], keys=["HEAD", "SV_INFO"], axis=0)
         return df
+
+    def baseline_get_example_dataframe(self):
+
+        # NOTE: this function creates a baseline, but does not do any testing beyond that.
+        # I.e. it will detect regressions, but does not assert that the starting value is correct.
+
+        # TODO enable these once the default template is implemented
+        # ex_df_default = TestSP3.get_example_dataframe()
+        # ex_df_default_no_header = TestSP3.get_example_dataframe(include_simple_header=False)
+
+        ex_df_dupe = TestSP3.get_example_dataframe(template_name="dupe_epoch_offline_sat_empty_epoch")
+        ex_df_dupe_no_header = TestSP3.get_example_dataframe(
+            template_name="dupe_epoch_offline_sat_empty_epoch", include_simple_header=False
+        )
+
+        ex_df_offline_nan = TestSP3.get_example_dataframe(template_name="offline_sat_nan")
+        ex_df_offline_zero = TestSP3.get_example_dataframe(template_name="offline_sat_zero")
+
+        objects_to_verify: list = [
+            ex_df_dupe,
+            ex_df_dupe_no_header,
+            ex_df_offline_nan,
+            ex_df_offline_zero,
+        ]
+
+        # TODO baseline outputs
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
+
+    # TODO implement the following to actually test the example DF function, not just check for regressions against
+    # the current value
+    # def test_get_example_dataframe(self):
 
     def test_clean_sp3_orb(self):
         """
         Tests cleaning an SP3 DataFrame of duplicates, leading or trailing nodata values, and offline sats
         """
 
+        objects_to_verify: list = []
+
         # Create dataframe manually, as read function does deduplication itself. This also makes the test more self-contained
         sp3_df = TestSP3.get_example_dataframe("dupe_epoch_offline_sat_empty_epoch")
+        objects_to_verify.append(sp3_df)
 
         self.assertTrue(
             # Alterantively you can use all(array == array) to do an elementwise equality check
@@ -454,6 +539,8 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         with self.assertWarns(Warning) as warning_assessor:
             sp3_df_no_offline_removal = sp3.clean_sp3_orb(sp3_df, False)
 
+        objects_to_verify.append(sp3_df_no_offline_removal)
+
         captured_warnings = warning_assessor.warnings
         self.assertIn(
             "Failed to grab filename from sp3 dataframe for error output purposes:", str(captured_warnings[0].message)
@@ -461,7 +548,8 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         self.assertEqual(
             len(captured_warnings),
             1,
-            "Only expected one warning, about failing to get path. Check what other warnings are being raised!",
+            "Only expected one warning, about failing to get path. Check what other warnings are being raised. Full list below:\n"
+            + stringify_warnings(captured_warnings),
         )
 
         self.assertTrue(
@@ -485,20 +573,30 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         with self.assertWarns(Warning) as warning_assessor:
             # Now check with offline sat removal enabled too
             sp3_df_with_offline_removal = sp3.clean_sp3_orb(sp3_df, True)
-            # Check that we still seem to have one epoch with no dupe sats, and now with the offline sat removed
-            self.assertTrue(
-                np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
-                "After cleaning there should be no dupe PRNs (and with offline removal, offline sat should be gone)",
-            )
+
+        objects_to_verify.append(sp3_df_with_offline_removal)
+
+        # Check that we still seem to have one epoch with no dupe sats, and now with the offline sat removed
+        self.assertTrue(
+            np.array_equal(sp3_df_with_offline_removal.index.get_level_values(1), ["G01", "G02"]),
+            "After cleaning there should be no dupe PRNs (and with offline removal, offline sat should be gone)",
+        )
+
         captured_warnings = warning_assessor.warnings
         self.assertIn(
             "Failed to grab filename from sp3 dataframe for error output purposes:", str(captured_warnings[0].message)
         )
         self.assertEqual(
             len(captured_warnings),
-            1,
-            "Only expected one warning, about failing to get path. Check what other warnings are being raised!",
+            1,  # Second warning is about pandas 3 deprecations. TODO update...
+            "Only expected one warning, about failing to get path. "
+            f"Check all warnings below:\n{stringify_warnings(captured_warnings)}",
         )
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_gen_sp3_fundamentals(self):
         """
@@ -507,20 +605,26 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         NOTE: leverages read_sp3() to pull in sample data, so is prone to errors in that function.
         """
 
+        objects_to_verify: list = []
+
         # Prep the baseline data to test against, including stripping each line of trailing whitespace.
         baseline_header_lines = trim_line_ends(sp3_test_data_short_cod_final_header).splitlines()
         baseline_content_lines = trim_line_ends(sp3_test_data_short_cod_final_content).splitlines()
+        objects_to_verify.extend([baseline_header_lines, baseline_content_lines])
 
         # Note this is suboptimal from a testing standpoint, but for now is a lot easier than manually constructing
         # the DataFrame.
         sp3_df = sp3.read_sp3(bytes(sp3_test_data_short_cod_final))
+        objects_to_verify.append(sp3_df)
 
         generated_sp3_header = sp3.gen_sp3_header(sp3_df, output_comments=True)
         generated_sp3_content = sp3.gen_sp3_content(sp3_df)
+        objects_to_verify.extend([generated_sp3_header, generated_sp3_content])
 
         # As with the baseline data, prep the data under test, for comparison.
         test_header_lines = trim_line_ends(generated_sp3_header).splitlines()
         test_content_lines = trim_line_ends(generated_sp3_content).splitlines()
+        objects_to_verify.extend([test_header_lines, test_content_lines])
 
         # TODO maybe we don't want to split the content, just the header
 
@@ -551,6 +655,11 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 f"Content line {i} didn't match",
             )
 
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
+
     # TODO add tests for correctly generating sp3 output content with gen_sp3_content() and gen_sp3_header()
     # These tests should include:
     # - Correct alignment of POS, CLK, STDPOS STDCLK, (not velocity yet), FLAGS
@@ -562,6 +671,9 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
 
     def test_get_sp3_comments(self):
         # Somewhat standalone test to check fetching of SP3 comments from a DataFrame
+
+        objects_to_verify: list = []
+
         expected_comments = [
             "/*   EUROPEAN SPACE OPERATIONS CENTRE - DARMSTADT, GERMANY",
             "/* ---------------------------------------------------------",
@@ -569,11 +681,31 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             "/* PCV:IGS14_2022 OL/AL:EOT11A   NONE     YN ORB:CoN CLK:CoN",
         ]
         sp3_df: pd.DataFrame = sp3.read_sp3(input_data, strict_mode=STRICT_OFF)
-        self.assertEqual(sp3.get_sp3_comments(sp3_df), expected_comments, "SP3 comments read should match expectation")
-        self.assertEqual(sp3_df.attrs["COMMENTS"], expected_comments, "Manual read of SP3 comments should match")
+        automated_comment_read = sp3.get_sp3_comments(sp3_df)
+        manual_comment_read = sp3_df.attrs["COMMENTS"]
+
+        self.assertEqual(automated_comment_read, expected_comments, "SP3 comments read should match expectation")
+        self.assertEqual(manual_comment_read, expected_comments, "Manual read of SP3 comments should match")
+        self.assertEqual(
+            id(automated_comment_read),
+            id(manual_comment_read),
+            "Manual and automated comment read should return the same object",
+        )
+
+        # We don't pass the second comment object here, as we have verified it is the same object, and the
+        # verifier will raise on duplicates.
+        objects_to_verify.extend([sp3_df, automated_comment_read])
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_update_sp3_comments(self):
         # Somewhat standalone test to check updating SP3 comments in a DataFrame
+
+        objects_to_verify: list = []
+
         expected_comments = [
             "/*   EUROPEAN SPACE OPERATIONS CENTRE - DARMSTADT, GERMANY",
             "/* ---------------------------------------------------------",
@@ -584,6 +716,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         sp3_df: pd.DataFrame = sp3.read_sp3(input_data, strict_mode=STRICT_OFF)  # Load DataFrame
         # Read comments directly from DataFrame to check they are as expected
         self.assertEqual(sp3_df.attrs["COMMENTS"], expected_comments, "SP3 initial comments read were not as expected")
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))  # Append list of comments (do not unpack elements)
 
         # Introduce invalid but not overlong comment to check lead-in writing part of validation
         sp3_df.attrs["COMMENTS"] = [
@@ -598,6 +731,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             ["/* malformed comment is missing lead-in", "/* malformed comment is missing space", "/* ", "/* "],
             "Lead in and spacing should be added to existing comments if missing",
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Introduce overlong comment to check exception handling part of validation
         sp3_df.attrs["COMMENTS"] = [
@@ -621,24 +755,31 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             "/* ",
             "Padding comment expected on second line",
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Check deletion of all comments
         sp3.update_sp3_comments(sp3_df, ammend=False)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"],
             ["/* ", "/* ", "/* ", "/* "],
-            "Should be no comments besides 4 padding ones, after running ammend with no input",
+            "Should be no comments besides 4 padding ones, after running with ammend=False and no input",
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Write initial comment lines
         sp3.update_sp3_comments(sp3_df, comment_lines=["line 1", "line 2", "line 3", "line 4"], ammend=False)
         self.assertEqual(sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4"])
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Write more lines
         sp3.update_sp3_comments(sp3_df, comment_lines=["line 5", "line 6"], ammend=True)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"], ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* line 5", "/* line 6"]
         )
+        # NOTE: Creating a new list captures the immutable strings it contains, at this point in time. Without
+        # constructing a new list, we would just capture a reference to the list itself (which is added to rather
+        # than replaced when ammend=True)
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Write more lines, free form
         sp3.update_sp3_comments(sp3_df, comment_string="arbitrary length line", ammend=True)
@@ -646,6 +787,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             sp3_df.attrs["COMMENTS"],
             ["/* line 1", "/* line 2", "/* line 3", "/* line 4", "/* line 5", "/* line 6", "/* arbitrary length line"],
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
         # Write more lines, both modes at once
         sp3.update_sp3_comments(sp3_df, comment_lines=["line 8"], comment_string="some other comment", ammend=True)
@@ -663,7 +805,9 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 "/* some other comment",
             ],
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
+        # Same as above but truncating existing comments (starting again)
         sp3.update_sp3_comments(sp3_df, comment_lines=["new line"], comment_string="some new comment", ammend=False)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"],
@@ -674,7 +818,9 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 "/* ",
             ],
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
 
+        # And free form string mode with no ammending (truncate)
         sp3.update_sp3_comments(sp3_df, comment_string="some other new comment", ammend=False)
         self.assertEqual(
             sp3_df.attrs["COMMENTS"],
@@ -685,8 +831,20 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 "/* ",
             ],
         )
+        objects_to_verify.append(list(sp3_df.attrs["COMMENTS"]))
+
+        # NOTE: comment reflow not tested above. This is done in test_sp3_comment_reflow()
+
+        # NOTE: all key changes are explicitly checked with asserts above: baselining is not strictly necessary.
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify) # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_comment_validation_standalone(self):
+
+        objects_to_verify: list = []
 
         # Other examples of valid and invalid lines we could use.
 
@@ -712,37 +870,47 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         # ]
 
         # Insufficient number of lines should fail validation
-        self.assertFalse(sp3.validate_sp3_comment_lines(["/* Must have >= 4 comment lines!"], STRICT_OFF))
+        comment_lines = ["/* Must have >= 4 comment lines!"]
+        self.assertFalse(sp3.validate_sp3_comment_lines(comment_lines, STRICT_OFF))
+        objects_to_verify.append(list(comment_lines))
+
+        comment_lines = [
+            "/* Must have >= 4 comment lines!",
+            "/* Must have >= 4 comment lines!",
+            "/* Must have >= 4 comment lines!",
+        ]
         self.assertFalse(
             sp3.validate_sp3_comment_lines(
-                [
-                    "/* Must have >= 4 comment lines!",
-                    "/* Must have >= 4 comment lines!",
-                    "/* Must have >= 4 comment lines!",
-                ],
+                comment_lines,
                 STRICT_OFF,
             )
         )
+        objects_to_verify.append(list(comment_lines))
+
+        comment_lines = [
+            "/* Must have >= 4 comment lines!",
+            "/* Must have >= 4 comment lines!",
+            "/* Must have >= 4 comment lines!",
+            "/* Ok we're good now",
+        ]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                [
-                    "/* Must have >= 4 comment lines!",
-                    "/* Must have >= 4 comment lines!",
-                    "/* Must have >= 4 comment lines!",
-                    "/* Ok we're good now",
-                ],
+                comment_lines,
                 STRICT_OFF,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # We have a convenience flag to turn that one off, to make testing less cumbersome:
+        comment_lines = ["/* Must have >= 4 comment lines! ...Unless that check is turned off"]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                ["/* Must have >= 4 comment lines! ...Unless that check is turned off"],
+                comment_lines,
                 STRICT_OFF,
                 skip_min_4_lines_test=True,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # # The bulk tests may be overkill.
         # # Bulk test valid and invalid lines, with different settings
@@ -774,46 +942,54 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
         #     )
 
         # Uneventful cases
-        self.assertTrue(
-            sp3.validate_sp3_comment_lines(["/* this line is fine"], STRICT_RAISE, skip_min_4_lines_test=True)
-        )
+        comment_lines = ["/* this line is fine"]
+        self.assertTrue(sp3.validate_sp3_comment_lines(comment_lines, STRICT_RAISE, skip_min_4_lines_test=True))
+        objects_to_verify.append(list(comment_lines))
+
+        comment_lines = ["/* line 1", "/* line 2"]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                ["/* line 1", "/* line 2"],
+                comment_lines,
                 STRICT_OFF,
                 skip_min_4_lines_test=True,
                 attempt_fixes=False,
                 fail_on_fixed_issues=True,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # Turning off fail_on_fixed_issues should make no difference here.
+        comment_lines = ["/* line 1", "/* line 2"]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                ["/* line 1", "/* line 2"],
+                comment_lines,
                 STRICT_OFF,
                 skip_min_4_lines_test=True,
                 attempt_fixes=False,
                 fail_on_fixed_issues=False,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # Strict mode shouldn't change how valid lines are handled
+        comment_lines = ["/* line 1", "/* line 2"]
         self.assertTrue(
             sp3.validate_sp3_comment_lines(
-                ["/* line 1", "/* line 2"],
+                comment_lines,
                 STRICT_RAISE,
                 skip_min_4_lines_test=True,
                 attempt_fixes=False,
                 fail_on_fixed_issues=False,
             )
         )
+        objects_to_verify.append(list(comment_lines))
 
         # With strictness off, invalid lines shouldn't raise exceptions, but should still fail validation
         # Note that fail-on-fixed currently has no effect if attempt_fixes is off.
+        comment_lines = ["this line has no lead-in"]
         self.assertFalse(
             sp3.validate_sp3_comment_lines(
-                ["this line has no lead-in"],
+                comment_lines,
                 STRICT_OFF,
                 skip_min_4_lines_test=True,
                 attempt_fixes=False,
@@ -821,6 +997,8 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             ),
             "Invalid comment line should fail validation but not raise exception as strict mode is off",
         )
+        self.assertEqual(comment_lines, ["this line has no lead-in"], "No fix should be made when attempt_fixes=False")
+        # No need to add this one to the baseline, we have a full coverage assert here.
 
         with self.assertRaises(ValueError):
             sp3.validate_sp3_comment_lines(
@@ -862,6 +1040,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             ["/* this line has missing space after lead-in"],
             "Missing space should be addressed in place",
         )
+        objects_to_verify.append(list(comment_lines))
 
         # With fail on fixed: fail validation because the input was wrong, even though we were able to remedy it.
         comment_lines = ["/*this line has missing space after lead-in"]
@@ -880,6 +1059,7 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
             ["/* this line has missing space after lead-in"],
             "Missing space should be addressed in place",
         )
+        objects_to_verify.append(list(comment_lines))
 
         # Same as above, but with strict mode: raise, that should be an exception.
         comment_lines = ["/*this line has missing space after lead-in"]
@@ -912,6 +1092,11 @@ PG07-1245784.756055 252424.937619-521507.7748633049872.304950               P
                 skip_min_4_lines_test=True,
                 attempt_fixes=True,
             )
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_comment_reflow(self):
         # Test that string reflow utility correctly splits a string and converts it into SP3 comment lines.
@@ -985,30 +1170,48 @@ SP3 comment reflow test. This should not break words if possible."""
         """
         gen_sp3_content() can't yet output velocity data. Ensure raises by default, and removes vel columns with warning
         """
+
+        objects_to_verify: list = []
         # Input data passed as bytes here, rather than using a mock file, because the mock file setup seems to break
         # part of Pandas Styler, which is used by gen_sp3_content(). Specifically, some part of Styler's attempt to
         # load style config files leads to a crash, despite some style config files appearing to read successfully)
         input_data_fresh = input_data + b""  # Lazy attempt at not passing a reference
         sp3_df = sp3.read_sp3(bytes(input_data_fresh), pOnly=False)
+        objects_to_verify.append(sp3_df)
 
         with self.assertRaises(NotImplementedError):
             generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=False)
+            objects_to_verify.append(generated_sp3_content)
 
         with self.assertWarns(Warning) as warning_accessor:
             generated_sp3_content = sp3.gen_sp3_content(sp3_df, continue_on_unhandled_velocity_data=True)
             self.assertTrue("VX" not in generated_sp3_content, "Velocity data should be removed before outputting SP3")
+            objects_to_verify.append(generated_sp3_content)
 
         captured_warnings = warning_accessor.warnings
         self.assertEqual(
             "SP3 velocity output not currently supported! Dropping velocity columns before writing out.",
             str(captured_warnings[0].message),
         )
+        self.assertEqual(
+            len(captured_warnings),
+            1,
+            "Expected only 1 warning. Check what other warnings are being raised! Full list below:\n"
+            + stringify_warnings(captured_warnings),
+        )
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_clock_nodata_to_nan(self):
         sp3_df = pd.DataFrame({("EST", "CLK"): [999999.999999, 123456.789, 999999.999999, 987654.321]})
         sp3.sp3_clock_nodata_to_nan(sp3_df)
         expected_result = pd.DataFrame({("EST", "CLK"): [np.nan, 123456.789, np.nan, 987654.321]})
         self.assertTrue(sp3_df.equals(expected_result))
+
+        # Note while this does not test a full dataframe, it does use DF.equals(), so we are not adding baselining.
 
     def test_sp3_pos_nodata_to_nan(self):
         """
@@ -1041,17 +1244,35 @@ SP3 comment reflow test. This should not break words if possible."""
         is to check if the function runs without errors
         TODO: update that to check actual expected values
         """
+
+        # TODO note we do not currntly check for a confirmed correct answer. We just check that the answer has
+        # not changed from our baseline.
+        objects_to_verify: list = []
+
         result = sp3.read_sp3(input_data, pOnly=True, strict_mode=STRICT_OFF)
+        objects_to_verify.append(result)
+
         r = sp3.getVelSpline(result)
-        r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r)
+        objects_to_verify.append(r)
+
+        r2 = sp3.getVelPoly(result, 2)
         self.assertIsNotNone(r2)
+        objects_to_verify.append(r2)
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     def test_sp3_offline_sat_removal_standalone(self):
         """
         Standalone test for remove_offline_sats() using manually constructed DataFrame to
         avoid dependency on read_sp3()
         """
+
+        objects_to_verify: list = []
+
         sp3_df_nans = TestSP3.get_example_dataframe("offline_sat_nan")
         sp3_df_zeros = TestSP3.get_example_dataframe("offline_sat_zero")
 
@@ -1065,6 +1286,7 @@ SP3 comment reflow test. This should not break words if possible."""
             ["G01", "G02", "G03"],
             "Should start with 3 SVs",
         )
+        objects_to_verify.extend([sp3_df_nans, sp3_df_zeros])
 
         sp3_df_zeros_removed = sp3.remove_offline_sats(sp3_df_zeros)
         sp3_df_nans_removed = sp3.remove_offline_sats(sp3_df_nans)
@@ -1080,8 +1302,18 @@ SP3 comment reflow test. This should not break words if possible."""
             "Should be two SVs after removing offline ones",
         )
 
+        objects_to_verify.extend([sp3_df_zeros_removed, sp3_df_nans_removed])
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
+
     def test_sp3_offline_sat_removal(self):
+        objects_to_verify: list = []
+
         sp3_df = sp3.read_sp3(offline_sat_test_data, pOnly=False, strict_mode=STRICT_OFF)
+        objects_to_verify.append(sp3_df)
 
         # Confirm starting state of content
         self.assertEqual(
@@ -1100,25 +1332,38 @@ SP3 comment reflow test. This should not break words if possible."""
             sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "3", "Header should have 2 SVs before removing offline"
         )
 
+        df_snapshot = DataFrame(sp3_df)
         # Now make the changes - this should also update the header
-        sp3_df = sp3.remove_offline_sats(sp3_df)
+        sp3_df_cleaned = sp3.remove_offline_sats(sp3_df)
+        objects_to_verify.append(sp3_df_cleaned)
+        # Ensure the source DF did NOT get modified...
+        df_snapshot_after = DataFrame(sp3_df)
+        self.assertTrue(
+            df_snapshot.equals(df_snapshot_after),
+            "Original DF should not be modified by function that returns a new copy",
+        )
 
         # Check contents
         self.assertEqual(
-            sp3_df.index.get_level_values(1).unique().array.tolist(),
+            sp3_df_cleaned.index.get_level_values(1).unique().array.tolist(),
             ["G02", "G03"],
             "Should be two SVs after removing offline ones",
         )
 
         # Check header
         self.assertEqual(
-            sp3_df.attrs["HEADER"].SV_INFO.index.array.tolist(),
+            sp3_df_cleaned.attrs["HEADER"].SV_INFO.index.array.tolist(),
             ["G02", "G03"],
             "Should be two SVs in parsed header after removing offline ones",
         )
         self.assertEqual(
-            sp3_df.attrs["HEADER"].HEAD.SV_COUNT_STATED, "2", "Header should have 2 SVs after removing offline"
+            sp3_df_cleaned.attrs["HEADER"].HEAD.SV_COUNT_STATED, "2", "Header should have 2 SVs after removing offline"
         )
+
+        # UnitTestBaseliner.mode = "baseline"
+        # UnitTestBaseliner.create_baseline(objects_to_verify)  # DO NOT commit this line un-commented.
+
+        self.assertTrue(UnitTestBaseliner.verify(objects_to_verify), "Hash verification should pass")
 
     # sp3_test_data_truncated_cod_final is input_data2
     def test_filter_by_svs(self):
