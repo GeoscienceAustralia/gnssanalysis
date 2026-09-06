@@ -26,8 +26,8 @@ logging.captureWarnings(True)
 # https://files.igs.org/pub/resource/guidelines/Guidelines_for_Long_Product_Filenames_in_the_IGS_v2.1.pdf
 _RE_IGS_LONG_FILENAME = re.compile(
     r"""\A # Assert beginning of string
-        (?P<analysis_center>\w{3})
-        (?P<version>\w)
+        (?P<analysis_center>\w{3}) # E.g. 'IGS'
+        (?P<version>\w) # Version / 'solution identifier'. Typically '0'
         (?P<project>\w{3}) # Campaign / project
         (?P<solution_type>\w{3}) # Solution type identifier
         _
@@ -796,6 +796,25 @@ def determine_sp3_name_props(
             logging.info(traceback.format_exc())
         return {}
     return name_props
+
+
+def simple_props_from_long_filename(filename: str) -> dict[str, Any]:
+    # Simpler version of determine_properties_from_filename(), which does less parsing / conversion / assumption
+    # making. Just extracts key fields from IGS long filename and presents them verbatim.
+
+    match_long = _RE_IGS_LONG_FILENAME.fullmatch(filename)
+    if match_long is None:
+        raise ValueError(f"Filename failed to parse as IGS long format: '{filename}'")
+    return {
+        "analysis_center": match_long["analysis_center"].upper(),
+        "content_type": match_long["content_type"].upper(),
+        "format_type": match_long["file_format"].upper(),
+        "solution_type": match_long["solution_type"],
+        "sampling_rate": match_long["sampling"],
+        "version": match_long["version"],
+        "project": match_long["project"],  # Aka 'campaign'
+        # Extra fields will be added depending on standard vs Long Term Product
+    }
 
 
 def determine_properties_from_filename(
