@@ -7,7 +7,8 @@ import pandas as _pd
 from .. import gn_datetime as _gn_datetime
 from .. import gn_io as _gn_io
 
-_RE_IONEX_BLK = _re.compile(rb"H\n((?:[ \-\d]+\n)+)", _re.MULTILINE)
+# LAT/LON1/LON2/DLON/H may be followed by LF or CRLF; data records are Fortran 16I5.
+_RE_IONEX_BLK = _re.compile(rb"H\r?\n((?:[ \-\d]+\r?\n)+)", _re.MULTILINE)
 
 
 def gen_range(head, param_name):
@@ -47,10 +48,12 @@ def read_ionex(path_or_bytes):
 
     exp = get_param(head, b"EXPONENT")
 
-    maps_arr = (
-        _np.asarray(b"".join(_RE_IONEX_BLK.findall(data)).replace(b"\n", b""))[_np.newaxis].view("S5").astype(int)
-        * 10**exp
-    )
+    raw_joined = b"".join(_RE_IONEX_BLK.findall(data))
+    # rstrip() drops CR and the trailing spaces used to pad short 16I5 lines to 80 columns.
+    cleaned_bytes = b"".join(line.rstrip() for line in raw_joined.splitlines())
+    if len(cleaned_bytes) == 0 or len(cleaned_bytes) % 5 != 0:
+        raise ValueError("IONEX data blocks are missing or not aligned to 5-character fields")
+    maps_arr = _np.asarray(cleaned_bytes)[_np.newaxis].view("S5").astype(int) * 10**exp
 
     lon_arr = gen_range(head, b"LON1 ")
     lat_arr = gen_range(head, b"LAT1 ")
